@@ -14,35 +14,37 @@ import {
 } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 
-const rideGroups = [
-  {
-    vehicle: "XE 7 CHỖ",
-    route: "Cổng Chính Trống Đồng → Ngã tư Thạch Hòa",
-    distance: "~3.5km",
-    price: "18.000 đ",
-    seats: "2/6 thành viên",
-    note: "Xe ghép từ cổng chính ra ngã tư bắt xe khách cho rẻ nhé, xe có điều hòa.",
-  },
-  {
-    vehicle: "XE 5 CHỖ",
-    route: "Cổng Phụ Ký Túc Xá → Hồ Tân Xã",
-    distance: "~1.8km",
-    price: "12.000 đ",
-    seats: "4/5 thành viên",
-    note: "Đi ra hồ trà đá hóng mát nhóm ở, mệt mỏi bài tập.",
-  },
-];
-
-const singleActions = [
-  { label: "Xe lẻ ngay", emoji: "⚡", when: "now" },
-  { label: "Đặt trước", emoji: "🕒", when: "later" },
-];
+const BRAND = "#FF7A00";
 
 export default function HomeScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
   const router = useRouter();
-  const [selectedMode, setSelectedMode] = useState(null); // 'single' | 'shared' | null
+  const [selectedMode, setSelectedMode] = useState("now");
+
+  const singleActions = [
+    { label: "Xe lẻ ngay", when: "now", emoji: "🚕" },
+    { label: "Xe lẻ đặt trước", when: "later", emoji: "🕒" },
+  ];
+
+  const rideGroups = [
+    {
+      route: "Hà Nội → Sân bay Nội Bài",
+      vehicle: "Xe ghép",
+      price: "35.000đ",
+      distance: "25 km",
+      seats: "3 ghế còn trống",
+      note: "Vui lòng đi đúng giờ",
+    },
+    {
+      route: "Hà Nội → FPT City",
+      vehicle: "Xe ghép",
+      price: "30.000đ",
+      distance: "18 km",
+      seats: "2 ghế còn trống",
+      note: "Khởi hành 17:30",
+    },
+  ];
 
   return (
     <ScrollView
@@ -88,6 +90,14 @@ export default function HomeScreen() {
             </ThemedText>
           </ThemedView>
         </ThemedView>
+        <View style={styles.weatherRow}>
+          <ThemedText type="default" style={{ color: "#333" }}>
+            32°C · Nắng nhẹ
+          </ThemedText>
+          <ThemedText type="small" style={{ color: "#666" }}>
+            Thạch Thất, Hà Nội
+          </ThemedText>
+        </View>
 
         <ThemedView
           style={[
@@ -110,28 +120,43 @@ export default function HomeScreen() {
           <View style={styles.toggleRow}>
             <Pressable
               style={({ pressed }) => [
-                styles.toggleButton,
-                selectedMode === "single" && styles.toggleActive,
+                styles.modeBtn,
+                selectedMode === "now" && styles.modeBtnActive,
                 pressed && styles.pressedButton,
               ]}
-              onPress={() =>
-                setSelectedMode((v) => (v === "single" ? null : "single"))
-              }
+              onPress={() => {
+                setSelectedMode("now");
+                router.push("/search?mode=now&when=now");
+              }}
             >
-              <ThemedText type="smallBold">Xe lẻ</ThemedText>
+              <ThemedText
+                type="smallBold"
+                style={{ color: selectedMode === "now" ? "#fff" : BRAND }}
+              >
+                Xe lẻ
+              </ThemedText>
             </Pressable>
             <Pressable
               style={({ pressed }) => [
-                styles.toggleButton,
+                styles.modeBtn,
+                selectedMode === "shared" && styles.modeBtnActive,
                 pressed && styles.pressedButton,
               ]}
-              onPress={() => router.push(`/search?mode=shared&when=any`)}
+              onPress={() => {
+                setSelectedMode("shared");
+                router.push("/search?mode=shared&when=any");
+              }}
             >
-              <ThemedText type="smallBold">Xe ghép</ThemedText>
+              <ThemedText
+                type="smallBold"
+                style={{ color: selectedMode === "shared" ? "#fff" : BRAND }}
+              >
+                Xe ghép
+              </ThemedText>
             </Pressable>
           </View>
 
-          {selectedMode === "single" && (
+          {selectedMode === "now" && (
             <View style={styles.quickActionsList}>
               {singleActions.map((action) => (
                 <Pressable
@@ -142,7 +167,7 @@ export default function HomeScreen() {
                     pressed && styles.pressedCard,
                   ]}
                   onPress={() =>
-                    router.push(`/search?mode=single&when=${action.when}`)
+                    router.push(`/search?mode=now&when=${action.when}`)
                   }
                 >
                   <View style={styles.actionIcon}>
@@ -213,19 +238,19 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   scrollView: { flex: 1 },
-  contentContainer: { alignItems: "center", paddingTop: Spacing.four },
+  contentContainer: { alignItems: "center", paddingTop: 24 },
   wrapper: {
     width: "100%",
     maxWidth: MaxContentWidth,
-    gap: Spacing.four,
-    paddingHorizontal: Spacing.four,
+    gap: 24,
+    paddingHorizontal: 24,
   },
   headerCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
+    padding: 24,
+    borderRadius: 24,
   },
   avatar: {
     width: 58,
@@ -234,24 +259,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerText: { flex: 1, marginLeft: Spacing.four, gap: Spacing.one },
+  headerText: { flex: 1, marginLeft: 24, gap: 4 },
   statusBadge: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 32,
     justifyContent: "center",
     alignItems: "center",
   },
   statusText: { textTransform: "uppercase", letterSpacing: 0.5 },
   primaryCard: {
-    borderRadius: Spacing.four,
-    padding: Spacing.four,
-    gap: Spacing.four,
+    borderRadius: 24,
+    padding: 24,
+    gap: 24,
   },
   searchInput: {
-    borderRadius: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
+    borderRadius: 32,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     fontSize: 16,
     borderWidth: 1,
     borderColor: "#E3E6EA",
@@ -269,11 +294,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  toggleRow: { flexDirection: "row", gap: Spacing.three },
+  toggleRow: { flexDirection: "row", gap: 16 },
   toggleButton: {
     flex: 1,
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.five,
+    paddingVertical: 16,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FFFFFF",
@@ -281,14 +306,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   toggleActive: { borderColor: "#1D4ED8", backgroundColor: "#E6F0FF" },
-  quickActionsList: { gap: Spacing.three, marginTop: Spacing.four },
+  quickActionsList: { gap: 16, marginTop: 24 },
   actionCard: {
     flexDirection: "row",
     alignItems: "center",
     width: "100%",
     minHeight: 72,
-    borderRadius: Spacing.four,
-    padding: Spacing.three,
+    borderRadius: 24,
+    padding: 16,
     justifyContent: "flex-start",
     borderWidth: 1,
     borderColor: "#E3E6EA",
@@ -300,30 +325,47 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F7FA",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: Spacing.four,
+    marginRight: 24,
   },
   actionLabel: { flex: 1 },
-  sectionHeader: { gap: Spacing.one },
+  sectionHeader: { gap: 4 },
   rideCard: {
-    borderRadius: Spacing.four,
-    padding: Spacing.four,
-    gap: Spacing.three,
+    borderRadius: 24,
+    padding: 24,
+    gap: 16,
   },
   rideTitleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  vehicleLabel: { color: "#1D4ED8" },
+  vehicleLabel: { color: BRAND },
   rideRouteRow: { gap: Spacing.one },
   rideInfoRow: { flexDirection: "row", justifyContent: "space-between" },
   noteText: { fontStyle: "italic" },
   joinButton: {
-    marginTop: Spacing.two,
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.five,
-    backgroundColor: "#1D4ED8",
+    marginTop: 8,
+    paddingVertical: 16,
+    borderRadius: 32,
+    backgroundColor: BRAND,
     alignItems: "center",
   },
+  weatherRow: {
+    paddingHorizontal: 24,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: BRAND,
+  },
+  modeBtnActive: { backgroundColor: BRAND },
   pressedButton: { opacity: 0.75 },
+  pressedCard: { opacity: 0.75 },
 });

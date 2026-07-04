@@ -11,8 +11,10 @@ export const Colors = {
   light: {
     text: "#000000",
     background: "#ffffff",
-    backgroundElement: "#F0F0F3",
-    backgroundSelected: "#E0E1E6",
+    // Use white primary surfaces for the app — orange accents are applied elsewhere
+    backgroundElement: "#ffffff",
+    // subtle selected tint for buttons or badges
+    backgroundSelected: "#FFF4EF",
     textSecondary: "#60646C",
   },
   dark: {

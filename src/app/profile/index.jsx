@@ -18,7 +18,7 @@ export default function ProfileScreen() {
 
   // This screen is a full UI scaffold — backend should supply `user` object
   const [user, setUser] = useState({
-    name: "Lê Nguyễn Đại Hải",
+    name: "Lê Nguyễn Đăng Hải",
     studentId: "HE182237",
     email: "hai.ln@example.com",
     phone: "+84 912 345 678",
@@ -28,7 +28,6 @@ export default function ProfileScreen() {
   const [editForm, setEditForm] = useState(user);
 
   function handleSave() {
-    // TODO: call backend API to save changes
     console.log("Saved profile", editForm);
     setUser(editForm);
     setEditVisible(false);
@@ -106,7 +105,9 @@ export default function ProfileScreen() {
               </ThemedText>
             </Pressable>
             <Pressable style={styles.actionRow}>
-              <ThemedText type="small">Đăng xuất</ThemedText>
+              <ThemedText type="small" style={{ color: "#FF3B30" }}>
+                Đăng xuất
+              </ThemedText>
             </Pressable>
           </ThemedView>
         </View>
@@ -260,7 +261,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.two,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.five,
-    backgroundColor: "#1D4ED8",
+    backgroundColor: "#FF7A00",
     alignItems: "center",
   },
 });
