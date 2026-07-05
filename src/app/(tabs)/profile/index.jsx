@@ -1,6 +1,12 @@
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { MaxContentWidth, Spacing } from "@/constants/theme";
+import {
+  BottomTabInset,
+  MaxContentWidth,
+  ScreenHeaderTop,
+  ScreenTitleStyle,
+  Spacing,
+} from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useState } from "react";
 import {
@@ -11,9 +17,11 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ProfileScreen() {
   const theme = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
   const [editVisible, setEditVisible] = useState(false);
 
   // This screen is a full UI scaffold — backend should supply `user` object
@@ -37,9 +45,16 @@ export default function ProfileScreen() {
     <>
       <ScrollView
         style={{ backgroundColor: theme.background }}
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[
+          styles.container,
+          { paddingBottom: safeAreaInsets.bottom + BottomTabInset + Spacing.four },
+        ]}
       >
         <View style={[styles.wrapper, { maxWidth: MaxContentWidth }]}>
+          <ThemedText type="default" style={styles.screenTitle}>
+            Cá nhân
+          </ThemedText>
+
           <ThemedView
             style={[
               styles.header,
@@ -195,11 +210,17 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { alignItems: "center", paddingVertical: Spacing.four },
+  container: {
+    alignItems: "center",
+    paddingTop: ScreenHeaderTop,
+  },
   wrapper: {
     width: "100%",
     paddingHorizontal: Spacing.four,
     gap: Spacing.four,
+  },
+  screenTitle: {
+    ...ScreenTitleStyle,
   },
   header: {
     borderRadius: Spacing.four,
