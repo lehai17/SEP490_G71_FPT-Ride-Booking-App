@@ -1,12 +1,20 @@
 import { FlatList, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { MaxContentWidth, Spacing } from "@/constants/theme";
+import {
+  BottomTabInset,
+  MaxContentWidth,
+  ScreenHeaderTop,
+  ScreenTitleStyle,
+  Spacing,
+} from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 
 export default function NotificationsScreen() {
   const theme = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
 
   const items = [
     {
@@ -28,11 +36,16 @@ export default function NotificationsScreen() {
       style={[styles.container, { backgroundColor: theme.background }]}
     >
       <View style={styles.content}>
-        <ThemedText type="subtitle">Thông báo</ThemedText>
+        <ThemedText type="default" style={styles.screenTitle}>
+          Thông báo
+        </ThemedText>
         <FlatList
           data={items}
           keyExtractor={(i) => i.id}
-          contentContainerStyle={{ paddingTop: Spacing.two }}
+          contentContainerStyle={{
+            paddingTop: Spacing.two,
+            paddingBottom: safeAreaInsets.bottom + BottomTabInset + Spacing.four,
+          }}
           renderItem={({ item }) => (
             <View style={styles.item}>
               <View style={styles.dot} />
@@ -59,9 +72,13 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: Spacing.four,
+    paddingHorizontal: Spacing.four,
+    paddingTop: ScreenHeaderTop,
     maxWidth: MaxContentWidth,
     width: "100%",
+  },
+  screenTitle: {
+    ...ScreenTitleStyle,
   },
   item: {
     flexDirection: "row",

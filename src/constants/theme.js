@@ -63,3 +63,10 @@ export const Spacing = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+
+export const ScreenHeaderTop = Spacing.four;
+export const ScreenTitleStyle = {
+  fontSize: 28,
+  fontWeight: "700",
+  color: "#111827",
+};
