@@ -63,6 +63,26 @@ const vouchers = [
   },
 ];
 
+const sharedTripTypes = [
+  "Chuyến đi (Từ nơi khác đến FPT)",
+  "Chuyến về (Từ FPT đi nơi khác)",
+];
+
+const sharedVehicleOptions = [
+  { label: "🚗 Xe 4 chỗ", vehicle: "Xe 4 chỗ", capacity: 4, price: "30.000đ" },
+  { label: "🚙 Xe 7 chỗ", vehicle: "Xe 7 chỗ", capacity: 7, price: "42.000đ" },
+];
+
+const sharedSeatOptions = ["2", "3", "4", "5", "6", "7"];
+
+const defaultSharedForm = {
+  tripType: sharedTripTypes[0],
+  vehicleIndex: 0,
+  maxSeats: "",
+  location: "",
+  note: "",
+};
+
 export default function SearchScreen() {
   const theme = useTheme();
   const router = useRouter();
@@ -80,6 +100,11 @@ export default function SearchScreen() {
   const [driverNote, setDriverNote] = useState("");
   const [selectedRideId, setSelectedRideId] = useState("bike");
   const [selectedVoucherId, setSelectedVoucherId] = useState("fptu2024");
+  const [sharedRides, setSharedRides] = useState(rideGroups);
+  const [createSharedVisible, setCreateSharedVisible] = useState(false);
+  const [sharedForm, setSharedForm] = useState(defaultSharedForm);
+  const [openSharedDropdown, setOpenSharedDropdown] = useState("");
+  const [sharedFormError, setSharedFormError] = useState("");
 
   const savedAddresses = [
     { id: "saved-from", label: "Đại học FPT, Thạch Hòa", target: "from" },
@@ -115,6 +140,63 @@ export default function SearchScreen() {
 
     setAlertMessage("");
     setBookingStep("confirm");
+  };
+
+  const updateSharedForm = (field, value) => {
+    setSharedForm((current) => ({ ...current, [field]: value }));
+    setSharedFormError("");
+  };
+
+  const closeCreateSharedModal = () => {
+    setCreateSharedVisible(false);
+    setOpenSharedDropdown("");
+    setSharedFormError("");
+  };
+
+  const createSharedRide = () => {
+    if (!sharedForm.tripType) {
+      setSharedFormError("Vui lòng chọn loại chuyến");
+      return;
+    }
+
+    if (!sharedForm.maxSeats) {
+      setSharedFormError("Vui lòng chọn số người tối đa");
+      return;
+    }
+
+    if (!sharedForm.location.trim()) {
+      setSharedFormError("Vui lòng nhập điểm đón/điểm đến");
+      return;
+    }
+
+    const selectedVehicle = sharedVehicleOptions[sharedForm.vehicleIndex];
+    const isGoToFpt = sharedForm.tripType.startsWith("Chuyến đi");
+    const route = isGoToFpt
+      ? `${sharedForm.location.trim()} → Đại học FPT`
+      : `Đại học FPT → ${sharedForm.location.trim()}`;
+    const note =
+      sharedForm.note.trim() || "Xe ghép mới tạo, cùng chia sẻ chuyến đi";
+
+    setSharedRides((current) => [
+      {
+        id: `shared-created-${Date.now()}`,
+        route,
+        vehicle: selectedVehicle.vehicle,
+        price: selectedVehicle.price,
+        distance: "18 km",
+        seats: `1/${sharedForm.maxSeats} thành viên`,
+        note,
+        status: "Đã tham gia",
+        driver: "Lê Nguyễn Đại Hải",
+        destination: route,
+        participantCount: 1,
+        capacity: Number(sharedForm.maxSeats),
+        perPersonPrice: "15.000đ/người",
+      },
+      ...current,
+    ]);
+    setSharedForm(defaultSharedForm);
+    closeCreateSharedModal();
   };
 
   return (
@@ -443,14 +525,14 @@ export default function SearchScreen() {
               <ThemedText type="default" style={styles.sharedTitle}>
                 Xe ghép sẵn có
               </ThemedText>
-              <Pressable>
+              <Pressable onPress={() => setCreateSharedVisible(true)}>
                 <ThemedText type="smallBold" style={styles.createButtonText}>
                   + Tạo
                 </ThemedText>
               </Pressable>
             </View>
 
-            {rideGroups.map((ride) => (
+            {sharedRides.map((ride) => (
               <View key={ride.id} style={styles.sharedCard}>
                 <View style={styles.sharedCardHeader}>
                   <View style={styles.vehiclePill}>
@@ -496,6 +578,253 @@ export default function SearchScreen() {
         )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={createSharedVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeCreateSharedModal}
+      >
+        <View style={styles.createSharedOverlay}>
+          <View style={styles.createSharedCard}>
+            <View style={styles.createSharedHeader}>
+              <ThemedText type="default" style={styles.createSharedTitle}>
+                Tạo xe ghép
+              </ThemedText>
+              <Pressable
+                style={styles.createSharedClose}
+                onPress={closeCreateSharedModal}
+              >
+                <ThemedText type="default" style={styles.createSharedCloseText}>
+                  ×
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.createSharedBody}
+              contentContainerStyle={styles.createSharedBodyContent}
+              showsVerticalScrollIndicator
+            >
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  Loại chuyến
+                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
+                </ThemedText>
+                <Pressable
+                  style={styles.createSelect}
+                  onPress={() =>
+                    setOpenSharedDropdown(
+                      openSharedDropdown === "tripType" ? "" : "tripType"
+                    )
+                  }
+                >
+                  <ThemedText type="default" style={styles.createSelectText}>
+                    {sharedForm.tripType}
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.createSelectArrow}>
+                    ⌄
+                  </ThemedText>
+                </Pressable>
+                {openSharedDropdown === "tripType" && (
+                  <View style={styles.createDropdown}>
+                    {sharedTripTypes.map((item) => (
+                      <Pressable
+                        key={item}
+                        style={[
+                          styles.createDropdownItem,
+                          sharedForm.tripType === item &&
+                            styles.createDropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          updateSharedForm("tripType", item);
+                          setOpenSharedDropdown("");
+                        }}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={[
+                            styles.createDropdownText,
+                            sharedForm.tripType === item &&
+                              styles.createDropdownTextActive,
+                          ]}
+                        >
+                          {item}
+                        </ThemedText>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  Loại xe
+                </ThemedText>
+                <Pressable
+                  style={styles.createSelect}
+                  onPress={() =>
+                    setOpenSharedDropdown(
+                      openSharedDropdown === "vehicle" ? "" : "vehicle"
+                    )
+                  }
+                >
+                  <ThemedText type="default" style={styles.createSelectText}>
+                    {sharedVehicleOptions[sharedForm.vehicleIndex].label}
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.createSelectArrow}>
+                    ⌄
+                  </ThemedText>
+                </Pressable>
+                {openSharedDropdown === "vehicle" && (
+                  <View style={styles.createDropdown}>
+                    {sharedVehicleOptions.map((item, index) => (
+                      <Pressable
+                        key={item.vehicle}
+                        style={[
+                          styles.createDropdownItem,
+                          sharedForm.vehicleIndex === index &&
+                            styles.createDropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          setSharedForm((current) => ({
+                            ...current,
+                            vehicleIndex: index,
+                            maxSeats:
+                              Number(current.maxSeats) > item.capacity
+                                ? ""
+                                : current.maxSeats,
+                          }));
+                          setOpenSharedDropdown("");
+                          setSharedFormError("");
+                        }}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={[
+                            styles.createDropdownText,
+                            sharedForm.vehicleIndex === index &&
+                              styles.createDropdownTextActive,
+                          ]}
+                        >
+                          {item.label}
+                        </ThemedText>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  Số người tối đa
+                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
+                </ThemedText>
+                <Pressable
+                  style={styles.createSelect}
+                  onPress={() =>
+                    setOpenSharedDropdown(
+                      openSharedDropdown === "seats" ? "" : "seats"
+                    )
+                  }
+                >
+                  <ThemedText
+                    type="default"
+                    style={[
+                      styles.createSelectText,
+                      !sharedForm.maxSeats && styles.createPlaceholderText,
+                    ]}
+                  >
+                    {sharedForm.maxSeats
+                      ? `${sharedForm.maxSeats} người`
+                      : "-- Chọn số người --"}
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.createSelectArrow}>
+                    ⌄
+                  </ThemedText>
+                </Pressable>
+                {openSharedDropdown === "seats" && (
+                  <View style={styles.createDropdown}>
+                    {sharedSeatOptions
+                      .filter(
+                        (seat) =>
+                          Number(seat) <=
+                          sharedVehicleOptions[sharedForm.vehicleIndex].capacity
+                      )
+                      .map((seat) => (
+                        <Pressable
+                          key={seat}
+                          style={[
+                            styles.createDropdownItem,
+                            sharedForm.maxSeats === seat &&
+                              styles.createDropdownItemActive,
+                          ]}
+                          onPress={() => {
+                            updateSharedForm("maxSeats", seat);
+                            setOpenSharedDropdown("");
+                          }}
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={[
+                              styles.createDropdownText,
+                              sharedForm.maxSeats === seat &&
+                                styles.createDropdownTextActive,
+                            ]}
+                          >
+                            {seat} người
+                          </ThemedText>
+                        </Pressable>
+                      ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  Điểm đón/Điểm đến
+                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
+                </ThemedText>
+                <TextInput
+                  placeholder="VD: Trạm xe, Đường XYZ..."
+                  placeholderTextColor="#A1A1AA"
+                  style={styles.createInput}
+                  value={sharedForm.location}
+                  onChangeText={(value) => updateSharedForm("location", value)}
+                />
+              </View>
+
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  Mô tả chuyến
+                </ThemedText>
+                <TextInput
+                  placeholder="VD: Có điều hòa, tài xế kinh nghiệm..."
+                  placeholderTextColor="#A1A1AA"
+                  style={styles.createInput}
+                  value={sharedForm.note}
+                  onChangeText={(value) => updateSharedForm("note", value)}
+                />
+              </View>
+
+              {Boolean(sharedFormError) && (
+                <ThemedText type="smallBold" style={styles.createError}>
+                  {sharedFormError}
+                </ThemedText>
+              )}
+
+              <Pressable
+                style={styles.createSubmitButton}
+                onPress={createSharedRide}
+              >
+                <ThemedText type="smallBold" style={styles.createSubmitText}>
+                  Tạo nhóm xe
+                </ThemedText>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={Boolean(alertMessage)}
@@ -664,6 +993,130 @@ const styles = StyleSheet.create({
   },
   alertButtonText: {
     color: "#FFFFFF",
+  },
+  createSharedOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.two,
+  },
+  createSharedCard: {
+    width: "100%",
+    maxWidth: MaxContentWidth,
+    maxHeight: "82%",
+    alignSelf: "center",
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+  },
+  createSharedHeader: {
+    minHeight: 56,
+    paddingHorizontal: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  createSharedTitle: {
+    color: "#111827",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  createSharedClose: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createSharedCloseText: {
+    color: "#6B7280",
+    fontSize: 34,
+    lineHeight: 38,
+  },
+  createSharedBody: {
+    maxHeight: 520,
+  },
+  createSharedBodyContent: {
+    padding: Spacing.three,
+    gap: Spacing.three,
+  },
+  createField: {
+    gap: Spacing.one,
+  },
+  createLabel: {
+    color: "#4B5563",
+  },
+  requiredMark: {
+    color: "#EF4444",
+  },
+  createSelect: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: Spacing.two,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  createSelectText: {
+    flex: 1,
+    color: "#111827",
+  },
+  createPlaceholderText: {
+    color: "#111827",
+  },
+  createSelectArrow: {
+    color: "#111827",
+    fontSize: 22,
+    lineHeight: 24,
+  },
+  createDropdown: {
+    borderWidth: 1,
+    borderColor: "#111827",
+    borderRadius: 6,
+    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+  },
+  createDropdownItem: {
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: Spacing.two,
+  },
+  createDropdownItemActive: {
+    backgroundColor: "#2563EB",
+  },
+  createDropdownText: {
+    color: "#111827",
+  },
+  createDropdownTextActive: {
+    color: "#FFFFFF",
+  },
+  createInput: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: Spacing.two,
+    color: "#111827",
+    backgroundColor: "#FFFFFF",
+  },
+  createError: {
+    color: "#DC2626",
+  },
+  createSubmitButton: {
+    minHeight: 50,
+    borderRadius: 10,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createSubmitText: {
+    color: "#FFFFFF",
+    fontSize: 16,
   },
   dotsRow: {
     flexDirection: "row",

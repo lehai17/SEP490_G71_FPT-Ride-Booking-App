@@ -206,20 +206,45 @@ function getTripDraft(item) {
   };
 }
 
+function getScheduledTripView(item) {
+  const [destination = item.route, pickup = "Vị trí hiện tại"] = item.route.split(/\s*(?:→|â†’)\s*/);
+  const [time = "", price = ""] = item.meta.split(/\s*[·•Â·â€¢]\s*/);
+  const vehicle = item.icon.includes("🛵") || item.icon.includes("ðŸ›µ")
+    ? "Xe máy"
+    : "Xe 4 chỗ";
+
+  return {
+    destination,
+    pickup,
+    time,
+    price,
+    vehicle,
+  };
+}
+
 export default function TripsScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
-  const [selectedTab, setSelectedTab] = useState("scheduled");
+  const [selectedTab, setSelectedTab] = useState("active");
   const [tripsBySection, setTripsBySection] = useState(tripSections);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [chatModalVisible, setChatModalVisible] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [ratingDraft, setRatingDraft] = useState(5);
   const [reviewDraft, setReviewDraft] = useState("");
   const [reportReason, setReportReason] = useState("");
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState([
+    {
+      id: "driver-hi",
+      sender: "driver",
+      text: "Mình đang đến điểm đón, bạn chờ mình khoảng 1 phút nhé.",
+    },
+  ]);
   const [editDraft, setEditDraft] = useState({
     from: "",
     to: "",
@@ -376,6 +401,35 @@ export default function TripsScreen() {
     setFormError("");
   }
 
+  function handleSendChatMessage() {
+    const message = chatInput.trim();
+
+    if (!message) {
+      return;
+    }
+
+    setChatInput("");
+    setChatMessages((current) => [
+      ...current,
+      {
+        id: `user-${Date.now()}`,
+        sender: "user",
+        text: message,
+      },
+    ]);
+
+    setTimeout(() => {
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: `driver-${Date.now()}`,
+          sender: "driver",
+          text: "Tài xế đã nhận tin nhắn, mình sẽ phản hồi ngay.",
+        },
+      ]);
+    }, 700);
+  }
+
   return (
     <>
       <ScrollView
@@ -420,10 +474,148 @@ export default function TripsScreen() {
             })}
           </View>
 
-          <ThemedView
-            style={[styles.listCard, { backgroundColor: theme.backgroundElement }]}
-          >
-            {items.map((item, index) => {
+          {selectedTab === "active" ? (
+            <View style={styles.activeJourney}>
+              <ThemedText type="default" style={styles.activeJourneyTitle}>
+                Hành trình của bạn
+              </ThemedText>
+
+              <View style={styles.activeEtaCard}>
+                <ThemedText type="small" style={styles.activeEtaStatus}>
+                  🛵 Tài xế đang đến...
+                </ThemedText>
+                <ThemedText type="default" style={styles.activeEtaNumber}>
+                  1 phút
+                </ThemedText>
+                <ThemedText type="small" style={styles.activeEtaDistance}>
+                  Khoảng cách 1.2km
+                </ThemedText>
+              </View>
+
+              <View
+                style={[
+                  styles.activeDriverCard,
+                  { backgroundColor: theme.backgroundElement },
+                ]}
+              >
+                <View style={styles.activeDriverAvatar}>
+                  <ThemedText type="default">👨</ThemedText>
+                </View>
+                <View style={styles.activeDriverInfo}>
+                  <ThemedText type="default" style={styles.activeDriverName}>
+                    Nguyễn Văn Tài
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.activeDriverPhone}>
+                    0901 234 567
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.activeDriverMeta}>
+                    59-X1 234.56 · ⭐ 4.8
+                  </ThemedText>
+                </View>
+                <Pressable
+                  style={styles.activeMessageButton}
+                  onPress={() => setChatModalVisible(true)}
+                >
+                  <ThemedText type="default" style={styles.activeMessageIcon}>
+                    💬
+                  </ThemedText>
+                </Pressable>
+              </View>
+
+              <View style={styles.activePaymentCard}>
+                <ThemedText type="small" style={styles.activePaymentText}>
+                  💵 Trả tiền mặt: 25.000đ
+                </ThemedText>
+              </View>
+            </View>
+          ) : selectedTab === "scheduled" ? (
+            <View style={styles.scheduledCards}>
+              {items.map((item) => {
+                const trip = getScheduledTripView(item);
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.scheduledJourneyCard,
+                      { backgroundColor: theme.backgroundElement },
+                    ]}
+                  >
+                    <View style={styles.scheduledJourneyTop}>
+                      <View style={styles.scheduledJourneyInfo}>
+                        <ThemedText
+                          type="default"
+                          style={styles.scheduledDestination}
+                        >
+                          {trip.destination}
+                        </ThemedText>
+                        <ThemedText type="small" style={styles.scheduledTime}>
+                          {trip.time}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.scheduledStatusBadge}>
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.scheduledStatusText}
+                        >
+                          Chờ tài xế
+                        </ThemedText>
+                      </View>
+                    </View>
+
+                    <View style={styles.scheduledMetaGroup}>
+                      <ThemedText type="default" style={styles.scheduledMetaLine}>
+                        📍 Điểm đón:{" "}
+                        <ThemedText
+                          type="default"
+                          style={styles.scheduledMetaStrong}
+                        >
+                          {trip.pickup}
+                        </ThemedText>
+                      </ThemedText>
+                      <ThemedText type="default" style={styles.scheduledMetaLine}>
+                        {item.icon} {trip.vehicle}
+                      </ThemedText>
+                    </View>
+
+                    <View style={styles.scheduledJourneyBottom}>
+                      <ThemedText type="default" style={styles.scheduledPrice}>
+                        {trip.price}
+                      </ThemedText>
+                      <View style={styles.scheduledActionColumn}>
+                        <Pressable
+                          style={styles.scheduledEditButton}
+                          onPress={() => handlePrimaryAction(item)}
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.scheduledEditText}
+                          >
+                            Chỉnh sửa
+                          </ThemedText>
+                        </Pressable>
+                        <Pressable
+                          style={styles.scheduledCancelButton}
+                          onPress={() => handleSecondaryAction(item)}
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.scheduledCancelText}
+                          >
+                            Hủy
+                          </ThemedText>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <ThemedView
+              style={[styles.listCard, { backgroundColor: theme.backgroundElement }]}
+            >
+              {items.map((item, index) => {
               const savedRating = ratingsByTripId[item.id]?.rating;
               const displayRating = savedRating ?? item.rating;
               const hasReported = Boolean(reportsByTripId[item.id]);
@@ -501,10 +693,103 @@ export default function TripsScreen() {
                   </View>
                 </View>
               );
-            })}
-          </ThemedView>
+              })}
+            </ThemedView>
+          )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={chatModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setChatModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.chatCard,
+              { backgroundColor: theme.backgroundElement },
+            ]}
+          >
+            <View style={styles.chatHeader}>
+              <View style={styles.activeDriverAvatar}>
+                <ThemedText type="default">👨</ThemedText>
+              </View>
+              <View style={styles.chatHeaderInfo}>
+                <ThemedText type="default" style={styles.chatTitle}>
+                  Nguyễn Văn Tài
+                </ThemedText>
+                <ThemedText type="small" style={styles.chatSubtitle}>
+                  Đang hoạt động · 0901 234 567
+                </ThemedText>
+              </View>
+              <Pressable
+                style={styles.chatCloseButton}
+                onPress={() => setChatModalVisible(false)}
+              >
+                <ThemedText type="default" style={styles.chatCloseText}>
+                  ×
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.chatMessages}
+              contentContainerStyle={styles.chatMessagesContent}
+            >
+              {chatMessages.map((message) => {
+                const isUser = message.sender === "user";
+
+                return (
+                  <View
+                    key={message.id}
+                    style={[
+                      styles.chatBubble,
+                      isUser ? styles.chatBubbleUser : styles.chatBubbleDriver,
+                    ]}
+                  >
+                    <ThemedText
+                      type="small"
+                      style={[
+                        styles.chatBubbleText,
+                        isUser && styles.chatBubbleTextUser,
+                      ]}
+                    >
+                      {message.text}
+                    </ThemedText>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.chatInputRow}>
+              <TextInput
+                placeholder="Nhắn tin với tài xế..."
+                placeholderTextColor={MUTED}
+                style={[
+                  styles.chatInput,
+                  {
+                    color: theme.text,
+                    backgroundColor: theme.background,
+                  },
+                ]}
+                value={chatInput}
+                onChangeText={setChatInput}
+                onSubmitEditing={handleSendChatMessage}
+              />
+              <Pressable
+                style={styles.chatSendButton}
+                onPress={handleSendChatMessage}
+              >
+                <ThemedText type="smallBold" style={styles.chatSendText}>
+                  Gửi
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={ratingModalVisible}
@@ -1044,6 +1329,186 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: "#FFFFFF",
   },
+  activeJourney: {
+    gap: Spacing.three,
+  },
+  activeJourneyTitle: {
+    color: "#111827",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  activeEtaCard: {
+    minHeight: 118,
+    borderRadius: 18,
+    backgroundColor: "#FFF3EA",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  activeEtaStatus: {
+    color: "#6B7280",
+  },
+  activeEtaNumber: {
+    color: "#111827",
+    fontSize: 36,
+    fontWeight: "900",
+    lineHeight: 42,
+  },
+  activeEtaDistance: {
+    color: "#6B7280",
+  },
+  activeDriverCard: {
+    minHeight: 72,
+    borderRadius: 18,
+    paddingHorizontal: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+    shadowColor: "#000000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  activeDriverAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activeDriverInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  activeDriverName: {
+    color: "#111827",
+    fontWeight: "800",
+    fontSize: 18,
+  },
+  activeDriverMeta: {
+    color: "#6B7280",
+  },
+  activeDriverPhone: {
+    color: "#4B5563",
+  },
+  activeMessageButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: BRAND,
+  },
+  activeMessageIcon: {
+    color: "#FFFFFF",
+    fontSize: 22,
+  },
+  activePaymentCard: {
+    minHeight: 46,
+    borderRadius: 12,
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: Spacing.three,
+    justifyContent: "center",
+  },
+  activePaymentText: {
+    color: "#B45309",
+  },
+  scheduledCards: {
+    gap: Spacing.three,
+  },
+  scheduledJourneyCard: {
+    borderRadius: 18,
+    borderLeftWidth: 5,
+    borderLeftColor: BRAND,
+    padding: Spacing.three,
+    gap: Spacing.two,
+    shadowColor: "#000000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  scheduledJourneyTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  scheduledJourneyInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  scheduledDestination: {
+    color: "#C2410C",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  scheduledTime: {
+    color: "#6B7280",
+  },
+  scheduledStatusBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#FFF7ED",
+  },
+  scheduledStatusText: {
+    color: "#B45309",
+  },
+  scheduledMetaGroup: {
+    gap: 6,
+  },
+  scheduledMetaLine: {
+    color: "#4B5563",
+  },
+  scheduledMetaStrong: {
+    color: "#111827",
+    fontWeight: "800",
+  },
+  scheduledJourneyBottom: {
+    marginTop: Spacing.one,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  scheduledPrice: {
+    color: BRAND,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  scheduledActionColumn: {
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  scheduledEditButton: {
+    minWidth: 92,
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#D97706",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.two,
+  },
+  scheduledEditText: {
+    color: "#B45309",
+  },
+  scheduledCancelButton: {
+    minWidth: 92,
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.two,
+  },
+  scheduledCancelText: {
+    color: "#DC2626",
+  },
   listCard: {
     borderRadius: 18,
     overflow: "hidden",
@@ -1107,6 +1572,101 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     color: "#EAB308",
+  },
+  chatCard: {
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+    borderRadius: 22,
+    overflow: "hidden",
+  },
+  chatHeader: {
+    minHeight: 72,
+    paddingHorizontal: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  chatHeaderInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  chatTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  chatSubtitle: {
+    color: "#6B7280",
+  },
+  chatCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  chatCloseText: {
+    color: "#6B7280",
+    fontSize: 28,
+    lineHeight: 30,
+  },
+  chatMessages: {
+    maxHeight: 320,
+  },
+  chatMessagesContent: {
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  chatBubble: {
+    maxWidth: "82%",
+    borderRadius: 16,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  chatBubbleDriver: {
+    alignSelf: "flex-start",
+    backgroundColor: "#F3F4F6",
+  },
+  chatBubbleUser: {
+    alignSelf: "flex-end",
+    backgroundColor: BRAND,
+  },
+  chatBubbleText: {
+    color: "#111827",
+  },
+  chatBubbleTextUser: {
+    color: "#FFFFFF",
+  },
+  chatInputRow: {
+    padding: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  chatInput: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: Spacing.three,
+  },
+  chatSendButton: {
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.three,
+  },
+  chatSendText: {
+    color: "#FFFFFF",
   },
   modalOverlay: {
     flex: 1,
