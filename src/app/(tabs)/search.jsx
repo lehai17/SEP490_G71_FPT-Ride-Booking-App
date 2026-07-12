@@ -83,6 +83,153 @@ const defaultSharedForm = {
   note: "",
 };
 
+const MAX_SCHEDULE_DAYS = 7;
+const MIN_PICKUP_BUFFER_MINUTES = 30;
+const MINUTE_STEP = 5;
+const MOCK_TRIP_DURATION_MINUTES = 13;
+
+function padSchedule(value) {
+  return String(value).padStart(2, "0");
+}
+
+function addScheduleMinutes(date, minutes) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function addScheduleDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function roundScheduleDate(date) {
+  const rounded = new Date(date);
+  rounded.setSeconds(0, 0);
+  const remainder = rounded.getMinutes() % MINUTE_STEP;
+
+  if (remainder !== 0) {
+    rounded.setMinutes(rounded.getMinutes() + MINUTE_STEP - remainder);
+  }
+
+  return rounded;
+}
+
+function getScheduleBounds() {
+  const now = new Date();
+  return {
+    min: roundScheduleDate(addScheduleMinutes(now, MIN_PICKUP_BUFFER_MINUTES)),
+    max: addScheduleDays(now, MAX_SCHEDULE_DAYS),
+  };
+}
+
+function formatScheduleDateValue(date) {
+  return `${date.getFullYear()}-${padSchedule(date.getMonth() + 1)}-${padSchedule(date.getDate())}`;
+}
+
+function formatScheduleDisplay(date) {
+  return `${padSchedule(date.getDate())}/${padSchedule(date.getMonth() + 1)}/${date.getFullYear()}`;
+}
+
+function parseScheduleDateValue(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function getScheduleDateLabel(date, index) {
+  if (index === 0) {
+    return "Hôm nay";
+  }
+
+  if (index === 1) {
+    return "Ngày mai";
+  }
+
+  return formatScheduleDisplay(date);
+}
+
+function createScheduleDateOptions() {
+  const { max } = getScheduleBounds();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const maxDay = new Date(max);
+  maxDay.setHours(0, 0, 0, 0);
+  const options = [];
+
+  for (let index = 0; index <= MAX_SCHEDULE_DAYS; index += 1) {
+    const date = addScheduleDays(today, index);
+
+    if (date > maxDay) {
+      break;
+    }
+
+    options.push({
+      value: formatScheduleDateValue(date),
+      label: getScheduleDateLabel(date, index),
+      display: formatScheduleDisplay(date),
+      monthLabel: `Thg ${date.getMonth() + 1}`,
+      dayLabel: padSchedule(date.getDate()),
+    });
+  }
+
+  return options;
+}
+
+function createScheduleDate(dateValue, hour, minute) {
+  const date = parseScheduleDateValue(dateValue);
+  date.setHours(Number(hour), Number(minute), 0, 0);
+  return date;
+}
+
+function isScheduleInRange(date) {
+  const { min, max } = getScheduleBounds();
+  return date >= min && date <= max;
+}
+
+function createScheduleHourOptions(dateValue) {
+  return Array.from({ length: 24 }, (_, hour) => padSchedule(hour)).filter((hour) =>
+    Array.from({ length: 60 / MINUTE_STEP }, (_, index) =>
+      padSchedule(index * MINUTE_STEP)
+    ).some((minute) => isScheduleInRange(createScheduleDate(dateValue, hour, minute)))
+  );
+}
+
+function createScheduleMinuteOptions(dateValue, hour) {
+  return Array.from({ length: 60 / MINUTE_STEP }, (_, index) =>
+    padSchedule(index * MINUTE_STEP)
+  ).filter((minute) => isScheduleInRange(createScheduleDate(dateValue, hour, minute)));
+}
+
+function normalizeBookingSchedule(draft) {
+  const dateOptions = createScheduleDateOptions();
+  const selectedDate = dateOptions.find((option) => option.value === draft.date);
+  const date = selectedDate ?? dateOptions[0];
+  const hourOptions = createScheduleHourOptions(date.value);
+  const hour = hourOptions.includes(draft.hour) ? draft.hour : hourOptions[0];
+  const minuteOptions = createScheduleMinuteOptions(date.value, hour);
+  const minute = minuteOptions.includes(draft.minute)
+    ? draft.minute
+    : minuteOptions[0];
+
+  return {
+    ...draft,
+    date: date.value,
+    dateLabel: date.label,
+    dateDisplay: date.display,
+    hour,
+    minute,
+    time: `${hour}:${minute}`,
+  };
+}
+
+function getDefaultBookingSchedule() {
+  const { min } = getScheduleBounds();
+  return normalizeBookingSchedule({
+    date: formatScheduleDateValue(min),
+    hour: padSchedule(min.getHours()),
+    minute: padSchedule(min.getMinutes()),
+  });
+}
+
 export default function SearchScreen() {
   const theme = useTheme();
   const router = useRouter();
@@ -100,6 +247,9 @@ export default function SearchScreen() {
   const [driverNote, setDriverNote] = useState("");
   const [selectedRideId, setSelectedRideId] = useState("bike");
   const [selectedVoucherId, setSelectedVoucherId] = useState("fptu2024");
+  const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
+  const [scheduleDraft, setScheduleDraft] = useState(getDefaultBookingSchedule);
+  const [scheduledRideTime, setScheduledRideTime] = useState("");
   const [sharedRides, setSharedRides] = useState(rideGroups);
   const [createSharedVisible, setCreateSharedVisible] = useState(false);
   const [sharedForm, setSharedForm] = useState(defaultSharedForm);
@@ -114,16 +264,34 @@ export default function SearchScreen() {
   const selectSingleRide = () => {
     setMode("now");
     setBookingStep("form");
+    setScheduledRideTime("");
   };
 
   const selectSharedRide = () => {
     setMode("shared");
     setBookingStep("form");
     setAlertMessage("");
+    setScheduledRideTime("");
   };
 
   const fromLabel = from.trim() || "Vị trí hiện tại";
   const toLabel = to.trim() || "Đại học FPT, Thạch Hòa";
+  const scheduleDateOptions = createScheduleDateOptions();
+  const selectedScheduleDate =
+    scheduleDateOptions.find((option) => option.value === scheduleDraft.date) ??
+    scheduleDateOptions[0];
+  const scheduleHourOptions = createScheduleHourOptions(selectedScheduleDate.value);
+  const scheduleMinuteOptions = createScheduleMinuteOptions(
+    selectedScheduleDate.value,
+    scheduleDraft.hour
+  );
+  const pickupDate = createScheduleDate(
+    selectedScheduleDate.value,
+    scheduleDraft.hour,
+    scheduleDraft.minute
+  );
+  const arrivalDate = addScheduleMinutes(pickupDate, MOCK_TRIP_DURATION_MINUTES);
+  const scheduleDisplayText = `${scheduleDraft.time} • ${scheduleDraft.dateDisplay} (${scheduleDraft.dateLabel})`;
 
   const showConfirmationStep = () => {
     if (!from.trim()) {
@@ -139,6 +307,30 @@ export default function SearchScreen() {
     }
 
     setAlertMessage("");
+    setScheduledRideTime("");
+    setBookingStep("confirm");
+  };
+
+  const openSchedulePicker = () => {
+    if (!from.trim()) {
+      setAlertMessage("Vui lòng nhập điểm đón");
+      setFocusedField("from");
+      return;
+    }
+
+    if (!to.trim()) {
+      setAlertMessage("Vui lòng nhập điểm đến");
+      setFocusedField("to");
+      return;
+    }
+
+    setAlertMessage("");
+    setSchedulePickerVisible(true);
+  };
+
+  const confirmSchedulePicker = () => {
+    setScheduledRideTime(scheduleDisplayText);
+    setSchedulePickerVisible(false);
     setBookingStep("confirm");
   };
 
@@ -415,6 +607,14 @@ export default function SearchScreen() {
                   {toLabel}
                 </ThemedText>
               </ThemedText>
+              {Boolean(scheduledRideTime) && (
+                <ThemedText type="default" style={styles.summaryText}>
+                  Thời gian hẹn:{" "}
+                  <ThemedText type="default" style={styles.summaryStrong}>
+                    {scheduledRideTime}
+                  </ThemedText>
+                </ThemedText>
+              )}
             </View>
 
             <Pressable
@@ -504,7 +704,7 @@ export default function SearchScreen() {
             <View style={styles.buttonRow}>
               <Pressable
                 style={styles.secondaryButton}
-                onPress={showConfirmationStep}
+                onPress={openSchedulePicker}
               >
                 <ThemedText type="smallBold">Hẹn lịch</ThemedText>
               </Pressable>
@@ -578,6 +778,189 @@ export default function SearchScreen() {
         )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={schedulePickerVisible}
+        animationType="slide"
+        onRequestClose={() => setSchedulePickerVisible(false)}
+      >
+        <View
+          style={[
+            styles.scheduleScreen,
+            {
+              paddingTop: insets.top + Spacing.three,
+              paddingBottom: insets.bottom + Spacing.three,
+            },
+          ]}
+        >
+          <View style={styles.scheduleHeader}>
+            <Pressable
+              style={styles.scheduleBackButton}
+              onPress={() => setSchedulePickerVisible(false)}
+            >
+              <ThemedText type="default" style={styles.scheduleBackIcon}>
+                ←
+              </ThemedText>
+            </Pressable>
+            <ThemedText type="default" style={styles.scheduleTitle}>
+              Hẹn giờ
+            </ThemedText>
+            <View style={styles.scheduleBackButton} />
+          </View>
+
+          <View style={styles.scheduleCalendarCard}>
+            <ThemedText type="default" style={styles.scheduleCalendarMonth}>
+              {selectedScheduleDate.monthLabel}
+            </ThemedText>
+            <ThemedText type="default" style={styles.scheduleCalendarDay}>
+              {selectedScheduleDate.dayLabel}
+            </ThemedText>
+          </View>
+
+          <View style={styles.scheduleIntro}>
+            <ThemedText type="default" style={styles.scheduleQuestion}>
+              Bạn muốn xe đón lúc nào?
+            </ThemedText>
+            <ThemedText type="default" style={styles.scheduleHint}>
+              Chọn thời gian trong vòng tối đa 7 ngày kể từ hiện tại.
+            </ThemedText>
+          </View>
+
+          <View style={styles.schedulePickerPanel}>
+            <ScrollView
+              style={styles.scheduleDateColumn}
+              showsVerticalScrollIndicator={false}
+            >
+              {scheduleDateOptions.map((option) => {
+                const isSelected = option.value === selectedScheduleDate.value;
+
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[
+                      styles.schedulePickerRow,
+                      isSelected && styles.schedulePickerRowActive,
+                    ]}
+                    onPress={() =>
+                      setScheduleDraft((current) =>
+                        normalizeBookingSchedule({
+                          ...current,
+                          date: option.value,
+                          dateLabel: option.label,
+                          dateDisplay: option.display,
+                        })
+                      )
+                    }
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={[
+                        styles.schedulePickerDateText,
+                        isSelected && styles.schedulePickerTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <ScrollView
+              style={styles.scheduleTimeColumn}
+              showsVerticalScrollIndicator={false}
+            >
+              {scheduleHourOptions.map((hour) => {
+                const isSelected = hour === scheduleDraft.hour;
+
+                return (
+                  <Pressable
+                    key={hour}
+                    style={[
+                      styles.scheduleTimeCell,
+                      isSelected && styles.scheduleTimeCellActive,
+                    ]}
+                    onPress={() =>
+                      setScheduleDraft((current) =>
+                        normalizeBookingSchedule({ ...current, hour })
+                      )
+                    }
+                  >
+                    <ThemedText
+                      type="default"
+                      style={[
+                        styles.scheduleTimeText,
+                        isSelected && styles.schedulePickerTextActive,
+                      ]}
+                    >
+                      {hour}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <ThemedText type="default" style={styles.scheduleColon}>
+              :
+            </ThemedText>
+
+            <ScrollView
+              style={styles.scheduleTimeColumn}
+              showsVerticalScrollIndicator={false}
+            >
+              {scheduleMinuteOptions.map((minute) => {
+                const isSelected = minute === scheduleDraft.minute;
+
+                return (
+                  <Pressable
+                    key={minute}
+                    style={[
+                      styles.scheduleTimeCell,
+                      isSelected && styles.scheduleTimeCellActive,
+                    ]}
+                    onPress={() =>
+                      setScheduleDraft((current) =>
+                        normalizeBookingSchedule({ ...current, minute })
+                      )
+                    }
+                  >
+                    <ThemedText
+                      type="default"
+                      style={[
+                        styles.scheduleTimeText,
+                        isSelected && styles.schedulePickerTextActive,
+                      ]}
+                    >
+                      {minute}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <View style={styles.scheduleResultCard}>
+            <ThemedText type="default" style={styles.scheduleResultTitle}>
+              Xe đón bạn lúc {scheduleDisplayText}
+            </ThemedText>
+            <ThemedText type="default" style={styles.scheduleArrivalText}>
+              Đến nơi lúc {padSchedule(arrivalDate.getHours())}:{padSchedule(arrivalDate.getMinutes())}
+            </ThemedText>
+            <ThemedText type="small" style={styles.scheduleHint}>
+              di chuyển khoảng {MOCK_TRIP_DURATION_MINUTES} phút
+            </ThemedText>
+          </View>
+
+          <Pressable
+            style={styles.scheduleConfirmButton}
+            onPress={confirmSchedulePicker}
+          >
+            <ThemedText type="smallBold" style={styles.scheduleConfirmText}>
+              Xác nhận
+            </ThemedText>
+          </Pressable>
+        </View>
+      </Modal>
 
       <Modal
         visible={createSharedVisible}
@@ -1117,6 +1500,160 @@ const styles = StyleSheet.create({
   createSubmitText: {
     color: "#FFFFFF",
     fontSize: 16,
+  },
+  scheduleScreen: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: Spacing.three,
+  },
+  scheduleHeader: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  scheduleBackButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scheduleBackIcon: {
+    color: "#111113",
+    fontSize: 32,
+  },
+  scheduleTitle: {
+    color: "#111113",
+    fontSize: 28,
+    fontWeight: "900",
+  },
+  scheduleCalendarCard: {
+    width: 96,
+    alignSelf: "center",
+    marginTop: Spacing.four,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#F4F4F5",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  scheduleCalendarMonth: {
+    textAlign: "center",
+    color: "#FFFFFF",
+    backgroundColor: "#09090B",
+    paddingVertical: 8,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  scheduleCalendarDay: {
+    textAlign: "center",
+    color: "#09090B",
+    paddingVertical: 18,
+    fontSize: 42,
+    fontWeight: "900",
+  },
+  scheduleIntro: {
+    marginTop: Spacing.four,
+    alignItems: "center",
+    gap: Spacing.one,
+  },
+  scheduleQuestion: {
+    color: "#09090B",
+    textAlign: "center",
+    fontSize: 30,
+    fontWeight: "900",
+  },
+  scheduleHint: {
+    color: "#9CA3AF",
+    textAlign: "center",
+  },
+  schedulePickerPanel: {
+    marginTop: "auto",
+    minHeight: 190,
+    borderRadius: 42,
+    backgroundColor: "#FFF7ED",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    gap: Spacing.two,
+  },
+  scheduleDateColumn: {
+    flex: 1.45,
+    maxHeight: 180,
+  },
+  scheduleTimeColumn: {
+    flex: 0.65,
+    maxHeight: 180,
+  },
+  schedulePickerRow: {
+    minHeight: 54,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.two,
+  },
+  schedulePickerRowActive: {
+    backgroundColor: "#FED7AA",
+  },
+  schedulePickerDateText: {
+    color: "#3F3F46",
+    fontSize: 17,
+  },
+  schedulePickerTextActive: {
+    color: "#C2410C",
+  },
+  scheduleTimeCell: {
+    minHeight: 54,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scheduleTimeCellActive: {
+    backgroundColor: "#FED7AA",
+  },
+  scheduleTimeText: {
+    color: "#3F3F46",
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  scheduleColon: {
+    color: BRAND,
+    fontSize: 26,
+    fontWeight: "900",
+  },
+  scheduleResultCard: {
+    marginTop: Spacing.four,
+    borderRadius: 24,
+    backgroundColor: "#F4F4F5",
+    padding: Spacing.four,
+    gap: Spacing.two,
+  },
+  scheduleResultTitle: {
+    color: "#09090B",
+    textAlign: "center",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  scheduleArrivalText: {
+    color: "#111113",
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  scheduleConfirmButton: {
+    minHeight: 60,
+    borderRadius: 18,
+    marginTop: "auto",
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scheduleConfirmText: {
+    color: "#FFFFFF",
+    fontSize: 20,
   },
   dotsRow: {
     flexDirection: "row",
