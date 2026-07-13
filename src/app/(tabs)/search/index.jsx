@@ -766,7 +766,7 @@ export default function SearchScreen() {
 
                 <Pressable
                   style={styles.detailsButton}
-                  onPress={() => router.push(`/shared-ride/${ride.id}`)}
+                  onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
                 >
                   <ThemedText type="smallBold" style={styles.detailsButtonText}>
                     Xem chi tiết

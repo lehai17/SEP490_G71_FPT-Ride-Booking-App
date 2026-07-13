@@ -10,7 +10,6 @@ export default function RootLayout() {
       <AnimatedSplashOverlay />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="shared-ride/[id]" />
       </Stack>
     </ThemeProvider>
   );
