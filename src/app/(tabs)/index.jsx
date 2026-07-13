@@ -247,7 +247,7 @@ export default function HomeScreen() {
                 styles.joinButton,
                 pressed && styles.pressedButton,
               ]}
-              onPress={() => router.push(`/shared-ride/${ride.id}`)}
+              onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
             >
               <ThemedText type="smallBold" style={styles.joinButtonText}>
                 Xem chi tiết
