@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
   Modal,
@@ -224,6 +225,7 @@ function getScheduledTripView(item) {
 
 export default function TripsScreen() {
   const theme = useTheme();
+  const params = useLocalSearchParams();
   const safeAreaInsets = useSafeAreaInsets();
   const [selectedTab, setSelectedTab] = useState("active");
   const [tripsBySection, setTripsBySection] = useState(tripSections);
@@ -257,6 +259,7 @@ export default function TripsScreen() {
   const [reportsByTripId, setReportsByTripId] = useState({});
 
   const items = tripsBySection[selectedTab] ?? [];
+  const hasActiveRide = params.activeRide === "1";
   const scheduleDateOptions = createDateOptions();
   const selectedDateOption =
     scheduleDateOptions.find((option) => option.value === editDraft.date) ??
@@ -476,57 +479,75 @@ export default function TripsScreen() {
 
           {selectedTab === "active" ? (
             <View style={styles.activeJourney}>
-              <ThemedText type="default" style={styles.activeJourneyTitle}>
-                Hành trình của bạn
-              </ThemedText>
+              {hasActiveRide ? (
+                <>
+                  <ThemedText type="default" style={styles.activeJourneyTitle}>
+                    Hành trình của bạn
+                  </ThemedText>
 
-              <View style={styles.activeEtaCard}>
-                <ThemedText type="small" style={styles.activeEtaStatus}>
-                  🛵 Tài xế đang đến...
-                </ThemedText>
-                <ThemedText type="default" style={styles.activeEtaNumber}>
-                  1 phút
-                </ThemedText>
-                <ThemedText type="small" style={styles.activeEtaDistance}>
-                  Khoảng cách 1.2km
-                </ThemedText>
-              </View>
+                  <View style={styles.activeEtaCard}>
+                    <ThemedText type="small" style={styles.activeEtaStatus}>
+                      🛵 Tài xế đang đến...
+                    </ThemedText>
+                    <ThemedText type="default" style={styles.activeEtaNumber}>
+                      1 phút
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.activeEtaDistance}>
+                      Khoảng cách 1.2km
+                    </ThemedText>
+                  </View>
 
-              <View
-                style={[
-                  styles.activeDriverCard,
-                  { backgroundColor: theme.backgroundElement },
-                ]}
-              >
-                <View style={styles.activeDriverAvatar}>
-                  <ThemedText type="default">👨</ThemedText>
-                </View>
-                <View style={styles.activeDriverInfo}>
-                  <ThemedText type="default" style={styles.activeDriverName}>
-                    Nguyễn Văn Tài
-                  </ThemedText>
-                  <ThemedText type="small" style={styles.activeDriverPhone}>
-                    0901 234 567
-                  </ThemedText>
-                  <ThemedText type="small" style={styles.activeDriverMeta}>
-                    59-X1 234.56 · ⭐ 4.8
-                  </ThemedText>
-                </View>
-                <Pressable
-                  style={styles.activeMessageButton}
-                  onPress={() => setChatModalVisible(true)}
+                  <View
+                    style={[
+                      styles.activeDriverCard,
+                      { backgroundColor: theme.backgroundElement },
+                    ]}
+                  >
+                    <View style={styles.activeDriverAvatar}>
+                      <ThemedText type="default">👨</ThemedText>
+                    </View>
+                    <View style={styles.activeDriverInfo}>
+                      <ThemedText type="default" style={styles.activeDriverName}>
+                        Nguyễn Văn Tài
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.activeDriverPhone}>
+                        0901 234 567
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.activeDriverMeta}>
+                        59-X1 234.56 · ⭐ 4.8
+                      </ThemedText>
+                    </View>
+                    <Pressable
+                      style={styles.activeMessageButton}
+                      onPress={() => setChatModalVisible(true)}
+                    >
+                      <ThemedText type="default" style={styles.activeMessageIcon}>
+                        💬
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.activePaymentCard}>
+                    <ThemedText type="small" style={styles.activePaymentText}>
+                      💵 Trả tiền mặt: 25.000đ
+                    </ThemedText>
+                  </View>
+                </>
+              ) : (
+                <View
+                  style={[
+                    styles.emptyActiveCard,
+                    { backgroundColor: theme.backgroundElement },
+                  ]}
                 >
-                  <ThemedText type="default" style={styles.activeMessageIcon}>
-                    💬
+                  <ThemedText type="default" style={styles.emptyActiveTitle}>
+                    Chưa có chuyến xe được đặt hiện tại
                   </ThemedText>
-                </Pressable>
-              </View>
-
-              <View style={styles.activePaymentCard}>
-                <ThemedText type="small" style={styles.activePaymentText}>
-                  💵 Trả tiền mặt: 25.000đ
-                </ThemedText>
-              </View>
+                  <ThemedText type="small" style={styles.emptyActiveText}>
+                    Khi bạn đặt xe thành công, thông tin chuyến đang đi sẽ hiển thị ở đây.
+                  </ThemedText>
+                </View>
+              )}
             </View>
           ) : selectedTab === "scheduled" ? (
             <View style={styles.scheduledCards}>
@@ -1336,6 +1357,26 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 20,
     fontWeight: "800",
+  },
+  emptyActiveCard: {
+    minHeight: 170,
+    borderRadius: 18,
+    padding: Spacing.four,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.two,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  emptyActiveTitle: {
+    color: "#111827",
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  emptyActiveText: {
+    color: "#6B7280",
+    textAlign: "center",
   },
   activeEtaCard: {
     minHeight: 118,
