@@ -564,7 +564,10 @@ export default function SearchScreen() {
               })}
             </View>
 
-            <Pressable style={styles.bookButton}>
+            <Pressable
+              style={styles.bookButton}
+              onPress={() => router.push("/trips?activeRide=1")}
+            >
               <ThemedText type="smallBold" style={styles.bookButtonText}>
                 Đặt xe
               </ThemedText>
