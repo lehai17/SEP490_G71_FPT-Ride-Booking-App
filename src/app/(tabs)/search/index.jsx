@@ -83,6 +83,21 @@ const defaultSharedForm = {
   note: "",
 };
 
+const defaultAddressForm = {
+  label: "",
+};
+
+const initialSavedAddresses = [
+  {
+    id: "saved-from",
+    label: "Đại học FPT, Thạch Hòa",
+  },
+  {
+    id: "saved-to",
+    label: "Bến xe Mỹ Đình",
+  },
+];
+
 const MAX_SCHEDULE_DAYS = 7;
 const MIN_PICKUP_BUFFER_MINUTES = 30;
 const MINUTE_STEP = 5;
@@ -255,11 +270,12 @@ export default function SearchScreen() {
   const [sharedForm, setSharedForm] = useState(defaultSharedForm);
   const [openSharedDropdown, setOpenSharedDropdown] = useState("");
   const [sharedFormError, setSharedFormError] = useState("");
-
-  const savedAddresses = [
-    { id: "saved-from", label: "Đại học FPT, Thạch Hòa", target: "from" },
-    { id: "saved-to", label: "Bến xe Mỹ Đình", target: "to" },
-  ];
+  const [savedAddresses, setSavedAddresses] = useState(initialSavedAddresses);
+  const [addressModalVisible, setAddressModalVisible] = useState(false);
+  const [addressForm, setAddressForm] = useState(defaultAddressForm);
+  const [editingAddressId, setEditingAddressId] = useState("");
+  const [addressFormError, setAddressFormError] = useState("");
+  const [openAddressMenuId, setOpenAddressMenuId] = useState("");
 
   const selectSingleRide = () => {
     setMode("now");
@@ -389,6 +405,77 @@ export default function SearchScreen() {
     ]);
     setSharedForm(defaultSharedForm);
     closeCreateSharedModal();
+  };
+
+  const fillAddressToFocusedField = (address) => {
+    if (focusedField === "from") {
+      setFrom(address.label);
+    } else {
+      setTo(address.label);
+    }
+
+    setAlertMessage("");
+    setOpenAddressMenuId("");
+  };
+
+  const openCreateAddressModal = () => {
+    setAddressForm(defaultAddressForm);
+    setEditingAddressId("");
+    setAddressFormError("");
+    setOpenAddressMenuId("");
+    setAddressModalVisible(true);
+  };
+
+  const openEditAddressModal = (address) => {
+    setAddressForm({
+      label: address.label,
+    });
+    setEditingAddressId(address.id);
+    setAddressFormError("");
+    setOpenAddressMenuId("");
+    setAddressModalVisible(true);
+  };
+
+  const closeAddressModal = () => {
+    setAddressModalVisible(false);
+    setAddressFormError("");
+    setOpenAddressMenuId("");
+  };
+
+  const updateAddressForm = (field, value) => {
+    setAddressForm((current) => ({ ...current, [field]: value }));
+    setAddressFormError("");
+  };
+
+  const saveAddress = () => {
+    if (!addressForm.label.trim()) {
+      setAddressFormError("Vui lòng nhập tên địa chỉ");
+      return;
+    }
+
+    const nextAddress = {
+      id: editingAddressId || `saved-${Date.now()}`,
+      label: addressForm.label.trim(),
+    };
+
+    setSavedAddresses((current) => {
+      if (!editingAddressId) {
+        return [nextAddress, ...current];
+      }
+
+      return current.map((address) =>
+        address.id === editingAddressId ? nextAddress : address
+      );
+    });
+    setAddressForm(defaultAddressForm);
+    closeAddressModal();
+  };
+
+  const deleteAddress = (addressId) => {
+    setSavedAddresses((current) =>
+      current.filter((address) => address.id !== addressId)
+    );
+    setOpenAddressMenuId("");
   };
 
   return (
@@ -671,36 +758,67 @@ export default function SearchScreen() {
             />
 
             <View style={styles.savedList}>
-              <ThemedText type="smallBold">Địa chỉ đã lưu</ThemedText>
-              {savedAddresses.map((item) => (
-                <Pressable
-                  key={item.id}
-                  style={({ pressed }) => [
-                    styles.savedItem,
-                    pressed && styles.savedItemPressed,
-                  ]}
-                  onPress={() => {
-                    if (item.target === "from") {
-                      setFrom(item.label);
-                      setFocusedField("from");
-                      setAlertMessage("");
-                      return;
-                    }
-
-                    setTo(item.label);
-                    setFocusedField("to");
-                    setAlertMessage("");
-                  }}
-                >
-                  <ThemedText
-                    style={[
-                      styles.savedItemText,
-                      focusedField === item.target && styles.savedItemTextActive,
-                    ]}
-                  >
-                    {item.label}
+              <View style={styles.savedHeader}>
+                <ThemedText type="smallBold">Địa chỉ đã lưu</ThemedText>
+                <Pressable onPress={openCreateAddressModal}>
+                  <ThemedText type="smallBold" style={styles.saveAddressButtonText}>
+                    + Lưu địa chỉ
                   </ThemedText>
                 </Pressable>
+              </View>
+              {savedAddresses.map((item) => (
+                <View key={item.id} style={styles.savedItemRowWrap}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.savedItem,
+                      pressed && styles.savedItemPressed,
+                    ]}
+                    onPress={() => fillAddressToFocusedField(item)}
+                  >
+                    <ThemedText
+                      style={[
+                        styles.savedItemText,
+                        (from === item.label || to === item.label) &&
+                          styles.savedItemTextActive,
+                      ]}
+                    >
+                      {item.label}
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    style={styles.savedMoreButton}
+                    onPress={() =>
+                      setOpenAddressMenuId((current) =>
+                        current === item.id ? "" : item.id
+                      )
+                    }
+                  >
+                    <ThemedText type="smallBold" style={styles.savedMoreText}>
+                      ⋯
+                    </ThemedText>
+                  </Pressable>
+
+                  {openAddressMenuId === item.id && (
+                    <View style={styles.savedMiniMenu}>
+                      <Pressable
+                        style={styles.savedMiniAction}
+                        onPress={() => openEditAddressModal(item)}
+                      >
+                        <ThemedText type="smallBold" style={styles.savedEditText}>
+                          Sửa
+                        </ThemedText>
+                      </Pressable>
+                      <Pressable
+                        style={styles.savedMiniAction}
+                        onPress={() => deleteAddress(item.id)}
+                      >
+                        <ThemedText type="smallBold" style={styles.savedDeleteText}>
+                          Xóa
+                        </ThemedText>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
               ))}
             </View>
 
@@ -781,6 +899,69 @@ export default function SearchScreen() {
         )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={addressModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAddressModal}
+      >
+        <View style={styles.addressOverlay}>
+          <View
+            style={[
+              styles.addressCard,
+              { backgroundColor: theme.backgroundElement },
+            ]}
+          >
+            <View style={styles.addressHeader}>
+              <ThemedText type="default" style={styles.addressTitle}>
+                {editingAddressId ? "Sửa địa chỉ" : "Lưu địa chỉ"}
+              </ThemedText>
+              <Pressable style={styles.addressCloseButton} onPress={closeAddressModal}>
+                <ThemedText type="default" style={styles.addressCloseText}>
+                  ×
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            <View style={styles.addressField}>
+              <ThemedText type="smallBold" style={styles.addressLabel}>
+                Tên địa chỉ
+              </ThemedText>
+              <TextInput
+                placeholder="VD: Đại học FPT, Bến xe Mỹ Đình..."
+                placeholderTextColor="#9CA3AF"
+                style={[
+                  styles.addressInput,
+                  { color: theme.text, backgroundColor: theme.background },
+                ]}
+                value={addressForm.label}
+                onChangeText={(value) => updateAddressForm("label", value)}
+              />
+            </View>
+
+            {Boolean(addressFormError) && (
+              <ThemedText type="smallBold" style={styles.addressError}>
+                {addressFormError}
+              </ThemedText>
+            )}
+
+            <View style={styles.addressButtonRow}>
+              <Pressable
+                style={[styles.addressSecondaryButton, { backgroundColor: theme.background }]}
+                onPress={closeAddressModal}
+              >
+                <ThemedText type="smallBold">Hủy</ThemedText>
+              </Pressable>
+              <Pressable style={styles.addressPrimaryButton} onPress={saveAddress}>
+                <ThemedText type="smallBold" style={styles.addressPrimaryText}>
+                  Lưu địa chỉ
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={schedulePickerVisible}
@@ -1318,11 +1499,27 @@ const styles = StyleSheet.create({
     marginTop: Spacing.one,
     gap: Spacing.one,
   },
-  savedItem: {
-    paddingVertical: 10,
+  savedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  saveAddressButtonText: {
+    color: BRAND,
+  },
+  savedItemRowWrap: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
   },
   savedItemPressed: {
     opacity: 0.75,
+  },
+  savedItem: {
+    flex: 1,
+    paddingVertical: 10,
   },
   savedItemText: {
     color: "#111827",
@@ -1330,6 +1527,44 @@ const styles = StyleSheet.create({
   savedItemTextActive: {
     color: BRAND,
     fontWeight: "700",
+  },
+  savedMoreButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  savedMoreText: {
+    color: "#9CA3AF",
+    fontSize: 18,
+  },
+  savedMiniMenu: {
+    position: "absolute",
+    right: 0,
+    top: 34,
+    zIndex: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+    overflow: "hidden",
+  },
+  savedMiniAction: {
+    minWidth: 80,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  savedEditText: {
+    color: BRAND,
+  },
+  savedDeleteText: {
+    color: "#DC2626",
   },
   alertOverlay: {
     flex: 1,
@@ -1378,6 +1613,84 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND,
   },
   alertButtonText: {
+    color: "#FFFFFF",
+  },
+  addressOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.45)",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.three,
+  },
+  addressCard: {
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+    borderRadius: 22,
+    padding: Spacing.three,
+    gap: Spacing.three,
+  },
+  addressHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  addressTitle: {
+    color: "#111827",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  addressCloseButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  addressCloseText: {
+    color: "#6B7280",
+    fontSize: 28,
+    lineHeight: 30,
+  },
+  addressField: {
+    gap: Spacing.one,
+  },
+  addressLabel: {
+    color: "#374151",
+  },
+  addressInput: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: Spacing.three,
+  },
+  addressError: {
+    color: "#DC2626",
+  },
+  addressButtonRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  addressSecondaryButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addressPrimaryButton: {
+    flex: 1.4,
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addressPrimaryText: {
     color: "#FFFFFF",
   },
   createSharedOverlay: {
