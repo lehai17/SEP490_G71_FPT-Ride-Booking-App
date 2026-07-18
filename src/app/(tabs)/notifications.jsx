@@ -15,21 +15,7 @@ import { useTheme } from "@/hooks/use-theme";
 export default function NotificationsScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
-
-  const items = [
-    {
-      id: "1",
-      title: "Tài xế đã đến",
-      body: "Tài xế Minh đã đến đón bạn tại Cổng chính",
-      date: "1 giờ trước",
-    },
-    {
-      id: "2",
-      title: "Khuyến mãi",
-      body: "Giảm 20% cho hành khách FPTU hôm nay",
-      date: "Hôm qua",
-    },
-  ];
+  const items = [];
 
   return (
     <ThemedView
@@ -37,15 +23,26 @@ export default function NotificationsScreen() {
     >
       <View style={styles.content}>
         <ThemedText type="default" style={styles.screenTitle}>
-          Thông báo
+          Thong bao
         </ThemedText>
         <FlatList
           data={items}
-          keyExtractor={(i) => i.id}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={{
+            flexGrow: 1,
             paddingTop: Spacing.two,
             paddingBottom: safeAreaInsets.bottom + BottomTabInset + Spacing.four,
           }}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <ThemedText type="smallBold" style={styles.emptyTitle}>
+                Chua co thong bao
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Cac cap nhat ve chuyen di se xuat hien tai day.
+              </ThemedText>
+            </View>
+          }
           renderItem={({ item }) => (
             <View style={styles.item}>
               <View style={styles.dot} />
@@ -79,6 +76,19 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     ...ScreenTitleStyle,
+  },
+  emptyState: {
+    borderRadius: 12,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#D8DDE6",
+    backgroundColor: "#FFFFFF",
+    gap: Spacing.one,
+  },
+  emptyTitle: {
+    color: "#374151",
   },
   item: {
     flexDirection: "row",

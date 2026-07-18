@@ -10,11 +10,7 @@ import {
   MaxContentWidth,
   Spacing,
 } from "@/constants/theme";
-import {
-  recentTrips,
-  rideGroups,
-  scheduledTrips,
-} from "@/constants/ride-data";
+import { useAuth } from "@/contexts/auth-context";
 import { useTheme } from "@/hooks/use-theme";
 
 const BRAND = "#FF7A00";
@@ -22,11 +18,33 @@ const BRAND_DARK = "#F56A00";
 const CARD_BORDER = "#F2F2F2";
 const SOFT_TEXT = "#8A8F98";
 
+function EmptyState({ title, description }) {
+  return (
+    <ThemedView style={styles.emptyCard}>
+      <ThemedText type="smallBold" style={styles.emptyTitle}>
+        {title}
+      </ThemedText>
+      <ThemedText type="small" style={styles.emptyDescription}>
+        {description}
+      </ThemedText>
+    </ThemedView>
+  );
+}
+
 export default function HomeScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
   const router = useRouter();
+  const { session, isAuthenticated } = useAuth();
   const [selectedMode, setSelectedMode] = useState("now");
+
+  const displayName = session?.fullName ?? "Ban";
+  const displayInitial = displayName.charAt(0)?.toUpperCase() ?? "B";
+  const displayRole = session?.role ?? "Khach";
+
+  const visibleRecentTrips = [];
+  const visibleScheduledTrips = [];
+  const visibleRideGroups = [];
 
   return (
     <ScrollView
@@ -41,40 +59,64 @@ export default function HomeScreen() {
       <View style={styles.wrapper}>
         <View style={styles.heroCard}>
           <ThemedText type="smallBold" style={styles.heroEyebrow}>
-            CHÀO MỪNG SINH VIÊN FPTU
+            CHAO MUNG SINH VIEN FPTU
           </ThemedText>
 
           <View style={styles.heroContent}>
             <View style={styles.avatar}>
               <ThemedText type="smallBold" style={styles.avatarText}>
-                L
+                {displayInitial}
               </ThemedText>
             </View>
 
             <View style={styles.heroText}>
               <ThemedText type="default" style={styles.heroName}>
-                Lê Nguyễn Đại Hải
+                {displayName}
               </ThemedText>
               <ThemedText type="small" style={styles.heroMeta}>
-                HE182237 · Hola Goer
+                {isAuthenticated
+                  ? `${displayRole} - Ride Booker`
+                  : "Hay dang nhap de dong bo tai khoan"}
               </ThemedText>
             </View>
 
             <View style={styles.statusBadge}>
               <ThemedText type="smallBold" style={styles.statusText}>
-                ONLINE
+                {isAuthenticated ? "ONLINE" : "GUEST"}
               </ThemedText>
             </View>
           </View>
-        </View>
 
-        <View style={styles.weatherBlock}>
-          <ThemedText type="small" style={styles.weatherLine}>
-            🌤️ 32°C · Nắng nhẹ
-          </ThemedText>
-          <ThemedText type="small" style={styles.locationLine}>
-            ⊙ Thạch Thất, Hà Nội
-          </ThemedText>
+          {!isAuthenticated ? (
+            <View style={styles.authActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.authButton,
+                  pressed && styles.pressedButton,
+                ]}
+                onPress={() => router.push("/profile")}
+              >
+                <ThemedText type="smallBold" style={styles.authButtonText}>
+                  Dang nhap
+                </ThemedText>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.authButtonSecondary,
+                  pressed && styles.pressedButton,
+                ]}
+                onPress={() => router.push("/profile")}
+              >
+                <ThemedText
+                  type="smallBold"
+                  style={styles.authButtonSecondaryText}
+                >
+                  Dang ky
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
 
         <ThemedView
@@ -84,7 +126,7 @@ export default function HomeScreen() {
           ]}
         >
           <ThemedText type="default" style={styles.primaryTitle}>
-            Bạn muốn di chuyển thế nào?
+            Ban muon di chuyen the nao?
           </ThemedText>
 
           <View style={styles.toggleRow}>
@@ -106,7 +148,7 @@ export default function HomeScreen() {
                   selectedMode === "now" && styles.modeTextActive,
                 ]}
               >
-                🛵 Xe lẻ
+                Xe le
               </ThemedText>
             </Pressable>
 
@@ -128,7 +170,7 @@ export default function HomeScreen() {
                   selectedMode === "shared" && styles.modeTextActive,
                 ]}
               >
-                🚗 Xe ghép
+                Xe ghep
               </ThemedText>
             </Pressable>
           </View>
@@ -136,125 +178,163 @@ export default function HomeScreen() {
 
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
-            Chuyến gần đây
+            Chuyen gan day
           </ThemedText>
         </View>
 
-        {recentTrips.map((trip) => (
-          <ThemedView
-            key={trip.route}
-            style={[styles.recentCard, { backgroundColor: theme.backgroundElement }]}
-          >
-            <View style={styles.recentIconWrap}>
-              <ThemedText type="smallBold">{trip.icon}</ThemedText>
-            </View>
-            <View style={styles.recentContent}>
-              <ThemedText type="smallBold" style={styles.recentRoute}>
-                {trip.route}
-              </ThemedText>
-              <ThemedText type="small" style={styles.mutedText}>
-                {trip.meta}
-              </ThemedText>
-            </View>
-          </ThemedView>
-        ))}
+        {visibleRecentTrips.length > 0 ? (
+          visibleRecentTrips.map((trip) => (
+            <ThemedView
+              key={trip.route}
+              style={[
+                styles.recentCard,
+                { backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <View style={styles.recentIconWrap}>
+                <ThemedText type="smallBold">{trip.icon}</ThemedText>
+              </View>
+              <View style={styles.recentContent}>
+                <ThemedText type="smallBold" style={styles.recentRoute}>
+                  {trip.route}
+                </ThemedText>
+                <ThemedText type="small" style={styles.mutedText}>
+                  {trip.meta}
+                </ThemedText>
+              </View>
+            </ThemedView>
+          ))
+        ) : (
+          <EmptyState
+            title="Chua co chuyen gan day"
+            description={
+              isAuthenticated
+                ? "Khi ban hoan thanh chuyen dau tien, lich su se hien o day."
+                : "Dang nhap de xem lich su di chuyen cua ban."
+            }
+          />
+        )}
 
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
-            Chuyến đã đặt trước
+            Chuyen da dat truoc
           </ThemedText>
         </View>
 
-        {scheduledTrips.map((trip) => (
-          <ThemedView
-            key={trip.id}
-            style={[styles.scheduledCard, { backgroundColor: theme.backgroundElement }]}
-          >
-            <View style={styles.scheduledTopRow}>
-              <View style={styles.waitingBadge}>
-                <ThemedText type="smallBold" style={styles.waitingText}>
-                  ⏰ {trip.status}
+        {visibleScheduledTrips.length > 0 ? (
+          visibleScheduledTrips.map((trip) => (
+            <ThemedView
+              key={trip.id}
+              style={[
+                styles.scheduledCard,
+                { backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <View style={styles.scheduledTopRow}>
+                <View style={styles.waitingBadge}>
+                  <ThemedText type="smallBold" style={styles.waitingText}>
+                    {trip.status}
+                  </ThemedText>
+                </View>
+                <ThemedText type="default" style={styles.scheduledPrice}>
+                  {trip.price}
                 </ThemedText>
               </View>
-              <ThemedText type="default" style={styles.scheduledPrice}>
-                {trip.price}
-              </ThemedText>
-            </View>
 
-            <View style={styles.scheduledBody}>
-              <ThemedText type="default" style={styles.scheduledFrom}>
-                {trip.from}
-              </ThemedText>
-              <ThemedText type="small" style={styles.mutedText}>
-                📍 {trip.to}
-              </ThemedText>
-              <View style={styles.scheduledBottomRow}>
-                <ThemedText type="small" style={styles.mutedText}>
-                  🚗 {trip.vehicle}
+              <View style={styles.scheduledBody}>
+                <ThemedText type="default" style={styles.scheduledFrom}>
+                  {trip.from}
                 </ThemedText>
                 <ThemedText type="small" style={styles.mutedText}>
-                  {trip.time}
+                  {trip.to}
                 </ThemedText>
+                <View style={styles.scheduledBottomRow}>
+                  <ThemedText type="small" style={styles.mutedText}>
+                    {trip.vehicle}
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.mutedText}>
+                    {trip.time}
+                  </ThemedText>
+                </View>
               </View>
-            </View>
-          </ThemedView>
-        ))}
+            </ThemedView>
+          ))
+        ) : (
+          <EmptyState
+            title="Chua co chuyen dat truoc"
+            description={
+              isAuthenticated
+                ? "Nhung chuyen ban dat truoc se duoc cap nhat tai day."
+                : "Dang nhap hoac dang ky de dat va quan ly chuyen di."
+            }
+          />
+        )}
 
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
-            Nhóm xe ghép sẵn có
+            Nhom xe ghep san co
           </ThemedText>
           <ThemedText type="small" style={styles.mutedText}>
-            Chọn chuyến và tham gia cùng bạn bè FPTU
+            Chon chuyen va tham gia cung ban be FPTU
           </ThemedText>
         </View>
 
-        {rideGroups.map((ride) => (
-          <ThemedView
-            key={ride.id}
-            style={[styles.rideCard, { backgroundColor: theme.backgroundElement }]}
-          >
-            <View style={styles.rideTitleRow}>
-              <ThemedText type="smallBold" style={styles.vehiclePill}>
-                🚙 {ride.vehicle.toUpperCase()}
-              </ThemedText>
-              <ThemedText type="default" style={styles.ridePrice}>
-                {ride.price}
-              </ThemedText>
-            </View>
-
-            <View style={styles.rideRouteRow}>
-              <ThemedText type="default" style={styles.rideRoute}>
-                {ride.route}
-              </ThemedText>
-            </View>
-
-            <View style={styles.rideDriverRow}>
-              <ThemedText type="small" style={styles.mutedText}>
-                👤 {ride.driver}
-              </ThemedText>
-              <ThemedText type="small" style={styles.mutedText}>
-                {ride.seats}
-              </ThemedText>
-            </View>
-
-            <ThemedText type="small" style={styles.noteText}>
-              {`"${ride.note}"`}
-            </ThemedText>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.joinButton,
-                pressed && styles.pressedButton,
+        {visibleRideGroups.length > 0 ? (
+          visibleRideGroups.map((ride) => (
+            <ThemedView
+              key={ride.id}
+              style={[
+                styles.rideCard,
+                { backgroundColor: theme.backgroundElement },
               ]}
-              onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
             >
-              <ThemedText type="smallBold" style={styles.joinButtonText}>
-                Xem chi tiết
+              <View style={styles.rideTitleRow}>
+                <ThemedText type="smallBold" style={styles.vehiclePill}>
+                  {ride.vehicle.toUpperCase()}
+                </ThemedText>
+                <ThemedText type="default" style={styles.ridePrice}>
+                  {ride.price}
+                </ThemedText>
+              </View>
+
+              <View style={styles.rideRouteRow}>
+                <ThemedText type="default" style={styles.rideRoute}>
+                  {ride.route}
+                </ThemedText>
+              </View>
+
+              <View style={styles.rideDriverRow}>
+                <ThemedText type="small" style={styles.mutedText}>
+                  {ride.driver}
+                </ThemedText>
+                <ThemedText type="small" style={styles.mutedText}>
+                  {ride.seats}
+                </ThemedText>
+              </View>
+
+              <ThemedText type="small" style={styles.noteText}>
+                {`"${ride.note}"`}
               </ThemedText>
-            </Pressable>
-          </ThemedView>
-        ))}
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.joinButton,
+                  pressed && styles.pressedButton,
+                ]}
+                onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
+              >
+                <ThemedText type="smallBold" style={styles.joinButtonText}>
+                  Xem chi tiet
+                </ThemedText>
+              </Pressable>
+            </ThemedView>
+          ))
+        ) : (
+          <EmptyState
+            title="Chua co nhom xe ghep"
+            description="Khi co nhom xe ghep phu hop, danh sach se hien tai day."
+          />
+        )}
       </View>
     </ScrollView>
   );
@@ -317,16 +397,32 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 11,
   },
-  weatherBlock: {
-    paddingHorizontal: 4,
-    gap: 4,
-    marginBottom: 4,
+  authActions: {
+    flexDirection: "row",
+    gap: 10,
   },
-  weatherLine: {
-    color: "#4B5563",
+  authButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  locationLine: {
-    color: SOFT_TEXT,
+  authButtonText: {
+    color: BRAND_DARK,
+  },
+  authButtonSecondary: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  authButtonSecondaryText: {
+    color: "#FFFFFF",
   },
   primaryCard: {
     borderRadius: 16,
@@ -372,6 +468,22 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#1F2937",
+  },
+  emptyCard: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#D8DDE6",
+    backgroundColor: "#FFFFFF",
+    gap: 4,
+  },
+  emptyTitle: {
+    color: "#374151",
+  },
+  emptyDescription: {
+    color: SOFT_TEXT,
   },
   recentCard: {
     minHeight: 50,
