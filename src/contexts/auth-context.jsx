@@ -83,7 +83,7 @@ export function AuthProvider({ children }) {
 
   async function saveProfile(profilePayload) {
     if (!session?.accessToken || !session?.userId) {
-      throw new Error("Ban can dang nhap truoc.");
+      throw new Error("Bạn cần đăng nhập trước.");
     }
 
     setIsSubmitting(true);

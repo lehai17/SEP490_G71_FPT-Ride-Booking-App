@@ -23,7 +23,7 @@ export default function NotificationsScreen() {
     >
       <View style={styles.content}>
         <ThemedText type="default" style={styles.screenTitle}>
-          Thong bao
+          Thông báo
         </ThemedText>
         <FlatList
           data={items}
@@ -36,10 +36,10 @@ export default function NotificationsScreen() {
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <ThemedText type="smallBold" style={styles.emptyTitle}>
-                Chua co thong bao
+                Chưa có thông báo
               </ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                Cac cap nhat ve chuyen di se xuat hien tai day.
+                Các cập nhật về chuyến đi sẽ xuất hiện tại đây.
               </ThemedText>
             </View>
           }
