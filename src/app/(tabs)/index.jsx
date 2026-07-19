@@ -18,6 +18,10 @@ const BRAND_DARK = "#F56A00";
 const CARD_BORDER = "#F2F2F2";
 const SOFT_TEXT = "#8A8F98";
 
+function getDisplayRole(role) {
+  return role === "Customer" ? "Khách hàng" : role;
+}
+
 function EmptyState({ title, description }) {
   return (
     <ThemedView style={styles.emptyCard}>
@@ -38,9 +42,9 @@ export default function HomeScreen() {
   const { session, isAuthenticated } = useAuth();
   const [selectedMode, setSelectedMode] = useState("now");
 
-  const displayName = session?.fullName ?? "Ban";
+  const displayName = session?.fullName ?? "Bạn";
   const displayInitial = displayName.charAt(0)?.toUpperCase() ?? "B";
-  const displayRole = session?.role ?? "Khach";
+  const displayRole = getDisplayRole(session?.role) ?? "Khách";
 
   const visibleRecentTrips = [];
   const visibleScheduledTrips = [];
@@ -59,7 +63,7 @@ export default function HomeScreen() {
       <View style={styles.wrapper}>
         <View style={styles.heroCard}>
           <ThemedText type="smallBold" style={styles.heroEyebrow}>
-            CHAO MUNG SINH VIEN FPTU
+            CHÀO MỪNG SINH VIÊN FPTU
           </ThemedText>
 
           <View style={styles.heroContent}>
@@ -75,14 +79,14 @@ export default function HomeScreen() {
               </ThemedText>
               <ThemedText type="small" style={styles.heroMeta}>
                 {isAuthenticated
-                  ? `${displayRole} - Ride Booker`
-                  : "Hay dang nhap de dong bo tai khoan"}
+                  ? `${displayRole} - Người đặt xe`
+                  : "Hãy đăng nhập để đồng bộ tài khoản"}
               </ThemedText>
             </View>
 
             <View style={styles.statusBadge}>
               <ThemedText type="smallBold" style={styles.statusText}>
-                {isAuthenticated ? "ONLINE" : "GUEST"}
+                {isAuthenticated ? "ĐÃ ĐĂNG NHẬP" : "KHÁCH"}
               </ThemedText>
             </View>
           </View>
@@ -97,7 +101,7 @@ export default function HomeScreen() {
                 onPress={() => router.push("/profile")}
               >
                 <ThemedText type="smallBold" style={styles.authButtonText}>
-                  Dang nhap
+                  Đăng nhập
                 </ThemedText>
               </Pressable>
 
@@ -112,7 +116,7 @@ export default function HomeScreen() {
                   type="smallBold"
                   style={styles.authButtonSecondaryText}
                 >
-                  Dang ky
+                  Đăng ký
                 </ThemedText>
               </Pressable>
             </View>
@@ -126,7 +130,7 @@ export default function HomeScreen() {
           ]}
         >
           <ThemedText type="default" style={styles.primaryTitle}>
-            Ban muon di chuyen the nao?
+            Bạn muốn di chuyển thế nào?
           </ThemedText>
 
           <View style={styles.toggleRow}>
@@ -148,7 +152,7 @@ export default function HomeScreen() {
                   selectedMode === "now" && styles.modeTextActive,
                 ]}
               >
-                Xe le
+                Xe lẻ
               </ThemedText>
             </Pressable>
 
@@ -170,7 +174,7 @@ export default function HomeScreen() {
                   selectedMode === "shared" && styles.modeTextActive,
                 ]}
               >
-                Xe ghep
+                Xe ghép
               </ThemedText>
             </Pressable>
           </View>
@@ -178,7 +182,7 @@ export default function HomeScreen() {
 
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
-            Chuyen gan day
+            Chuyến gần đây
           </ThemedText>
         </View>
 
@@ -206,18 +210,18 @@ export default function HomeScreen() {
           ))
         ) : (
           <EmptyState
-            title="Chua co chuyen gan day"
+            title="Chưa có chuyến gần đây"
             description={
               isAuthenticated
-                ? "Khi ban hoan thanh chuyen dau tien, lich su se hien o day."
-                : "Dang nhap de xem lich su di chuyen cua ban."
+                ? "Khi bạn hoàn thành chuyến đầu tiên, lịch sử sẽ hiện ở đây."
+                : "Đăng nhập để xem lịch sử di chuyển của bạn."
             }
           />
         )}
 
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
-            Chuyen da dat truoc
+            Chuyến đã đặt trước
           </ThemedText>
         </View>
 
@@ -261,21 +265,21 @@ export default function HomeScreen() {
           ))
         ) : (
           <EmptyState
-            title="Chua co chuyen dat truoc"
+            title="Chưa có chuyến đặt trước"
             description={
               isAuthenticated
-                ? "Nhung chuyen ban dat truoc se duoc cap nhat tai day."
-                : "Dang nhap hoac dang ky de dat va quan ly chuyen di."
+                ? "Những chuyến bạn đặt trước sẽ được cập nhật tại đây."
+                : "Đăng nhập hoặc đăng ký để đặt và quản lý chuyến đi."
             }
           />
         )}
 
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
-            Nhom xe ghep san co
+            Nhóm xe ghép sẵn có
           </ThemedText>
           <ThemedText type="small" style={styles.mutedText}>
-            Chon chuyen va tham gia cung ban be FPTU
+            Chọn chuyến và tham gia cùng bạn bè FPTU
           </ThemedText>
         </View>
 
@@ -324,15 +328,15 @@ export default function HomeScreen() {
                 onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
               >
                 <ThemedText type="smallBold" style={styles.joinButtonText}>
-                  Xem chi tiet
+                  Xem chi tiết
                 </ThemedText>
               </Pressable>
             </ThemedView>
           ))
         ) : (
           <EmptyState
-            title="Chua co nhom xe ghep"
-            description="Khi co nhom xe ghep phu hop, danh sach se hien tai day."
+            title="Chưa có nhóm xe ghép"
+            description="Khi có nhóm xe ghép phù hợp, danh sách sẽ hiện tại đây."
           />
         )}
       </View>

@@ -40,9 +40,13 @@ const EMPTY_REGISTER_FORM = {
   confirmPassword: "",
 };
 
+function getDisplayRole(role) {
+  return role === "Customer" ? "Khách hàng" : role;
+}
+
 function formatDate(value) {
   if (!value) {
-    return "Chua co";
+    return "Chưa có";
   }
 
   return new Date(value).toLocaleDateString("vi-VN");
@@ -80,7 +84,7 @@ export default function ProfileScreen() {
 
     const timeoutId = setTimeout(() => {
       setSuccessMessage("");
-    }, 5000);
+    }, 3000);
 
     return () => clearTimeout(timeoutId);
   }, [successMessage]);
@@ -92,7 +96,7 @@ export default function ProfileScreen() {
     try {
       await login(loginForm);
       setLoginForm(EMPTY_LOGIN_FORM);
-      setSuccessMessage("Dang nhap thanh cong.");
+      setSuccessMessage("Đăng nhập thành công.");
     } catch (error) {
       setErrorMessage(error.message);
     }
@@ -106,7 +110,7 @@ export default function ProfileScreen() {
       await register(registerForm);
       setRegisterForm(EMPTY_REGISTER_FORM);
       setLoginForm(EMPTY_LOGIN_FORM);
-      setSuccessMessage("Dang ky thanh cong va da dang nhap.");
+      setSuccessMessage("Đăng ký thành công và đã đăng nhập.");
     } catch (error) {
       setErrorMessage(error.message);
     }
@@ -119,7 +123,7 @@ export default function ProfileScreen() {
     try {
       await saveProfile(editForm);
       setEditVisible(false);
-      setSuccessMessage("Cap nhat ho so thanh cong.");
+      setSuccessMessage("Cập nhật hồ sơ thành công.");
     } catch (error) {
       setErrorMessage(error.message);
     }
@@ -127,7 +131,7 @@ export default function ProfileScreen() {
 
   function handleLogout() {
     logout();
-    setSuccessMessage("Da dang xuat.");
+    setSuccessMessage("Đã đăng xuất.");
     setErrorMessage("");
     setAuthMode("login");
   }
@@ -155,7 +159,7 @@ export default function ProfileScreen() {
       >
         <View style={[styles.wrapper, { maxWidth: MaxContentWidth }]}>
           <ThemedText type="default" style={styles.screenTitle}>
-            Tai khoan
+            Tài khoản
           </ThemedText>
 
           {errorMessage ? (
@@ -189,14 +193,14 @@ export default function ProfileScreen() {
                   <View style={styles.headerText}>
                     <ThemedText type="subtitle">{session.fullName}</ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">
-                      {session.role || "Customer"}
+                      {getDisplayRole(session.role) || "Khách hàng"}
                     </ThemedText>
                   </View>
                   <Pressable
                     style={styles.editButton}
                     onPress={openEditProfile}
                   >
-                    <ThemedText type="smallBold">Sua</ThemedText>
+                    <ThemedText type="smallBold">Sửa</ThemedText>
                   </Pressable>
                 </View>
               </ThemedView>
@@ -207,7 +211,7 @@ export default function ProfileScreen() {
                   { backgroundColor: theme.backgroundElement },
                 ]}
               >
-                <ThemedText type="smallBold">Thong tin lien he</ThemedText>
+                <ThemedText type="smallBold">Thông tin liên hệ</ThemedText>
                 <View style={styles.infoRow}>
                   <ThemedText type="small">Email</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
@@ -215,13 +219,13 @@ export default function ProfileScreen() {
                   </ThemedText>
                 </View>
                 <View style={styles.infoRow}>
-                  <ThemedText type="small">So dien thoai</ThemedText>
+                  <ThemedText type="small">Số điện thoại</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
-                    {session.phoneNumber || "Chua cap nhat"}
+                    {session.phoneNumber || "Chưa cập nhật"}
                   </ThemedText>
                 </View>
                 <View style={styles.infoRow}>
-                  <ThemedText type="small">Ngay tao</ThemedText>
+                  <ThemedText type="small">Ngày tạo</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     {formatDate(session.createdAt)}
                   </ThemedText>
@@ -235,17 +239,17 @@ export default function ProfileScreen() {
                 ]}
               >
                 <View style={styles.sectionHeader}>
-                  <ThemedText type="smallBold">Tai khoan cua ban</ThemedText>
+                  <ThemedText type="smallBold">Tài khoản của bạn</ThemedText>
                   {isRefreshingProfile ? (
                     <ActivityIndicator size="small" color={BRAND} />
                   ) : null}
                 </View>
                 <ThemedText type="small" themeColor="textSecondary">
-                  Quan ly thong tin ca nhan va phien dang nhap tren ung dung.
+                  Quản lý thông tin cá nhân và phiên đăng nhập trên ứng dụng.
                 </ThemedText>
                 <Pressable style={styles.logoutButton} onPress={handleLogout}>
                   <ThemedText type="smallBold" style={styles.logoutText}>
-                    Dang xuat
+                    Đăng xuất
                   </ThemedText>
                 </Pressable>
               </ThemedView>
@@ -257,9 +261,9 @@ export default function ProfileScreen() {
                 { backgroundColor: theme.backgroundElement },
               ]}
             >
-              <ThemedText type="subtitle">Dang nhap vao FPT Ride</ThemedText>
+              <ThemedText type="subtitle">Đăng nhập vào FPT Ride</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                Dat xe nhanh hon va theo doi cac chuyen di cua ban.
+                Đặt xe nhanh hơn và theo dõi các chuyến đi của bạn.
               </ThemedText>
 
               <View style={styles.segmentedRow}>
@@ -277,7 +281,7 @@ export default function ProfileScreen() {
                       authMode === "login" && styles.segmentLabelActive,
                     ]}
                   >
-                    Dang nhap
+                    Đăng nhập
                   </ThemedText>
                 </Pressable>
                 <Pressable
@@ -294,7 +298,7 @@ export default function ProfileScreen() {
                       authMode === "register" && styles.segmentLabelActive,
                     ]}
                   >
-                    Dang ky
+                    Đăng ký
                   </ThemedText>
                 </Pressable>
               </View>
@@ -317,7 +321,7 @@ export default function ProfileScreen() {
                     placeholderTextColor={theme.textSecondary}
                   />
 
-                  <ThemedText type="small">Mat khau</ThemedText>
+                  <ThemedText type="small">Mật khẩu</ThemedText>
                   <TextInput
                     style={[
                       styles.input,
@@ -331,7 +335,7 @@ export default function ProfileScreen() {
                       }))
                     }
                     secureTextEntry
-                    placeholder="Toi thieu 6 ky tu"
+                    placeholder="Tối thiểu 6 ký tự"
                     placeholderTextColor={theme.textSecondary}
                   />
 
@@ -341,13 +345,13 @@ export default function ProfileScreen() {
                     disabled={isSubmitting}
                   >
                     <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                      {isSubmitting ? "Dang dang nhap..." : "Dang nhap"}
+                      {isSubmitting ? "Đang đăng nhập..." : "Đăng nhập"}
                     </ThemedText>
                   </Pressable>
                 </View>
               ) : (
                 <View style={styles.formBlock}>
-                  <ThemedText type="small">Ho va ten</ThemedText>
+                  <ThemedText type="small">Họ và tên</ThemedText>
                   <TextInput
                     style={[
                       styles.input,
@@ -360,7 +364,7 @@ export default function ProfileScreen() {
                         fullName: value,
                       }))
                     }
-                    placeholder="Nguyen Van A"
+                    placeholder="Nguyễn Văn A"
                     placeholderTextColor={theme.textSecondary}
                   />
 
@@ -380,7 +384,7 @@ export default function ProfileScreen() {
                     placeholderTextColor={theme.textSecondary}
                   />
 
-                  <ThemedText type="small">Mat khau</ThemedText>
+                  <ThemedText type="small">Mật khẩu</ThemedText>
                   <TextInput
                     style={[
                       styles.input,
@@ -394,11 +398,11 @@ export default function ProfileScreen() {
                       }))
                     }
                     secureTextEntry
-                    placeholder="Toi thieu 6 ky tu"
+                    placeholder="Tối thiểu 6 ký tự"
                     placeholderTextColor={theme.textSecondary}
                   />
 
-                  <ThemedText type="small">Nhap lai mat khau</ThemedText>
+                  <ThemedText type="small">Nhập lại mật khẩu</ThemedText>
                   <TextInput
                     style={[
                       styles.input,
@@ -412,7 +416,7 @@ export default function ProfileScreen() {
                       }))
                     }
                     secureTextEntry
-                    placeholder="Nhap lai mat khau"
+                    placeholder="Nhập lại mật khẩu"
                     placeholderTextColor={theme.textSecondary}
                   />
 
@@ -422,7 +426,7 @@ export default function ProfileScreen() {
                     disabled={isSubmitting}
                   >
                     <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                      {isSubmitting ? "Dang dang ky..." : "Tao tai khoan"}
+                      {isSubmitting ? "Đang đăng ký..." : "Tạo tài khoản"}
                     </ThemedText>
                   </Pressable>
                 </View>
@@ -440,12 +444,12 @@ export default function ProfileScreen() {
         >
           <View style={[styles.wrapper, { maxWidth: MaxContentWidth }]}>
             <View style={styles.modalHeader}>
-              <ThemedText type="subtitle">Chinh sua ho so</ThemedText>
+              <ThemedText type="subtitle">Chỉnh sửa hồ sơ</ThemedText>
               <Pressable
                 onPress={() => setEditVisible(false)}
                 style={styles.closeButton}
               >
-                <ThemedText type="subtitle">x</ThemedText>
+                <ThemedText type="subtitle">×</ThemedText>
               </Pressable>
             </View>
 
@@ -455,7 +459,7 @@ export default function ProfileScreen() {
                 { backgroundColor: theme.backgroundElement },
               ]}
             >
-              <ThemedText type="small">Ho va ten</ThemedText>
+              <ThemedText type="small">Họ và tên</ThemedText>
               <TextInput
                 style={[
                   styles.input,
@@ -468,7 +472,7 @@ export default function ProfileScreen() {
                 placeholderTextColor={theme.textSecondary}
               />
 
-              <ThemedText type="small">So dien thoai</ThemedText>
+              <ThemedText type="small">Số điện thoại</ThemedText>
               <TextInput
                 style={[
                   styles.input,
@@ -483,7 +487,7 @@ export default function ProfileScreen() {
                 placeholderTextColor={theme.textSecondary}
               />
 
-              <ThemedText type="small">Avatar URL</ThemedText>
+              <ThemedText type="small">Đường dẫn ảnh đại diện</ThemedText>
               <TextInput
                 style={[
                   styles.input,
@@ -504,7 +508,7 @@ export default function ProfileScreen() {
                 disabled={isSubmitting}
               >
                 <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                  {isSubmitting ? "Dang luu..." : "Luu thay doi"}
+                  {isSubmitting ? "Đang lưu..." : "Lưu thay đổi"}
                 </ThemedText>
               </Pressable>
             </ThemedView>
