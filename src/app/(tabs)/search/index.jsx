@@ -18,6 +18,7 @@ import {
   ScreenTitleStyle,
   Spacing,
 } from "@/constants/theme";
+import { useAuth } from "@/contexts/auth-context";
 import { rideGroups } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -74,13 +75,20 @@ const sharedVehicleOptions = [
 ];
 
 const sharedSeatOptions = ["2", "3", "4", "5", "6", "7"];
+const sharedSlotOptions = [
+  { id: "slot-1", label: "Slot 1", time: "07:30" },
+  { id: "slot-2", label: "Slot 2", time: "10:00" },
+  { id: "slot-3", label: "Slot 3", time: "12:50" },
+  { id: "slot-4", label: "Slot 4", time: "15:20" },
+];
 
 const defaultSharedForm = {
   tripType: sharedTripTypes[0],
   vehicleIndex: 0,
   maxSeats: "",
   location: "",
-  note: "",
+  slotId: "",
+  date: "",
 };
 
 const defaultAddressForm = {
@@ -248,6 +256,7 @@ function getDefaultBookingSchedule() {
 export default function SearchScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const rawMode = params.mode ?? "now";
@@ -296,6 +305,17 @@ export default function SearchScreen() {
   const selectedScheduleDate =
     scheduleDateOptions.find((option) => option.value === scheduleDraft.date) ??
     scheduleDateOptions[0];
+  const selectedSharedDate = scheduleDateOptions.find(
+    (option) => option.value === sharedForm.date
+  );
+  const selectedSharedSlot = sharedSlotOptions.find(
+    (option) => option.id === sharedForm.slotId
+  );
+  const isSharedTripToFpt = sharedForm.tripType.startsWith("Chuyến đi");
+  const sharedLocationLabel = isSharedTripToFpt ? "Điểm đón" : "Điểm đến";
+  const sharedLocationPlaceholder = isSharedTripToFpt
+    ? "VD: Trạm xe, Đường XYZ..."
+    : "VD: Bến xe Mỹ Đình, Xuân Mai...";
   const scheduleHourOptions = createScheduleHourOptions(selectedScheduleDate.value);
   const scheduleMinuteOptions = createScheduleMinuteOptions(
     selectedScheduleDate.value,
@@ -309,7 +329,20 @@ export default function SearchScreen() {
   const arrivalDate = addScheduleMinutes(pickupDate, MOCK_TRIP_DURATION_MINUTES);
   const scheduleDisplayText = `${scheduleDraft.time} • ${scheduleDraft.dateDisplay} (${scheduleDraft.dateLabel})`;
 
+  const requireLogin = () => {
+    if (isAuthenticated) {
+      return true;
+    }
+
+    router.push("/profile");
+    return false;
+  };
+
   const showConfirmationStep = () => {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!from.trim()) {
       setAlertMessage("Vui lòng nhập điểm đón");
       setFocusedField("from");
@@ -328,6 +361,10 @@ export default function SearchScreen() {
   };
 
   const openSchedulePicker = () => {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!from.trim()) {
       setAlertMessage("Vui lòng nhập điểm đón");
       setFocusedField("from");
@@ -362,6 +399,10 @@ export default function SearchScreen() {
   };
 
   const createSharedRide = () => {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!sharedForm.tripType) {
       setSharedFormError("Vui lòng chọn loại chuyến");
       return;
@@ -373,17 +414,25 @@ export default function SearchScreen() {
     }
 
     if (!sharedForm.location.trim()) {
-      setSharedFormError("Vui lòng nhập điểm đón/điểm đến");
+      setSharedFormError(`Vui lòng nhập ${sharedLocationLabel.toLowerCase()}`);
+      return;
+    }
+
+    if (!selectedSharedSlot) {
+      setSharedFormError("Vui lòng chọn slot đi");
+      return;
+    }
+
+    if (!selectedSharedDate) {
+      setSharedFormError("Vui lòng chọn ngày đi");
       return;
     }
 
     const selectedVehicle = sharedVehicleOptions[sharedForm.vehicleIndex];
-    const isGoToFpt = sharedForm.tripType.startsWith("Chuyến đi");
-    const route = isGoToFpt
+    const route = isSharedTripToFpt
       ? `${sharedForm.location.trim()} → Đại học FPT`
       : `Đại học FPT → ${sharedForm.location.trim()}`;
-    const note =
-      sharedForm.note.trim() || "Xe ghép mới tạo, cùng chia sẻ chuyến đi";
+    const scheduleText = `${selectedSharedSlot.label} (${selectedSharedSlot.time}) • ${selectedSharedDate.display}`;
 
     setSharedRides((current) => [
       {
@@ -393,7 +442,10 @@ export default function SearchScreen() {
         price: selectedVehicle.price,
         distance: "18 km",
         seats: `1/${sharedForm.maxSeats} thành viên`,
-        note,
+        note: scheduleText,
+        scheduleText,
+        date: selectedSharedDate.value,
+        slotId: selectedSharedSlot.id,
         status: "Đã tham gia",
         driver: "Lê Nguyễn Đại Hải",
         destination: route,
@@ -419,6 +471,10 @@ export default function SearchScreen() {
   };
 
   const openCreateAddressModal = () => {
+    if (!requireLogin()) {
+      return;
+    }
+
     setAddressForm(defaultAddressForm);
     setEditingAddressId("");
     setAddressFormError("");
@@ -448,6 +504,10 @@ export default function SearchScreen() {
   };
 
   const saveAddress = () => {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!addressForm.label.trim()) {
       setAddressFormError("Vui lòng nhập tên địa chỉ");
       return;
@@ -653,7 +713,11 @@ export default function SearchScreen() {
 
             <Pressable
               style={styles.bookButton}
-              onPress={() => router.push("/trips?activeRide=1")}
+              onPress={() => {
+                if (requireLogin()) {
+                  router.push("/trips?activeRide=1");
+                }
+              }}
             >
               <ThemedText type="smallBold" style={styles.bookButtonText}>
                 Đặt xe
@@ -846,7 +910,13 @@ export default function SearchScreen() {
               <ThemedText type="default" style={styles.sharedTitle}>
                 Xe ghép sẵn có
               </ThemedText>
-              <Pressable onPress={() => setCreateSharedVisible(true)}>
+              <Pressable
+                onPress={() => {
+                  if (requireLogin()) {
+                    setCreateSharedVisible(true);
+                  }
+                }}
+              >
                 <ThemedText type="smallBold" style={styles.createButtonText}>
                   + Tạo
                 </ThemedText>
@@ -887,7 +957,11 @@ export default function SearchScreen() {
 
                 <Pressable
                   style={styles.detailsButton}
-                  onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
+                  onPress={() => {
+                    if (requireLogin()) {
+                      router.push(`/search/shared-ride/${ride.id}`);
+                    }
+                  }}
                 >
                   <ThemedText type="smallBold" style={styles.detailsButtonText}>
                     Xem chi tiết
@@ -1349,11 +1423,11 @@ export default function SearchScreen() {
 
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
-                  Điểm đón/Điểm đến
+                  {sharedLocationLabel}
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
                 <TextInput
-                  placeholder="VD: Trạm xe, Đường XYZ..."
+                  placeholder={sharedLocationPlaceholder}
                   placeholderTextColor="#A1A1AA"
                   style={styles.createInput}
                   value={sharedForm.location}
@@ -1363,15 +1437,120 @@ export default function SearchScreen() {
 
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
-                  Mô tả chuyến
+                  Slot
+                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
-                <TextInput
-                  placeholder="VD: Có điều hòa, tài xế kinh nghiệm..."
-                  placeholderTextColor="#A1A1AA"
-                  style={styles.createInput}
-                  value={sharedForm.note}
-                  onChangeText={(value) => updateSharedForm("note", value)}
-                />
+                <Pressable
+                  style={styles.createSelect}
+                  onPress={() =>
+                    setOpenSharedDropdown((current) =>
+                      current === "slot" ? "" : "slot"
+                    )
+                  }
+                >
+                  <ThemedText
+                    type="default"
+                    style={[
+                      styles.createSelectText,
+                      !selectedSharedSlot && styles.createPlaceholderText,
+                    ]}
+                  >
+                    {selectedSharedSlot
+                      ? `${selectedSharedSlot.label} (${selectedSharedSlot.time})`
+                      : "-- Chọn Slot đi --"}
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.createSelectArrow}>
+                    ⌄
+                  </ThemedText>
+                </Pressable>
+                {openSharedDropdown === "slot" && (
+                  <View style={styles.createDropdown}>
+                    {sharedSlotOptions.map((slot) => (
+                      <Pressable
+                        key={slot.id}
+                        style={[
+                          styles.createDropdownItem,
+                          sharedForm.slotId === slot.id &&
+                            styles.createDropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          updateSharedForm("slotId", slot.id);
+                          setOpenSharedDropdown("");
+                        }}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={[
+                            styles.createDropdownText,
+                            sharedForm.slotId === slot.id &&
+                              styles.createDropdownTextActive,
+                          ]}
+                        >
+                          {slot.label} - {slot.time}
+                        </ThemedText>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  Ngày đi
+                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
+                </ThemedText>
+                <Pressable
+                  style={styles.createSelect}
+                  onPress={() =>
+                    setOpenSharedDropdown((current) =>
+                      current === "date" ? "" : "date"
+                    )
+                  }
+                >
+                  <ThemedText
+                    type="default"
+                    style={[
+                      styles.createSelectText,
+                      !selectedSharedDate && styles.createPlaceholderText,
+                    ]}
+                  >
+                    {selectedSharedDate
+                      ? `${selectedSharedDate.display} (${selectedSharedDate.label})`
+                      : "-- Chọn ngày đi --"}
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.createSelectArrow}>
+                    ⌄
+                  </ThemedText>
+                </Pressable>
+                {openSharedDropdown === "date" && (
+                  <View style={styles.createDropdown}>
+                    {scheduleDateOptions.map((date) => (
+                      <Pressable
+                        key={date.value}
+                        style={[
+                          styles.createDropdownItem,
+                          sharedForm.date === date.value &&
+                            styles.createDropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          updateSharedForm("date", date.value);
+                          setOpenSharedDropdown("");
+                        }}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={[
+                            styles.createDropdownText,
+                            sharedForm.date === date.value &&
+                              styles.createDropdownTextActive,
+                          ]}
+                        >
+                          {date.display} - {date.label}
+                        </ThemedText>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {Boolean(sharedFormError) && (
@@ -1385,7 +1564,7 @@ export default function SearchScreen() {
                 onPress={createSharedRide}
               >
                 <ThemedText type="smallBold" style={styles.createSubmitText}>
-                  Tạo nhóm xe
+                  Gửi yêu cầu
                 </ThemedText>
               </Pressable>
             </ScrollView>
