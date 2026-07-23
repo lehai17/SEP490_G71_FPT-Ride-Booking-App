@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Modal,
@@ -19,6 +19,7 @@ import {
   ScreenTitleStyle,
   Spacing,
 } from "@/constants/theme";
+import { useAuth } from "@/contexts/auth-context";
 import { tripSections } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -226,7 +227,9 @@ function getScheduledTripView(item) {
 export default function TripsScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams();
+  const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
+  const { isAuthenticated } = useAuth();
   const [selectedTab, setSelectedTab] = useState("active");
   const [tripsBySection, setTripsBySection] = useState(tripSections);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
@@ -280,7 +283,20 @@ export default function TripsScreen() {
   );
   const selectedScheduleText = `${editDraft.time} • ${editDraft.dateDisplay} (${editDraft.dateLabel})`;
 
+  function requireLogin() {
+    if (isAuthenticated) {
+      return true;
+    }
+
+    router.push("/profile");
+    return false;
+  }
+
   function handlePrimaryAction(item) {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (selectedTab === "scheduled") {
       setSelectedTrip(item);
       setEditDraft(getTripDraft(item));
@@ -300,6 +316,10 @@ export default function TripsScreen() {
   }
 
   function handleSecondaryAction(item) {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (selectedTab === "scheduled" || selectedTab === "active") {
       setSelectedTrip(item);
       setCancelReason("");
@@ -319,6 +339,10 @@ export default function TripsScreen() {
   }
 
   function handleUpdateScheduledTrip() {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!editDraft.from.trim() || !editDraft.to.trim()) {
       setFormError("Vui lòng nhập đầy đủ điểm đón và điểm đến");
       return;
@@ -347,6 +371,10 @@ export default function TripsScreen() {
   }
 
   function handleCancelTrip() {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!cancelReason.trim()) {
       setFormError("Vui lòng nhập lý do hủy");
       return;
@@ -365,6 +393,10 @@ export default function TripsScreen() {
   }
 
   function handleSubmitRating() {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!selectedTrip) {
       return;
     }
@@ -382,6 +414,10 @@ export default function TripsScreen() {
   }
 
   function handleSubmitReport() {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!selectedTrip) {
       return;
     }
@@ -405,6 +441,10 @@ export default function TripsScreen() {
   }
 
   function handleSendChatMessage() {
+    if (!requireLogin()) {
+      return;
+    }
+
     const message = chatInput.trim();
 
     if (!message) {
@@ -519,7 +559,11 @@ export default function TripsScreen() {
                     </View>
                     <Pressable
                       style={styles.activeMessageButton}
-                      onPress={() => setChatModalVisible(true)}
+                      onPress={() => {
+                        if (requireLogin()) {
+                          setChatModalVisible(true);
+                        }
+                      }}
                     >
                       <ThemedText type="default" style={styles.activeMessageIcon}>
                         💬

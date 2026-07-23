@@ -20,6 +20,7 @@ import {
   Spacing,
 } from "@/constants/theme";
 import { getRideGroupById } from "@/constants/ride-data";
+import { useAuth } from "@/contexts/auth-context";
 import { useTheme } from "@/hooks/use-theme";
 
 const BRAND = "#FF7A00";
@@ -37,6 +38,7 @@ function getDefaultJoinDestination(ride) {
 export default function SharedRideDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const rideId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -50,12 +52,25 @@ export default function SharedRideDetailScreen() {
   const [pendingRequest, setPendingRequest] = useState(null);
   const defaultDestination = getDefaultJoinDestination(ride);
 
+  function requireLogin() {
+    if (isAuthenticated) {
+      return true;
+    }
+
+    router.push("/profile");
+    return false;
+  }
+
   function closeJoinModal() {
     setJoinModalVisible(false);
     setJoinError("");
   }
 
   function handleSubmitJoinRequest() {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!pickupPoint.trim()) {
       setJoinError("Vui lòng nhập điểm đón");
       return;
@@ -72,6 +87,10 @@ export default function SharedRideDetailScreen() {
   }
 
   function confirmPickupPoint() {
+    if (!requireLogin()) {
+      return;
+    }
+
     if (!joinDraft) {
       return;
     }
@@ -179,7 +198,9 @@ export default function SharedRideDetailScreen() {
                 ]}
                 onPress={() => {
                   if (!pendingRequest) {
-                    setJoinModalVisible(true);
+                    if (requireLogin()) {
+                      setJoinModalVisible(true);
+                    }
                   }
                 }}
               >
