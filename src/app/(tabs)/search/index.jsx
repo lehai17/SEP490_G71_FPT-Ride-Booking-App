@@ -23,7 +23,6 @@ import { rideGroups } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 
 const BRAND = "#FF7A00";
-const SHARED_CARD = "#FFF5EA";
 const MAP_BG = "#FFF3C9";
 const rideOptions = [
   {
@@ -94,6 +93,28 @@ const defaultSharedForm = {
 const defaultAddressForm = {
   label: "",
 };
+
+function getSharedProposal(ride) {
+  const isCar7 = ride.vehicle.includes("7");
+  const soloPrice = isCar7 ? "320.000đ" : "250.000đ";
+  const sharedPrice = isCar7 ? "116.000đ" : "90.000đ";
+  const savingPrice = isCar7 ? "204.000đ" : "160.000đ";
+  const [startPoint = "Đại học FPT", endPoint = "Điểm đến"] =
+    ride.route.split("→").map((item) => item.trim());
+
+  return {
+    soloPrice,
+    sharedPrice,
+    savingPrice,
+    expectedPickup: isCar7 ? "6:35" : "7:30",
+    expectedArrival: isCar7 ? "7:20" : "8:10",
+    routeSteps: [
+      `1. ${startPoint}`,
+      `2. ${ride.driver.split(" ").slice(-2).join(" ") || "Khách"} - ${endPoint}`,
+      "3. Bạn - Mê Trì",
+    ],
+  };
+}
 
 const initialSavedAddresses = [
   {
@@ -285,6 +306,9 @@ export default function SearchScreen() {
   const [editingAddressId, setEditingAddressId] = useState("");
   const [addressFormError, setAddressFormError] = useState("");
   const [openAddressMenuId, setOpenAddressMenuId] = useState("");
+  const suggestedSharedRides = sharedRides.filter(
+    (ride) => ride.participantCount > 1
+  );
 
   const selectSingleRide = () => {
     setMode("now");
@@ -908,7 +932,7 @@ export default function SearchScreen() {
           <View style={styles.sharedSection}>
             <View style={styles.sharedHeader}>
               <ThemedText type="default" style={styles.sharedTitle}>
-                Xe ghép sẵn có
+                Đề xuất nhóm ghép sẵn có
               </ThemedText>
               <Pressable
                 onPress={() => {
@@ -923,52 +947,123 @@ export default function SearchScreen() {
               </Pressable>
             </View>
 
-            {sharedRides.map((ride) => (
-              <View key={ride.id} style={styles.sharedCard}>
-                <View style={styles.sharedCardHeader}>
-                  <View style={styles.vehiclePill}>
-                    <ThemedText type="smallBold" style={styles.vehiclePillText}>
-                      {ride.vehicle}
+            {suggestedSharedRides.length === 0 ? (
+              <View style={styles.emptySharedCard}>
+                <ThemedText type="smallBold" style={styles.emptySharedTitle}>
+                  Chưa có nhóm ghép phù hợp
+                </ThemedText>
+                <ThemedText type="small" style={styles.emptySharedText}>
+                  Nhóm chỉ có một người sẽ chưa được đề xuất. Khi có thêm người tham gia, hệ thống sẽ hiển thị tại đây.
+                </ThemedText>
+              </View>
+            ) : null}
+
+            {suggestedSharedRides.map((ride) => {
+              const proposal = getSharedProposal(ride);
+
+              return (
+                <View key={ride.id} style={styles.proposalCard}>
+                  <View style={styles.proposalHeader}>
+                    <ThemedText type="default" style={styles.proposalHeaderText}>
+                      ĐỀ XUẤT THAM GIA NHÓM
                     </ThemedText>
                   </View>
-                  <ThemedText type="default" style={styles.priceText}>
-                    {ride.price}
-                  </ThemedText>
+
+                  <View style={styles.proposalBody}>
+                    <View style={styles.proposalInfoCard}>
+                      <ThemedText type="smallBold" style={styles.proposalVehicle}>
+                        {ride.vehicle}
+                      </ThemedText>
+                      <ThemedText type="smallBold" style={styles.savingText}>
+                        Tiết kiệm {proposal.savingPrice}
+                      </ThemedText>
+
+                      <View style={styles.priceLine}>
+                        <ThemedText type="smallBold" style={styles.priceLabel}>
+                          Đi lẻ:
+                        </ThemedText>
+                        <ThemedText type="smallBold" style={styles.soloPriceText}>
+                          {proposal.soloPrice}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.priceLine}>
+                        <ThemedText type="smallBold" style={styles.priceLabel}>
+                          Đi ghép:
+                        </ThemedText>
+                        <ThemedText type="smallBold" style={styles.sharedPriceText}>
+                          {proposal.sharedPrice}
+                        </ThemedText>
+                      </View>
+
+                      <View style={styles.proposalDivider} />
+
+                      <ThemedText type="small" style={styles.proposalMuted}>
+                        Thời gian đón dự kiến: {proposal.expectedPickup}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.proposalMuted}>
+                        Dự kiến đến nơi lúc: {proposal.expectedArrival}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.proposalMuted}>
+                        Hạn ghép xe: 15p
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.proposalMuted}>
+                        Nhóm: {ride.participantCount}/{ride.capacity} người
+                      </ThemedText>
+
+                      <View style={styles.proposalDivider} />
+
+                      <ThemedText type="smallBold" style={styles.proposalSectionTitle}>
+                        Lộ trình nhóm
+                      </ThemedText>
+                      {proposal.routeSteps.map((step) => (
+                        <ThemedText
+                          key={`${ride.id}-${step}`}
+                          type="small"
+                          style={styles.proposalMuted}
+                        >
+                          {step}
+                        </ThemedText>
+                      ))}
+
+                      <View style={styles.proposalFooterLine}>
+                        <ThemedText type="smallBold" style={styles.proposalVehicle}>
+                          {ride.vehicle}
+                        </ThemedText>
+                        <ThemedText type="default" style={styles.proposalTotal}>
+                          {proposal.sharedPrice}
+                        </ThemedText>
+                      </View>
+                      <ThemedText type="small" style={styles.proposalMuted}>
+                        Đón trong 5 phút
+                      </ThemedText>
+                    </View>
+                  </View>
+
+                  <View style={styles.proposalActionRow}>
+                    <Pressable
+                      style={styles.joinProposalButton}
+                      onPress={() => {
+                        if (requireLogin()) {
+                          router.push(`/search/shared-ride/${ride.id}`);
+                        }
+                      }}
+                    >
+                      <ThemedText type="smallBold" style={styles.joinProposalText}>
+                        Tham gia nhóm
+                      </ThemedText>
+                    </Pressable>
+                    <Pressable
+                      style={styles.backProposalButton}
+                      onPress={() => setMode("now")}
+                    >
+                      <ThemedText type="smallBold" style={styles.backProposalText}>
+                        Quay lại
+                      </ThemedText>
+                    </Pressable>
+                  </View>
                 </View>
-
-                <View style={styles.sharedRow}>
-                  <ThemedText type="smallBold" style={styles.driverText}>
-                    {ride.driver}
-                  </ThemedText>
-                  <ThemedText type="smallBold" style={styles.statusText}>
-                    {ride.status}
-                  </ThemedText>
-                </View>
-
-                <ThemedText type="default" style={styles.routeText}>
-                  {ride.route}
-                </ThemedText>
-                <ThemedText type="small" style={styles.seatsText}>
-                  {ride.seats}
-                </ThemedText>
-                <ThemedText type="small" style={styles.noteText}>
-                  {`"${ride.note}"`}
-                </ThemedText>
-
-                <Pressable
-                  style={styles.detailsButton}
-                  onPress={() => {
-                    if (requireLogin()) {
-                      router.push(`/search/shared-ride/${ride.id}`);
-                    }
-                  }}
-                >
-                  <ThemedText type="smallBold" style={styles.detailsButtonText}>
-                    Xem chi tiết
-                  </ThemedText>
-                </Pressable>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
         </View>
@@ -2364,18 +2459,36 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   sharedTitle: {
-    fontSize: 24,
-    fontWeight: "700",
+    flex: 1,
+    color: "#111827",
+    fontSize: 22,
+    fontWeight: "800",
   },
   createButtonText: {
     color: BRAND,
     fontSize: 18,
   },
-  sharedCard: {
-    backgroundColor: SHARED_CARD,
-    borderRadius: 22,
+  emptySharedCard: {
+    borderRadius: 16,
     padding: Spacing.three,
-    gap: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#FFD2AE",
+    backgroundColor: "#FFFFFF",
+    gap: Spacing.one,
+  },
+  emptySharedTitle: {
+    color: "#111827",
+  },
+  emptySharedText: {
+    color: "#71717A",
+  },
+  proposalCard: {
+    borderRadius: 20,
+    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
     borderLeftWidth: 4,
     borderLeftColor: BRAND,
     shadowColor: "#000000",
@@ -2384,59 +2497,105 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
-  sharedCardHeader: {
+  proposalHeader: {
+    minHeight: 54,
+    justifyContent: "center",
+    paddingHorizontal: Spacing.three,
+    backgroundColor: "#FFF3E8",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FFD2AE",
+  },
+  proposalHeaderText: {
+    color: "#C75B00",
+    fontSize: 19,
+    fontWeight: "900",
+    lineHeight: 24,
+  },
+  proposalBody: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
+  },
+  proposalInfoCard: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    gap: 5,
+  },
+  proposalVehicle: {
+    color: "#111827",
+  },
+  savingText: {
+    color: "#16A34A",
+  },
+  priceLine: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    gap: 4,
   },
-  vehiclePill: {
-    backgroundColor: "#1F2937",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+  priceLabel: {
+    color: "#111827",
   },
-  vehiclePillText: {
-    color: "#FFFFFF",
+  soloPriceText: {
+    color: "#DC2626",
   },
-  priceText: {
-    color: BRAND,
-    fontSize: 24,
-    fontWeight: "800",
+  sharedPriceText: {
+    color: "#111827",
   },
-  sharedRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: Spacing.two,
+  proposalDivider: {
+    height: 1,
+    backgroundColor: "#F3F4F6",
+    marginVertical: 5,
   },
-  driverText: {
-    color: "#3F3F46",
+  proposalMuted: {
+    color: "#9CA3AF",
   },
-  statusText: {
+  proposalSectionTitle: {
     color: "#6B7280",
   },
-  routeText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#18181B",
-  },
-  seatsText: {
-    color: "#52525B",
-  },
-  noteText: {
-    color: "#71717A",
-    fontStyle: "italic",
-  },
-  detailsButton: {
+  proposalFooterLine: {
     marginTop: Spacing.one,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  proposalTotal: {
+    color: "#9CA3AF",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  proposalActionRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.three,
+  },
+  joinProposalButton: {
+    flex: 1,
     minHeight: 48,
     borderRadius: 12,
-    backgroundColor: BRAND,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: BRAND,
   },
-  detailsButtonText: {
+  joinProposalText: {
     color: "#FFFFFF",
-    fontSize: 16,
+    textAlign: "center",
+  },
+  backProposalButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF7ED",
+  },
+  backProposalText: {
+    color: "#C75B00",
+    textAlign: "center",
   },
 });
