@@ -48,21 +48,6 @@ const rideOptions = [
   },
 ];
 
-const vouchers = [
-  {
-    id: "fptu2024",
-    code: "Mã FPTU2024",
-    description: "Giảm 5.000đ cho chuyến này",
-    discount: "-5.000đ",
-  },
-  {
-    id: "student2024",
-    code: "Mã STUDENT2024",
-    description: "Giảm 3.000đ cho sinh viên",
-    discount: "-3.000đ",
-  },
-];
-
 const sharedTripTypes = [
   "Chuyến đi (Từ nơi khác đến FPT)",
   "Chuyến về (Từ FPT đi nơi khác)",
@@ -291,7 +276,6 @@ export default function SearchScreen() {
   const [alertMessage, setAlertMessage] = useState("");
   const [driverNote, setDriverNote] = useState("");
   const [selectedRideId, setSelectedRideId] = useState("bike");
-  const [selectedVoucherId, setSelectedVoucherId] = useState("fptu2024");
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState(getDefaultBookingSchedule);
   const [scheduledRideTime, setScheduledRideTime] = useState("");
@@ -335,6 +319,11 @@ export default function SearchScreen() {
   const selectedSharedSlot = sharedSlotOptions.find(
     (option) => option.id === sharedForm.slotId
   );
+  const sharedCalendarPreview = selectedSharedDate ?? scheduleDateOptions[0];
+  const sharedScheduleSummary =
+    selectedSharedSlot && selectedSharedDate
+      ? `Xe ghép lúc ${selectedSharedSlot.time} • ${selectedSharedDate.display} (${selectedSharedDate.label})`
+      : "Chọn slot và ngày đi để hoàn tất yêu cầu.";
   const isSharedTripToFpt = sharedForm.tripType.startsWith("Chuyến đi");
   const sharedLocationLabel = isSharedTripToFpt ? "Điểm đón" : "Điểm đến";
   const sharedLocationPlaceholder = isSharedTripToFpt
@@ -700,39 +689,6 @@ export default function SearchScreen() {
               <ThemedText type="small" style={styles.paymentNoticeText}>
                 💵 Thanh toán tiền mặt trực tiếp cho tài xế
               </ThemedText>
-            </View>
-
-            <View style={styles.voucherSection}>
-              <ThemedText type="smallBold" style={styles.voucherTitle}>
-                Chọn khuyến mãi (tùy chọn)
-              </ThemedText>
-              {vouchers.map((voucher) => {
-                const isSelected = voucher.id === selectedVoucherId;
-
-                return (
-                  <Pressable
-                    key={voucher.id}
-                    style={[
-                      styles.voucherCard,
-                      { backgroundColor: theme.backgroundElement },
-                      isSelected && styles.voucherCardActive,
-                    ]}
-                    onPress={() => setSelectedVoucherId(voucher.id)}
-                  >
-                    <View style={styles.voucherInfo}>
-                      <ThemedText type="smallBold" style={styles.voucherCode}>
-                        {voucher.code}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.voucherDescription}>
-                        {voucher.description}
-                      </ThemedText>
-                    </View>
-                    <ThemedText type="default" style={styles.voucherDiscount}>
-                      {voucher.discount}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
             </View>
 
             <Pressable
@@ -1530,122 +1486,125 @@ export default function SearchScreen() {
                 />
               </View>
 
-              <View style={styles.createField}>
-                <ThemedText type="small" style={styles.createLabel}>
-                  Slot
-                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
-                </ThemedText>
-                <Pressable
-                  style={styles.createSelect}
-                  onPress={() =>
-                    setOpenSharedDropdown((current) =>
-                      current === "slot" ? "" : "slot"
-                    )
-                  }
-                >
-                  <ThemedText
-                    type="default"
-                    style={[
-                      styles.createSelectText,
-                      !selectedSharedSlot && styles.createPlaceholderText,
-                    ]}
-                  >
-                    {selectedSharedSlot
-                      ? `${selectedSharedSlot.label} (${selectedSharedSlot.time})`
-                      : "-- Chọn Slot đi --"}
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.createSelectArrow}>
-                    ⌄
-                  </ThemedText>
-                </Pressable>
-                {openSharedDropdown === "slot" && (
-                  <View style={styles.createDropdown}>
-                    {sharedSlotOptions.map((slot) => (
-                      <Pressable
-                        key={slot.id}
-                        style={[
-                          styles.createDropdownItem,
-                          sharedForm.slotId === slot.id &&
-                            styles.createDropdownItemActive,
-                        ]}
-                        onPress={() => {
-                          updateSharedForm("slotId", slot.id);
-                          setOpenSharedDropdown("");
-                        }}
-                      >
-                        <ThemedText
-                          type="smallBold"
-                          style={[
-                            styles.createDropdownText,
-                            sharedForm.slotId === slot.id &&
-                              styles.createDropdownTextActive,
-                          ]}
-                        >
-                          {slot.label} - {slot.time}
-                        </ThemedText>
-                      </Pressable>
-                    ))}
+              <View style={styles.createScheduleCard}>
+                <View style={styles.createScheduleHeader}>
+                  <View style={styles.createCalendarBadge}>
+                    <ThemedText type="smallBold" style={styles.createCalendarMonth}>
+                      {sharedCalendarPreview?.monthLabel ?? "Ngày"}
+                    </ThemedText>
+                    <ThemedText type="title" style={styles.createCalendarDay}>
+                      {sharedCalendarPreview?.dayLabel ?? "--"}
+                    </ThemedText>
                   </View>
-                )}
-              </View>
+                  <View style={styles.createScheduleIntro}>
+                    <ThemedText type="default" style={styles.createScheduleTitle}>
+                      Chọn lịch ngày đi
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.createScheduleHint}>
+                      Chọn slot cố định và ngày bạn muốn đi ghép xe.
+                    </ThemedText>
+                  </View>
+                </View>
 
-              <View style={styles.createField}>
-                <ThemedText type="small" style={styles.createLabel}>
-                  Ngày đi
-                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
-                </ThemedText>
-                <Pressable
-                  style={styles.createSelect}
-                  onPress={() =>
-                    setOpenSharedDropdown((current) =>
-                      current === "date" ? "" : "date"
-                    )
-                  }
-                >
-                  <ThemedText
-                    type="default"
-                    style={[
-                      styles.createSelectText,
-                      !selectedSharedDate && styles.createPlaceholderText,
-                    ]}
-                  >
-                    {selectedSharedDate
-                      ? `${selectedSharedDate.display} (${selectedSharedDate.label})`
-                      : "-- Chọn ngày đi --"}
+                <View style={styles.createScheduleBlock}>
+                  <ThemedText type="smallBold" style={styles.createSubLabel}>
+                    Slot
+                    <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
                   </ThemedText>
-                  <ThemedText type="default" style={styles.createSelectArrow}>
-                    ⌄
-                  </ThemedText>
-                </Pressable>
-                {openSharedDropdown === "date" && (
-                  <View style={styles.createDropdown}>
-                    {scheduleDateOptions.map((date) => (
-                      <Pressable
-                        key={date.value}
-                        style={[
-                          styles.createDropdownItem,
-                          sharedForm.date === date.value &&
-                            styles.createDropdownItemActive,
-                        ]}
-                        onPress={() => {
-                          updateSharedForm("date", date.value);
-                          setOpenSharedDropdown("");
-                        }}
-                      >
-                        <ThemedText
-                          type="smallBold"
+                  <View style={styles.slotGrid}>
+                    {sharedSlotOptions.map((slot) => {
+                      const isSelected = sharedForm.slotId === slot.id;
+
+                      return (
+                        <Pressable
+                          key={slot.id}
                           style={[
-                            styles.createDropdownText,
-                            sharedForm.date === date.value &&
-                              styles.createDropdownTextActive,
+                            styles.slotChip,
+                            isSelected && styles.slotChipActive,
                           ]}
+                          onPress={() => {
+                            updateSharedForm("slotId", slot.id);
+                            setOpenSharedDropdown("");
+                          }}
                         >
-                          {date.display} - {date.label}
-                        </ThemedText>
-                      </Pressable>
-                    ))}
+                          <ThemedText
+                            type="smallBold"
+                            style={[
+                              styles.slotChipLabel,
+                              isSelected && styles.slotChipLabelActive,
+                            ]}
+                          >
+                            {slot.label}
+                          </ThemedText>
+                          <ThemedText
+                            type="default"
+                            style={[
+                              styles.slotChipTime,
+                              isSelected && styles.slotChipTimeActive,
+                            ]}
+                          >
+                            {slot.time}
+                          </ThemedText>
+                        </Pressable>
+                      );
+                    })}
                   </View>
-                )}
+                </View>
+
+                <View style={styles.createScheduleBlock}>
+                  <ThemedText type="smallBold" style={styles.createSubLabel}>
+                    Ngày đi
+                    <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
+                  </ThemedText>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.dateChipRow}
+                  >
+                    {scheduleDateOptions.slice(0, 7).map((date) => {
+                      const isSelected = sharedForm.date === date.value;
+
+                      return (
+                        <Pressable
+                          key={date.value}
+                          style={[
+                            styles.dateChip,
+                            isSelected && styles.dateChipActive,
+                          ]}
+                          onPress={() => {
+                            updateSharedForm("date", date.value);
+                            setOpenSharedDropdown("");
+                          }}
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={[
+                              styles.dateChipLabel,
+                              isSelected && styles.dateChipLabelActive,
+                            ]}
+                          >
+                            {date.label}
+                          </ThemedText>
+                          <ThemedText
+                            type="small"
+                            style={[
+                              styles.dateChipDate,
+                              isSelected && styles.dateChipDateActive,
+                            ]}
+                          >
+                            {date.display}
+                          </ThemedText>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+
+                <View style={styles.createScheduleSummary}>
+                  <ThemedText type="smallBold" style={styles.createScheduleSummaryText}>
+                    {sharedScheduleSummary}
+                  </ThemedText>
+                </View>
               </View>
 
               {Boolean(sharedFormError) && (
@@ -2077,6 +2036,142 @@ const styles = StyleSheet.create({
     color: "#111827",
     backgroundColor: "#FFFFFF",
   },
+  createScheduleCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    backgroundColor: "#FFFFFF",
+    padding: Spacing.three,
+    gap: Spacing.three,
+    shadowColor: "#9A3412",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  createScheduleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.three,
+  },
+  createCalendarBadge: {
+    width: 74,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    backgroundColor: "#FFF7ED",
+  },
+  createCalendarMonth: {
+    textAlign: "center",
+    color: "#FFFFFF",
+    backgroundColor: BRAND,
+    paddingVertical: 6,
+    fontSize: 13,
+  },
+  createCalendarDay: {
+    textAlign: "center",
+    color: "#111827",
+    paddingVertical: 8,
+    fontSize: 30,
+    fontWeight: "900",
+  },
+  createScheduleIntro: {
+    flex: 1,
+    gap: 4,
+  },
+  createScheduleTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  createScheduleHint: {
+    color: "#78716C",
+    lineHeight: 18,
+  },
+  createScheduleBlock: {
+    gap: Spacing.two,
+  },
+  createSubLabel: {
+    color: "#7C2D12",
+  },
+  slotGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.two,
+  },
+  slotChip: {
+    width: "47.5%",
+    minHeight: 74,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    backgroundColor: "#FFFBF7",
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    justifyContent: "center",
+    gap: 4,
+  },
+  slotChipActive: {
+    borderColor: BRAND,
+    backgroundColor: BRAND,
+  },
+  slotChipLabel: {
+    color: "#9A3412",
+    fontSize: 13,
+  },
+  slotChipLabelActive: {
+    color: "#FFFFFF",
+  },
+  slotChipTime: {
+    color: "#111827",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  slotChipTimeActive: {
+    color: "#FFFFFF",
+  },
+  dateChipRow: {
+    gap: Spacing.two,
+    paddingRight: Spacing.one,
+  },
+  dateChip: {
+    minWidth: 116,
+    minHeight: 62,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    backgroundColor: "#FFFBF7",
+    paddingHorizontal: Spacing.three,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 3,
+  },
+  dateChipActive: {
+    borderColor: BRAND,
+    backgroundColor: "#FFF1E6",
+  },
+  dateChipLabel: {
+    color: "#7C2D12",
+  },
+  dateChipLabelActive: {
+    color: "#C2410C",
+  },
+  dateChipDate: {
+    color: "#78716C",
+  },
+  dateChipDateActive: {
+    color: "#111827",
+  },
+  createScheduleSummary: {
+    borderRadius: 16,
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  createScheduleSummaryText: {
+    color: "#9A3412",
+    textAlign: "center",
+  },
   createError: {
     color: "#DC2626",
   },
@@ -2375,42 +2470,6 @@ const styles = StyleSheet.create({
   },
   paymentNoticeText: {
     color: "#B45309",
-  },
-  voucherSection: {
-    gap: Spacing.two,
-  },
-  voucherTitle: {
-    color: "#4B5563",
-  },
-  voucherCard: {
-    minHeight: 70,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    padding: Spacing.three,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: Spacing.two,
-  },
-  voucherCardActive: {
-    borderColor: BRAND,
-    backgroundColor: "#FFF7ED",
-  },
-  voucherInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  voucherCode: {
-    color: "#111827",
-    fontSize: 16,
-  },
-  voucherDescription: {
-    color: "#6B7280",
-  },
-  voucherDiscount: {
-    color: "#C2410C",
-    fontWeight: "800",
   },
   bookButton: {
     minHeight: 56,
