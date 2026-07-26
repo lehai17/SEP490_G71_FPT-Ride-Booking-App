@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -21,9 +22,16 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { rideGroups } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
+import {
+  getGoogleDirections,
+  getGoogleStaticMapUrl,
+  isGoogleMapsConfigured,
+  verifyGoogleAddress,
+} from "@/services/google-maps-api";
 
 const BRAND = "#FF7A00";
 const MAP_BG = "#FFF3C9";
+const MOCK_DRIVER_LOCATION = "Cổng chính Đại học FPT, Thạch Hòa, Hà Nội";
 const rideOptions = [
   {
     id: "bike",
@@ -276,6 +284,8 @@ export default function SearchScreen() {
   const [alertMessage, setAlertMessage] = useState("");
   const [driverNote, setDriverNote] = useState("");
   const [selectedRideId, setSelectedRideId] = useState("bike");
+  const [isVerifyingMap, setIsVerifyingMap] = useState(false);
+  const [verifiedTripMap, setVerifiedTripMap] = useState(null);
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState(getDefaultBookingSchedule);
   const [scheduledRideTime, setScheduledRideTime] = useState("");
@@ -309,6 +319,10 @@ export default function SearchScreen() {
 
   const fromLabel = from.trim() || "Vị trí hiện tại";
   const toLabel = to.trim() || "Đại học FPT, Thạch Hòa";
+  const verifiedFromLabel =
+    verifiedTripMap?.origin.formattedAddress ?? fromLabel;
+  const verifiedToLabel =
+    verifiedTripMap?.destination.formattedAddress ?? toLabel;
   const scheduleDateOptions = createScheduleDateOptions();
   const selectedScheduleDate =
     scheduleDateOptions.find((option) => option.value === scheduleDraft.date) ??
@@ -351,46 +365,88 @@ export default function SearchScreen() {
     return false;
   };
 
-  const showConfirmationStep = () => {
+  const verifyBookingLocations = async () => {
     if (!requireLogin()) {
-      return;
+      return null;
     }
 
     if (!from.trim()) {
       setAlertMessage("Vui lòng nhập điểm đón");
       setFocusedField("from");
-      return;
+      return null;
     }
 
     if (!to.trim()) {
       setAlertMessage("Vui lòng nhập điểm đến");
       setFocusedField("to");
+      return null;
+    }
+
+    if (!isGoogleMapsConfigured()) {
+      setAlertMessage("Vui lòng thêm EXPO_PUBLIC_GOOGLE_MAPS_API_KEY vào .env của FE để xác minh địa chỉ bằng Google Maps.");
+      return null;
+    }
+
+    setIsVerifyingMap(true);
+
+    try {
+      const [origin, destination, driverOrigin] = await Promise.all([
+        verifyGoogleAddress(from.trim()),
+        verifyGoogleAddress(to.trim()),
+        verifyGoogleAddress(MOCK_DRIVER_LOCATION),
+      ]);
+      const directions = await getGoogleDirections(origin, destination);
+      const driverDirections = await getGoogleDirections(driverOrigin, origin);
+      const mapImageUrl = getGoogleStaticMapUrl({
+        origin,
+        destination,
+        polyline: directions.overviewPolyline,
+      });
+      const driverMapImageUrl = getGoogleStaticMapUrl({
+        origin: driverOrigin,
+        destination: origin,
+        polyline: driverDirections.overviewPolyline,
+      });
+      const nextVerifiedTripMap = {
+        origin,
+        destination,
+        driverOrigin,
+        directions,
+        driverDirections,
+        mapImageUrl,
+        driverMapImageUrl,
+      };
+
+      setVerifiedTripMap(nextVerifiedTripMap);
+      setAlertMessage("");
+      return nextVerifiedTripMap;
+    } catch (error) {
+      setVerifiedTripMap(null);
+      setAlertMessage(error.message || "Không thể xác minh địa chỉ trên Google Maps.");
+      return null;
+    } finally {
+      setIsVerifyingMap(false);
+    }
+  };
+
+  const showConfirmationStep = async () => {
+    const nextVerifiedTripMap = await verifyBookingLocations();
+
+    if (!nextVerifiedTripMap) {
       return;
     }
 
-    setAlertMessage("");
     setScheduledRideTime("");
     setBookingStep("confirm");
   };
 
-  const openSchedulePicker = () => {
-    if (!requireLogin()) {
+  const openSchedulePicker = async () => {
+    const nextVerifiedTripMap = await verifyBookingLocations();
+
+    if (!nextVerifiedTripMap) {
       return;
     }
 
-    if (!from.trim()) {
-      setAlertMessage("Vui lòng nhập điểm đón");
-      setFocusedField("from");
-      return;
-    }
-
-    if (!to.trim()) {
-      setAlertMessage("Vui lòng nhập điểm đến");
-      setFocusedField("to");
-      return;
-    }
-
-    setAlertMessage("");
     setSchedulePickerVisible(true);
   };
 
@@ -479,6 +535,7 @@ export default function SearchScreen() {
       setTo(address.label);
     }
 
+    setVerifiedTripMap(null);
     setAlertMessage("");
     setOpenAddressMenuId("");
   };
@@ -631,9 +688,19 @@ export default function SearchScreen() {
             </View>
 
             <View style={styles.mapCardCompact}>
-              <ThemedText type="default" style={styles.routeEtaText}>
-                🛵 14 phút • 3.5km
-              </ThemedText>
+              {verifiedTripMap?.mapImageUrl ? (
+                <Image
+                  source={{ uri: verifiedTripMap.mapImageUrl }}
+                  style={styles.googleMapImage}
+                  resizeMode="cover"
+                />
+              ) : null}
+              <View style={styles.mapOverlayBadge}>
+                <ThemedText type="default" style={styles.routeEtaText}>
+                  🛵 {verifiedTripMap?.directions.durationText || "Đang tính"} •{" "}
+                  {verifiedTripMap?.directions.distanceText || "--"}
+                </ThemedText>
+              </View>
             </View>
 
             <View style={styles.noteGroup}>
@@ -695,7 +762,20 @@ export default function SearchScreen() {
               style={styles.bookButton}
               onPress={() => {
                 if (requireLogin()) {
-                  router.push("/trips?activeRide=1");
+                  router.push({
+                    pathname: "/trips",
+                    params: {
+                      activeRide: "1",
+                      pickup: verifiedFromLabel,
+                      destination: verifiedToLabel,
+                      driverOrigin:
+                        verifiedTripMap?.driverOrigin.formattedAddress ??
+                        MOCK_DRIVER_LOCATION,
+                      mapImageUrl: verifiedTripMap?.driverMapImageUrl ?? "",
+                      duration: verifiedTripMap?.driverDirections.durationText ?? "",
+                      distance: verifiedTripMap?.driverDirections.distanceText ?? "",
+                    },
+                  });
                 }
               }}
             >
@@ -713,14 +793,31 @@ export default function SearchScreen() {
             </View>
 
             <View style={styles.mapCard}>
-              <View style={styles.pinWrap}>
-                <ThemedText type="default" style={styles.pinIcon}>
-                  📍
+              {verifiedTripMap?.mapImageUrl ? (
+                <Image
+                  source={{ uri: verifiedTripMap.mapImageUrl }}
+                  style={styles.googleMapImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <>
+                  <View style={styles.pinWrap}>
+                    <ThemedText type="default" style={styles.pinIcon}>
+                      📍
+                    </ThemedText>
+                  </View>
+                  <ThemedText type="default" style={styles.mapLabel}>
+                    {toLabel}
+                  </ThemedText>
+                </>
+              )}
+              <View style={styles.mapOverlayBadge}>
+                <ThemedText type="smallBold" style={styles.routeEtaText}>
+                  Google Maps đã xác minh •{" "}
+                  {verifiedTripMap?.directions.durationText || "--"} •{" "}
+                  {verifiedTripMap?.directions.distanceText || "--"}
                 </ThemedText>
               </View>
-              <ThemedText type="default" style={styles.mapLabel}>
-                {toLabel}
-              </ThemedText>
             </View>
 
             <View
@@ -732,13 +829,13 @@ export default function SearchScreen() {
               <ThemedText type="default" style={styles.summaryText}>
                 Điểm đón:{" "}
                 <ThemedText type="default" style={styles.summaryStrong}>
-                  {fromLabel}
+                  {verifiedFromLabel}
                 </ThemedText>
               </ThemedText>
               <ThemedText type="default" style={styles.summaryText}>
                 Điểm đến:{" "}
                 <ThemedText type="default" style={styles.summaryStrong}>
-                  {toLabel}
+                  {verifiedToLabel}
                 </ThemedText>
               </ThemedText>
               {Boolean(scheduledRideTime) && (
@@ -775,6 +872,7 @@ export default function SearchScreen() {
               value={from}
               onChangeText={(value) => {
                 setFrom(value);
+                setVerifiedTripMap(null);
                 if (alertMessage) {
                   setAlertMessage("");
                 }
@@ -794,6 +892,7 @@ export default function SearchScreen() {
               value={to}
               onChangeText={(value) => {
                 setTo(value);
+                setVerifiedTripMap(null);
                 if (alertMessage) {
                   setAlertMessage("");
                 }
@@ -868,18 +967,22 @@ export default function SearchScreen() {
 
             <View style={styles.buttonRow}>
               <Pressable
-                style={styles.secondaryButton}
+                style={[styles.secondaryButton, isVerifyingMap && styles.buttonDisabled]}
                 onPress={openSchedulePicker}
+                disabled={isVerifyingMap}
               >
-                <ThemedText type="smallBold">Hẹn lịch</ThemedText>
+                <ThemedText type="smallBold">
+                  {isVerifyingMap ? "Đang xác minh..." : "Hẹn lịch"}
+                </ThemedText>
               </Pressable>
 
               <Pressable
-                style={styles.primaryButton}
+                style={[styles.primaryButton, isVerifyingMap && styles.buttonDisabled]}
                 onPress={showConfirmationStep}
+                disabled={isVerifyingMap}
               >
                 <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                  Tiếp tục
+                  {isVerifyingMap ? "Đang xác minh..." : "Tiếp tục"}
                 </ThemedText>
               </Pressable>
             </View>
@@ -2365,6 +2468,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     padding: Spacing.four,
     backgroundColor: MAP_BG,
+    overflow: "hidden",
   },
   mapCardCompact: {
     minHeight: 200,
@@ -2373,6 +2477,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: Spacing.four,
     backgroundColor: MAP_BG,
+    overflow: "hidden",
+  },
+  googleMapImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  mapOverlayBadge: {
+    position: "absolute",
+    left: Spacing.three,
+    right: Spacing.three,
+    bottom: Spacing.three,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    alignItems: "center",
   },
   routeEtaText: {
     color: "#111827",
@@ -2507,6 +2628,9 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: "#FFFFFF",
+  },
+  buttonDisabled: {
+    opacity: 0.65,
   },
   sharedSection: {
     gap: Spacing.three,

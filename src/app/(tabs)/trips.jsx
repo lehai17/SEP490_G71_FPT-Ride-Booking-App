@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -263,6 +264,24 @@ export default function TripsScreen() {
 
   const items = tripsBySection[selectedTab] ?? [];
   const hasActiveRide = params.activeRide === "1";
+  const activePickup =
+    typeof params.pickup === "string" && params.pickup
+      ? params.pickup
+      : "Cổng FPT";
+  const activeDriverOrigin =
+    typeof params.driverOrigin === "string" && params.driverOrigin
+      ? params.driverOrigin
+      : "Vị trí tài xế";
+  const activeDestination =
+    typeof params.destination === "string" && params.destination
+      ? params.destination
+      : "Vị trí của bạn";
+  const activeMapImageUrl =
+    typeof params.mapImageUrl === "string" ? params.mapImageUrl : "";
+  const activeDuration =
+    typeof params.duration === "string" && params.duration ? params.duration : "1 phút";
+  const activeDistance =
+    typeof params.distance === "string" && params.distance ? params.distance : "1.2 km";
   const scheduleDateOptions = createDateOptions();
   const selectedDateOption =
     scheduleDateOptions.find((option) => option.value === editDraft.date) ??
@@ -525,15 +544,65 @@ export default function TripsScreen() {
                     Hành trình của bạn
                   </ThemedText>
 
+                  <View style={styles.activeMapCard}>
+                    {activeMapImageUrl ? (
+                      <Image
+                        source={{ uri: activeMapImageUrl }}
+                        style={styles.activeMapImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.activeMapFallback}>
+                        <ThemedText type="default" style={styles.activeMapFallbackIcon}>
+                          🗺️
+                        </ThemedText>
+                        <ThemedText type="smallBold" style={styles.activeMapFallbackText}>
+                          Bản đồ hành trình
+                        </ThemedText>
+                      </View>
+                    )}
+                    <View style={styles.activeMapBadge}>
+                      <ThemedText type="smallBold" style={styles.activeMapBadgeText}>
+                        Google Maps • Driver → Khách
+                      </ThemedText>
+                    </View>
+                  </View>
+
                   <View style={styles.activeEtaCard}>
                     <ThemedText type="small" style={styles.activeEtaStatus}>
                       🛵 Tài xế đang đến...
                     </ThemedText>
                     <ThemedText type="default" style={styles.activeEtaNumber}>
-                      1 phút
+                      {activeDuration}
                     </ThemedText>
                     <ThemedText type="small" style={styles.activeEtaDistance}>
-                      Khoảng cách 1.2km
+                      Khoảng cách {activeDistance}
+                    </ThemedText>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.activeRouteCard,
+                      { backgroundColor: theme.backgroundElement },
+                    ]}
+                  >
+                    <ThemedText type="small" style={styles.activeRouteLabel}>
+                      Điểm tài xế xuất phát
+                    </ThemedText>
+                    <ThemedText type="default" style={styles.activeRouteValue}>
+                      {activeDriverOrigin}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.activeRouteLabel}>
+                      Điểm đón khách
+                    </ThemedText>
+                    <ThemedText type="default" style={styles.activeRouteValue}>
+                      {activePickup}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.activeRouteLabel}>
+                      Điểm đến chuyến xe
+                    </ThemedText>
+                    <ThemedText type="default" style={styles.activeRouteValue}>
+                      {activeDestination}
                     </ThemedText>
                   </View>
 
@@ -1402,6 +1471,50 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "800",
   },
+  activeMapCard: {
+    minHeight: 230,
+    borderRadius: 22,
+    overflow: "hidden",
+    backgroundColor: "#FFF3EA",
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    shadowColor: "#9A3412",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  activeMapImage: {
+    width: "100%",
+    height: "100%",
+  },
+  activeMapFallback: {
+    flex: 1,
+    minHeight: 230,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.one,
+  },
+  activeMapFallbackIcon: {
+    fontSize: 34,
+  },
+  activeMapFallbackText: {
+    color: "#9A3412",
+  },
+  activeMapBadge: {
+    position: "absolute",
+    left: Spacing.three,
+    right: Spacing.three,
+    bottom: Spacing.three,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    alignItems: "center",
+  },
+  activeMapBadgeText: {
+    color: "#9A3412",
+  },
   emptyActiveCard: {
     minHeight: 170,
     borderRadius: 18,
@@ -1441,6 +1554,21 @@ const styles = StyleSheet.create({
   },
   activeEtaDistance: {
     color: "#6B7280",
+  },
+  activeRouteCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    padding: Spacing.three,
+    gap: 4,
+  },
+  activeRouteLabel: {
+    color: "#9A3412",
+    marginTop: Spacing.one,
+  },
+  activeRouteValue: {
+    color: "#111827",
+    fontWeight: "800",
   },
   activeDriverCard: {
     minHeight: 72,
