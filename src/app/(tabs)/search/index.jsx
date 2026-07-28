@@ -1,7 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import {
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -10,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 
 import { ThemedText } from "@/components/themed-text";
 import {
@@ -24,48 +24,67 @@ import { rideGroups } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 import {
   getGoogleDirections,
+  buildGeoapifyInteractiveMapHtml,
+  getGooglePlaceDetails,
+  getGooglePlaceSuggestions,
+  getGooglePlaceMapUrl,
   getGoogleStaticMapUrl,
+  reverseGooglePlaceLocation,
   isGoogleMapsConfigured,
-  verifyGoogleAddress,
 } from "@/services/google-maps-api";
 
 const BRAND = "#FF7A00";
 const MAP_BG = "#FFF3C9";
-const MOCK_DRIVER_LOCATION = "Cổng chính Đại học FPT, Thạch Hòa, Hà Nội";
+const MOCK_DRIVER_POINT = {
+  placeId: "",
+  formattedAddress: "C\u1ed5ng ch\u00ednh \u0110\u1ea1i h\u1ecdc FPT, Th\u1ea1ch H\u00f2a, H\u00e0 N\u1ed9i",
+  location: {
+    lat: 21.0137,
+    lng: 105.5262,
+  },
+};
+const MOCK_DRIVER_LOCATION = "C\u1ed5ng ch\u00ednh \u0110\u1ea1i h\u1ecdc FPT, Th\u1ea1ch H\u00f2a, H\u00e0 N\u1ed9i";
+const vietnameseTextInputProps = {
+  autoCapitalize: "none",
+  autoCorrect: false,
+  autoComplete: "off",
+  spellCheck: false,
+  keyboardType: "default",
+  disableFullscreenUI: true,
+};
 const rideOptions = [
   {
     id: "bike",
-    icon: "🛵",
-    name: "Xe máy",
-    eta: "Đón trong 3 phút",
-    price: "25.000đ",
+    icon: "Xe m\u00e1y",
+    name: "Xe m\u00e1y",
+    eta: "\u0110\u00f3n trong 3 ph\u00fat",
+    price: "25.000\u0111",
   },
   {
     id: "car4",
-    icon: "🚗",
-    name: "Xe 4 chỗ",
-    eta: "Đón trong 5 phút",
-    price: "46.000đ",
+    icon: "Xe 4 ch\u1ed7",
+    name: "Xe 4 ch\u1ed7",
+    eta: "\u0110\u00f3n trong 5 ph\u00fat",
+    price: "46.000\u0111",
   },
   {
     id: "car7",
-    icon: "🚙",
-    name: "Xe 7 chỗ",
-    eta: "Đón trong 7 phút",
-    price: "60.000đ",
+    icon: "Xe 7 ch\u1ed7",
+    name: "Xe 7 ch\u1ed7",
+    eta: "\u0110\u00f3n trong 7 ph\u00fat",
+    price: "60.000\u0111",
   },
 ];
 
 const sharedTripTypes = [
-  "Chuyến đi (Từ nơi khác đến FPT)",
-  "Chuyến về (Từ FPT đi nơi khác)",
+  "Chuy\u1ebfn \u0111i (T\u1eeb n\u01a1i kh\u00e1c \u0111\u1ebfn FPT)",
+  "Chuy\u1ebfn v\u1ec1 (T\u1eeb FPT \u0111i n\u01a1i kh\u00e1c)",
 ];
 
 const sharedVehicleOptions = [
-  { label: "🚗 Xe 4 chỗ", vehicle: "Xe 4 chỗ", capacity: 4, price: "30.000đ" },
-  { label: "🚙 Xe 7 chỗ", vehicle: "Xe 7 chỗ", capacity: 7, price: "42.000đ" },
+  { label: "Xe 4 ch\u1ed7", vehicle: "Xe 4 ch\u1ed7", capacity: 4, price: "30.000\u0111" },
+  { label: "Xe 7 ch\u1ed7", vehicle: "Xe 7 ch\u1ed7", capacity: 7, price: "42.000\u0111" },
 ];
-
 const sharedSeatOptions = ["2", "3", "4", "5", "6", "7"];
 const sharedSlotOptions = [
   { id: "slot-1", label: "Slot 1", time: "07:30" },
@@ -89,11 +108,11 @@ const defaultAddressForm = {
 
 function getSharedProposal(ride) {
   const isCar7 = ride.vehicle.includes("7");
-  const soloPrice = isCar7 ? "320.000đ" : "250.000đ";
-  const sharedPrice = isCar7 ? "116.000đ" : "90.000đ";
-  const savingPrice = isCar7 ? "204.000đ" : "160.000đ";
-  const [startPoint = "Đại học FPT", endPoint = "Điểm đến"] =
-    ride.route.split("→").map((item) => item.trim());
+  const soloPrice = isCar7 ? "320.000\u0111" : "250.000\u0111";
+  const sharedPrice = isCar7 ? "116.000\u0111" : "90.000\u0111";
+  const savingPrice = isCar7 ? "204.000\u0111" : "160.000\u0111";
+  const [startPoint = "\u0110\u1ea1i h\u1ecdc FPT", endPoint = "\u0110i\u1ec3m \u0111\u1ebfn"] =
+    ride.route.split("\u2192").map((item) => item.trim());
 
   return {
     soloPrice,
@@ -103,8 +122,8 @@ function getSharedProposal(ride) {
     expectedArrival: isCar7 ? "7:20" : "8:10",
     routeSteps: [
       `1. ${startPoint}`,
-      `2. ${ride.driver.split(" ").slice(-2).join(" ") || "Khách"} - ${endPoint}`,
-      "3. Bạn - Mê Trì",
+      `2. ${ride.driver.split(" ").slice(-2).join(" ") || "Kh\u00e1ch"} - ${endPoint}`,
+      "3. B\u1ea1n - M\u00ea Tr\u00ec",
     ],
   };
 }
@@ -112,11 +131,11 @@ function getSharedProposal(ride) {
 const initialSavedAddresses = [
   {
     id: "saved-from",
-    label: "Đại học FPT, Thạch Hòa",
+    label: "\u0110\u1ea1i h\u1ecdc FPT, Th\u1ea1ch H\u00f2a",
   },
   {
     id: "saved-to",
-    label: "Bến xe Mỹ Đình",
+    label: "B\u1ebfn xe M\u1ef9 \u0110\u00ecnh",
   },
 ];
 
@@ -174,11 +193,11 @@ function parseScheduleDateValue(value) {
 
 function getScheduleDateLabel(date, index) {
   if (index === 0) {
-    return "Hôm nay";
+    return "H\u00f4m nay";
   }
 
   if (index === 1) {
-    return "Ngày mai";
+    return "Ng\u00e0y mai";
   }
 
   return formatScheduleDisplay(date);
@@ -215,6 +234,14 @@ function createScheduleDate(dateValue, hour, minute) {
   const date = parseScheduleDateValue(dateValue);
   date.setHours(Number(hour), Number(minute), 0, 0);
   return date;
+}
+
+function extractRoutePoints(routeGeometry) {
+  const coordinates = routeGeometry?.geometry?.coordinates ?? [];
+
+  return coordinates
+    .filter((point) => Array.isArray(point) && point.length >= 2)
+    .map(([lng, lat]) => ({ lat, lng }));
 }
 
 function isScheduleInRange(date) {
@@ -277,15 +304,28 @@ export default function SearchScreen() {
   const normalizedMode = rawMode === "shared" ? "shared" : "now";
 
   const [mode, setMode] = useState(normalizedMode);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [fromInput, setFromInput] = useState("");
+  const [toInput, setToInput] = useState("");
   const [focusedField, setFocusedField] = useState("from");
   const [bookingStep, setBookingStep] = useState("form");
   const [alertMessage, setAlertMessage] = useState("");
   const [driverNote, setDriverNote] = useState("");
   const [selectedRideId, setSelectedRideId] = useState("bike");
+  const fromInputRef = useRef(null);
+  const toInputRef = useRef(null);
   const [isVerifyingMap, setIsVerifyingMap] = useState(false);
   const [verifiedTripMap, setVerifiedTripMap] = useState(null);
+  const [selectedFromPlace, setSelectedFromPlace] = useState(null);
+  const [selectedToPlace, setSelectedToPlace] = useState(null);
+  const [addressSuggestions, setAddressSuggestions] = useState({
+    from: [],
+    to: [],
+  });
+  const [suggestionError, setSuggestionError] = useState({
+    from: "",
+    to: "",
+  });
+  const [loadingSuggestionsFor, setLoadingSuggestionsFor] = useState("");
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState(getDefaultBookingSchedule);
   const [scheduledRideTime, setScheduledRideTime] = useState("");
@@ -300,9 +340,68 @@ export default function SearchScreen() {
   const [editingAddressId, setEditingAddressId] = useState("");
   const [addressFormError, setAddressFormError] = useState("");
   const [openAddressMenuId, setOpenAddressMenuId] = useState("");
+  const deferredFrom = useDeferredValue(fromInput);
+  const deferredTo = useDeferredValue(toInput);
   const suggestedSharedRides = sharedRides.filter(
     (ride) => ride.participantCount > 1
   );
+
+  useEffect(() => {
+    if (mode === "shared" || bookingStep !== "form") {
+      return undefined;
+    }
+
+    const query = focusedField === "from" ? deferredFrom : deferredTo;
+
+    if (query.trim().length < 2) {
+      return undefined;
+    }
+
+    let isActive = true;
+    const timeoutId = setTimeout(async () => {
+      if (!isGoogleMapsConfigured()) {
+        return;
+      }
+
+      setLoadingSuggestionsFor(focusedField);
+
+      try {
+        const suggestions = await getGooglePlaceSuggestions(query);
+
+        if (isActive) {
+          setAddressSuggestions((current) => ({
+            ...current,
+            [focusedField]: suggestions,
+          }));
+          setSuggestionError((current) => ({
+            ...current,
+            [focusedField]: suggestions.length ? "" : "Ch\u01b0a c\u00f3 g\u1ee3i \u00fd ph\u00f9 h\u1ee3p, th\u1eed nh\u1eadp r\u00f5 h\u01a1n t\u00ean \u0111\u01b0\u1eddng/qu\u1eadn.",
+          }));
+        }
+      } catch (error) {
+        if (isActive) {
+          setAddressSuggestions((current) => ({
+            ...current,
+            [focusedField]: [],
+          }));
+          setSuggestionError((current) => ({
+            ...current,
+            [focusedField]:
+              error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c g\u1ee3i \u00fd. Ki\u1ec3m tra API b\u1ea3n \u0111\u1ed3 trong Geoapify.",
+          }));
+        }
+      } finally {
+        if (isActive) {
+          setLoadingSuggestionsFor("");
+        }
+      }
+    }, 350);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
+  }, [bookingStep, deferredFrom, deferredTo, focusedField, mode]);
 
   const selectSingleRide = () => {
     setMode("now");
@@ -317,8 +416,8 @@ export default function SearchScreen() {
     setScheduledRideTime("");
   };
 
-  const fromLabel = from.trim() || "Vị trí hiện tại";
-  const toLabel = to.trim() || "Đại học FPT, Thạch Hòa";
+  const fromLabel = fromInput.trim() || "V\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i";
+  const toLabel = toInput.trim() || "\u0110\u1ea1i h\u1ecdc FPT, Th\u1ea1ch H\u00f2a";
   const verifiedFromLabel =
     verifiedTripMap?.origin.formattedAddress ?? fromLabel;
   const verifiedToLabel =
@@ -336,13 +435,13 @@ export default function SearchScreen() {
   const sharedCalendarPreview = selectedSharedDate ?? scheduleDateOptions[0];
   const sharedScheduleSummary =
     selectedSharedSlot && selectedSharedDate
-      ? `Xe ghép lúc ${selectedSharedSlot.time} • ${selectedSharedDate.display} (${selectedSharedDate.label})`
-      : "Chọn slot và ngày đi để hoàn tất yêu cầu.";
-  const isSharedTripToFpt = sharedForm.tripType.startsWith("Chuyến đi");
-  const sharedLocationLabel = isSharedTripToFpt ? "Điểm đón" : "Điểm đến";
+      ? `Xe gh\u00e9p l\u00fac ${selectedSharedSlot.time} \u2022 ${selectedSharedDate.display} (${selectedSharedDate.label})`
+      : "Ch\u1ecdn slot v\u00e0 ng\u00e0y \u0111i \u0111\u1ec3 ho\u00e0n t\u1ea5t y\u00eau c\u1ea7u.";
+  const isSharedTripToFpt = sharedForm.tripType.startsWith("Chuy\u1ebfn \u0111i");
+  const sharedLocationLabel = isSharedTripToFpt ? "\u0110i\u1ec3m \u0111\u00f3n" : "\u0110i\u1ec3m \u0111\u1ebfn";
   const sharedLocationPlaceholder = isSharedTripToFpt
-    ? "VD: Trạm xe, Đường XYZ..."
-    : "VD: Bến xe Mỹ Đình, Xuân Mai...";
+    ? "VD: Tr\u1ea1m xe, \u0110\u01b0\u1eddng XYZ..."
+    : "VD: B\u1ebfn xe M\u1ef9 \u0110\u00ecnh, Xu\u00e2n Mai...";
   const scheduleHourOptions = createScheduleHourOptions(selectedScheduleDate.value);
   const scheduleMinuteOptions = createScheduleMinuteOptions(
     selectedScheduleDate.value,
@@ -354,7 +453,40 @@ export default function SearchScreen() {
     scheduleDraft.minute
   );
   const arrivalDate = addScheduleMinutes(pickupDate, MOCK_TRIP_DURATION_MINUTES);
-  const scheduleDisplayText = `${scheduleDraft.time} • ${scheduleDraft.dateDisplay} (${scheduleDraft.dateLabel})`;
+  const scheduleDisplayText = `${scheduleDraft.time} \u2022 ${scheduleDraft.dateDisplay} (${scheduleDraft.dateLabel})`;
+  const pickupMapHtml = verifiedTripMap
+    ? buildGeoapifyInteractiveMapHtml({
+        center: verifiedTripMap.origin.location,
+        markers: [
+          {
+            lat: verifiedTripMap.origin.location.lat,
+            lng: verifiedTripMap.origin.location.lng,
+            popupText: verifiedTripMap.origin.formattedAddress,
+          },
+        ],
+        zoom: 17,
+        draggableMarkerIndex: 0,
+      })
+    : "";
+  const routeMapHtml = verifiedTripMap
+    ? buildGeoapifyInteractiveMapHtml({
+        center: verifiedTripMap.origin.location,
+        markers: [
+          {
+            lat: verifiedTripMap.origin.location.lat,
+            lng: verifiedTripMap.origin.location.lng,
+            popupText: verifiedTripMap.origin.formattedAddress,
+          },
+          {
+            lat: verifiedTripMap.destination.location.lat,
+            lng: verifiedTripMap.destination.location.lng,
+            popupText: verifiedTripMap.destination.formattedAddress,
+          },
+        ],
+        routePoints: extractRoutePoints(verifiedTripMap.directions.routeGeometry),
+        zoom: 14,
+      })
+    : "";
 
   const requireLogin = () => {
     if (isAuthenticated) {
@@ -365,64 +497,189 @@ export default function SearchScreen() {
     return false;
   };
 
-  const verifyBookingLocations = async () => {
+  const syncAddressInputText = (field, nextValue) => {
+    if (field === "from") {
+      setFromInput(nextValue);
+      return;
+    }
+
+    setToInput(nextValue);
+  };
+
+  const resolvePlaceSuggestion = async (suggestion) => {
+    if (!suggestion?.placeId && !suggestion?.location) {
+      throw new Error("Kh\u00f4ng t\u00ecm th\u1ea5y th\u00f4ng tin \u0111\u1ecba ch\u1ec9 t\u1eeb Geoapify.");
+    }
+
+    if (suggestion.location) {
+      return {
+        ...suggestion,
+        description: suggestion.formattedAddress || suggestion.description,
+        formattedAddress: suggestion.formattedAddress || suggestion.description,
+      };
+    }
+
+    const place = await getGooglePlaceDetails(suggestion.placeId);
+
+    return {
+      ...suggestion,
+      placeId: place.placeId,
+      description: place.formattedAddress || suggestion.description,
+      formattedAddress: place.formattedAddress || suggestion.description,
+      location: place.location,
+    };
+  };
+
+  const resolveSavedAddress = async (label) => {
+    const suggestions = await getGooglePlaceSuggestions(label);
+    const normalizedLabel = label.trim().toLowerCase();
+    const matchedSuggestion =
+      suggestions.find((suggestion) => {
+        const suggestionText = (suggestion.description || "").trim().toLowerCase();
+        const mainText = (suggestion.mainText || "").trim().toLowerCase();
+
+        return (
+          suggestionText === normalizedLabel ||
+          mainText === normalizedLabel ||
+          suggestionText.includes(normalizedLabel) ||
+          normalizedLabel.includes(suggestionText)
+        );
+      }) ?? suggestions[0];
+
+    if (!matchedSuggestion) {
+      throw new Error(`Kh\u00f4ng t\u00ecm th\u1ea5y \u0111\u1ecba ch\u1ec9 "${label}" tr\u00ean Geoapify.`);
+    }
+
+    return resolvePlaceSuggestion(matchedSuggestion);
+  };
+
+  const refreshVerifiedTripWithPickup = async (nextOrigin) => {
+    if (!selectedToPlace) {
+      return;
+    }
+
+    setIsVerifyingMap(true);
+
+    try {
+      const nextVerifiedTripMap = await createVerifiedTripMap(nextOrigin, selectedToPlace);
+      setVerifiedTripMap(nextVerifiedTripMap);
+      setAlertMessage("");
+    } catch (error) {
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt b\u1ea3n \u0111\u1ed3 sau khi \u0111\u1ed5i \u0111i\u1ec3m \u0111\u00f3n.");
+    } finally {
+      setIsVerifyingMap(false);
+    }
+  };
+
+  const applyPickupMarkerDrag = async ({ location, formattedAddress }) => {
+    if (!location) {
+      return;
+    }
+
+    try {
+      const resolvedPlace = formattedAddress
+        ? {
+            ...(selectedFromPlace ?? {}),
+            placeId: selectedFromPlace?.placeId ?? "",
+            formattedAddress,
+            description: formattedAddress,
+            mainText: formattedAddress,
+            location,
+          }
+        : await reverseGooglePlaceLocation(location);
+
+      syncAddressInputText("from", resolvedPlace.formattedAddress);
+      setSelectedFromPlace(resolvedPlace);
+      setFocusedField("to");
+      await refreshVerifiedTripWithPickup(resolvedPlace);
+    } catch (error) {
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt \u0111i\u1ec3m \u0111\u00f3n t\u1eeb b\u1ea3n \u0111\u1ed3.");
+    }
+  };
+
+  const handlePickupMapMessage = (event) => {
+    try {
+      const payload = JSON.parse(event.nativeEvent.data);
+
+      if (payload?.type !== "pickup_marker_drag_end") {
+        return;
+      }
+
+      applyPickupMarkerDrag(payload);
+    } catch {
+      // Ignore malformed messages from the WebView.
+    }
+  };
+
+  const createVerifiedTripMap = async (origin, destination) => {
+    const directions = await getGoogleDirections(origin, destination);
+    const driverDirections = await getGoogleDirections(MOCK_DRIVER_POINT, origin);
+
+    return {
+      origin,
+      destination,
+      driverOrigin: MOCK_DRIVER_POINT,
+      directions,
+      driverDirections,
+      mapImageUrl: getGoogleStaticMapUrl({
+        origin,
+        destination,
+        routeGeometry: directions.routeGeometry,
+      }),
+      pickupMapImageUrl: getGooglePlaceMapUrl({
+        point: origin,
+      }),
+      driverMapImageUrl: getGoogleStaticMapUrl({
+        origin: MOCK_DRIVER_POINT,
+        destination: origin,
+        routeGeometry: driverDirections.routeGeometry,
+      }),
+    };
+  };
+
+    const verifyBookingLocations = async () => {
     if (!requireLogin()) {
       return null;
     }
 
-    if (!from.trim()) {
-      setAlertMessage("Vui lòng nhập điểm đón");
+    if (!fromInput.trim()) {
+      setAlertMessage("Vui l\u00f2ng nh\u1eadp \u0111i\u1ec3m \u0111\u00f3n");
       setFocusedField("from");
       return null;
     }
 
-    if (!to.trim()) {
-      setAlertMessage("Vui lòng nhập điểm đến");
+    if (!toInput.trim()) {
+      setAlertMessage("Vui l\u00f2ng nh\u1eadp \u0111i\u1ec3m \u0111\u1ebfn");
       setFocusedField("to");
       return null;
     }
 
-    if (!isGoogleMapsConfigured()) {
-      setAlertMessage("Vui lòng thêm EXPO_PUBLIC_GOOGLE_MAPS_API_KEY vào .env của FE để xác minh địa chỉ bằng Google Maps.");
+    if (!selectedFromPlace) {
+      setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u00f3n t\u1eeb g\u1ee3i \u00fd Geoapify.");
+      setFocusedField("from");
+      return null;
+    }
+
+    if (!selectedToPlace) {
+      setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u1ebfn t\u1eeb g\u1ee3i \u00fd Geoapify.");
+      setFocusedField("to");
       return null;
     }
 
     setIsVerifyingMap(true);
 
     try {
-      const [origin, destination, driverOrigin] = await Promise.all([
-        verifyGoogleAddress(from.trim()),
-        verifyGoogleAddress(to.trim()),
-        verifyGoogleAddress(MOCK_DRIVER_LOCATION),
-      ]);
-      const directions = await getGoogleDirections(origin, destination);
-      const driverDirections = await getGoogleDirections(driverOrigin, origin);
-      const mapImageUrl = getGoogleStaticMapUrl({
-        origin,
-        destination,
-        polyline: directions.overviewPolyline,
-      });
-      const driverMapImageUrl = getGoogleStaticMapUrl({
-        origin: driverOrigin,
-        destination: origin,
-        polyline: driverDirections.overviewPolyline,
-      });
-      const nextVerifiedTripMap = {
-        origin,
-        destination,
-        driverOrigin,
-        directions,
-        driverDirections,
-        mapImageUrl,
-        driverMapImageUrl,
-      };
+      const nextVerifiedTripMap = await createVerifiedTripMap(
+        selectedFromPlace,
+        selectedToPlace
+      );
 
       setVerifiedTripMap(nextVerifiedTripMap);
       setAlertMessage("");
       return nextVerifiedTripMap;
     } catch (error) {
       setVerifiedTripMap(null);
-      setAlertMessage(error.message || "Không thể xác minh địa chỉ trên Google Maps.");
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 x\u00e1c minh \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
       return null;
     } finally {
       setIsVerifyingMap(false);
@@ -450,6 +707,62 @@ export default function SearchScreen() {
     setSchedulePickerVisible(true);
   };
 
+    const selectAddressSuggestion = async (field, suggestion) => {
+    if (!requireLogin()) {
+      return;
+    }
+
+    setAddressSuggestions((current) => ({
+      ...current,
+      [field]: [],
+    }));
+    setSuggestionError((current) => ({
+      ...current,
+      [field]: "",
+    }));
+    setAlertMessage("");
+    setVerifiedTripMap(null);
+
+    try {
+      const resolvedPlace = await resolvePlaceSuggestion(suggestion);
+
+      if (field === "from") {
+        syncAddressInputText("from", resolvedPlace.formattedAddress);
+        setSelectedFromPlace(resolvedPlace);
+        setFocusedField("to");
+        return;
+      }
+
+      syncAddressInputText("to", resolvedPlace.formattedAddress);
+      setSelectedToPlace(resolvedPlace);
+
+      if (!selectedFromPlace) {
+        setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u00f3n t\u1eeb g\u1ee3i \u00fd tr\u01b0\u1edbc.");
+        setFocusedField("from");
+        return;
+      }
+
+      setIsVerifyingMap(true);
+
+      try {
+        const nextVerifiedTripMap = await createVerifiedTripMap(
+          selectedFromPlace,
+          resolvedPlace
+        );
+
+        setVerifiedTripMap(nextVerifiedTripMap);
+        setBookingStep("confirm");
+      } catch (error) {
+        setVerifiedTripMap(null);
+        setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 x\u00e1c minh \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
+      } finally {
+        setIsVerifyingMap(false);
+      }
+    } catch (error) {
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
+    }
+  };
+
   const confirmSchedulePicker = () => {
     setScheduledRideTime(scheduleDisplayText);
     setSchedulePickerVisible(false);
@@ -473,35 +786,35 @@ export default function SearchScreen() {
     }
 
     if (!sharedForm.tripType) {
-      setSharedFormError("Vui lòng chọn loại chuyến");
+      setSharedFormError("Vui l\u00f2ng ch\u1ecdn lo\u1ea1i chuy\u1ebfn");
       return;
     }
 
     if (!sharedForm.maxSeats) {
-      setSharedFormError("Vui lòng chọn số người tối đa");
+      setSharedFormError("Vui l\u00f2ng ch\u1ecdn s\u1ed1 ng\u01b0\u1eddi t\u1ed1i \u0111a");
       return;
     }
 
     if (!sharedForm.location.trim()) {
-      setSharedFormError(`Vui lòng nhập ${sharedLocationLabel.toLowerCase()}`);
+      setSharedFormError(`Vui l\u00f2ng nh\u1eadp ${sharedLocationLabel.toLowerCase()}`);
       return;
     }
 
     if (!selectedSharedSlot) {
-      setSharedFormError("Vui lòng chọn slot đi");
+      setSharedFormError("Vui l\u00f2ng ch\u1ecdn slot \u0111i");
       return;
     }
 
     if (!selectedSharedDate) {
-      setSharedFormError("Vui lòng chọn ngày đi");
+      setSharedFormError("Vui l\u00f2ng ch\u1ecdn ng\u00e0y \u0111i");
       return;
     }
 
     const selectedVehicle = sharedVehicleOptions[sharedForm.vehicleIndex];
     const route = isSharedTripToFpt
-      ? `${sharedForm.location.trim()} → Đại học FPT`
-      : `Đại học FPT → ${sharedForm.location.trim()}`;
-    const scheduleText = `${selectedSharedSlot.label} (${selectedSharedSlot.time}) • ${selectedSharedDate.display}`;
+      ? `${sharedForm.location.trim()} \u2192 \u0110\u1ea1i h\u1ecdc FPT`
+      : `\u0110\u1ea1i h\u1ecdc FPT \u2192 ${sharedForm.location.trim()}`;
+    const scheduleText = `${selectedSharedSlot.label} (${selectedSharedSlot.time}) \u2022 ${selectedSharedDate.display}`;
 
     setSharedRides((current) => [
       {
@@ -510,34 +823,70 @@ export default function SearchScreen() {
         vehicle: selectedVehicle.vehicle,
         price: selectedVehicle.price,
         distance: "18 km",
-        seats: `1/${sharedForm.maxSeats} thành viên`,
+        seats: `1/${sharedForm.maxSeats} th\u00e0nh vi\u00ean`,
         note: scheduleText,
         scheduleText,
         date: selectedSharedDate.value,
         slotId: selectedSharedSlot.id,
-        status: "Đã tham gia",
-        driver: "Lê Nguyễn Đại Hải",
+        status: "\u0110\u00e3 tham gia",
+        driver: "L\u00ea Nguy\u1ec5n \u0110\u1ea1i H\u1ea3i",
         destination: route,
         participantCount: 1,
         capacity: Number(sharedForm.maxSeats),
-        perPersonPrice: "15.000đ/người",
+        perPersonPrice: "15.000\u0111/ng\u01b0\u1eddi",
       },
       ...current,
     ]);
     setSharedForm(defaultSharedForm);
     closeCreateSharedModal();
   };
-
-  const fillAddressToFocusedField = (address) => {
-    if (focusedField === "from") {
-      setFrom(address.label);
-    } else {
-      setTo(address.label);
+  const fillAddressToFocusedField = async (address) => {
+    if (!address?.label) {
+      return;
     }
 
-    setVerifiedTripMap(null);
     setAlertMessage("");
+    setVerifiedTripMap(null);
     setOpenAddressMenuId("");
+
+    try {
+      const resolvedPlace = await resolveSavedAddress(address.label);
+
+      if (focusedField === "from") {
+        syncAddressInputText("from", resolvedPlace.formattedAddress);
+        setSelectedFromPlace(resolvedPlace);
+        setFocusedField("to");
+        return;
+      }
+
+      syncAddressInputText("to", resolvedPlace.formattedAddress);
+      setSelectedToPlace(resolvedPlace);
+
+      if (!selectedFromPlace) {
+        setFocusedField("from");
+        setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u00f3n tr\u01b0\u1edbc.");
+        return;
+      }
+
+      setIsVerifyingMap(true);
+
+      try {
+        const nextVerifiedTripMap = await createVerifiedTripMap(
+          selectedFromPlace,
+          resolvedPlace
+        );
+
+        setVerifiedTripMap(nextVerifiedTripMap);
+        setBookingStep("confirm");
+      } catch (error) {
+        setVerifiedTripMap(null);
+        setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 x\u00e1c minh \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
+      } finally {
+        setIsVerifyingMap(false);
+      }
+    } catch (error) {
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 \u0111\u00e3 l\u01b0u t\u1eeb Geoapify.");
+    }
   };
 
   const openCreateAddressModal = () => {
@@ -579,7 +928,7 @@ export default function SearchScreen() {
     }
 
     if (!addressForm.label.trim()) {
-      setAddressFormError("Vui lòng nhập tên địa chỉ");
+      setAddressFormError("Vui l\u00f2ng nh\u1eadp t\u00ean \u0111\u1ecba ch\u1ec9");
       return;
     }
 
@@ -608,6 +957,8 @@ export default function SearchScreen() {
     setOpenAddressMenuId("");
   };
 
+  const isMapScreen = mode !== "shared" && bookingStep !== "form";
+
   return (
     <>
       <ScrollView
@@ -619,6 +970,8 @@ export default function SearchScreen() {
             paddingBottom: insets.bottom + Spacing.five,
           },
         ]}
+        scrollEnabled={!isMapScreen}
+        nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
@@ -640,12 +993,12 @@ export default function SearchScreen() {
             style={styles.backButton}
           >
             <ThemedText type="subtitle" style={styles.backIcon}>
-              ←
-            </ThemedText>
+                    {"\u2190"}
+                  </ThemedText>
           </Pressable>
           <ThemedText type="default" style={styles.headerTitle}>
-            Đặt xe
-          </ThemedText>
+                    {"\u0110\u1eb7t xe"}
+                  </ThemedText>
         </View>
 
         <View style={styles.segmentRow}>
@@ -660,7 +1013,7 @@ export default function SearchScreen() {
                 mode === "now" && styles.segmentTextActive,
               ]}
             >
-              Xe lẻ
+              {"Xe l\u1ebb"}
             </ThemedText>
           </Pressable>
           <Pressable
@@ -674,7 +1027,7 @@ export default function SearchScreen() {
                 mode === "shared" && styles.segmentTextActive,
               ]}
             >
-              Xe ghép
+              {"Xe gh\u00e9p"}
             </ThemedText>
           </Pressable>
         </View>
@@ -687,42 +1040,75 @@ export default function SearchScreen() {
               <View style={styles.dotActive} />
             </View>
 
-            <View style={styles.mapCardCompact}>
-              {verifiedTripMap?.mapImageUrl ? (
-                <Image
-                  source={{ uri: verifiedTripMap.mapImageUrl }}
+            <View style={styles.routeMapCard}>
+              {verifiedTripMap ? (
+                <WebView
+                  key={`route-map-${verifiedTripMap.origin.placeId || verifiedTripMap.origin.formattedAddress}-${verifiedTripMap.destination.placeId || verifiedTripMap.destination.formattedAddress}`}
+                  source={{ html: routeMapHtml }}
                   style={styles.googleMapImage}
-                  resizeMode="cover"
+                  originWhitelist={["*"]}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  mixedContentMode="always"
+                  scrollEnabled
+                  nestedScrollEnabled
                 />
-              ) : null}
-              <View style={styles.mapOverlayBadge}>
-                <ThemedText type="default" style={styles.routeEtaText}>
-                  🛵 {verifiedTripMap?.directions.durationText || "Đang tính"} •{" "}
-                  {verifiedTripMap?.directions.distanceText || "--"}
+              ) : (
+                <View style={styles.routeMapFallback}>
+                  <View style={styles.routeMapFallbackHeader}>
+                    <ThemedText type="smallBold" style={styles.routeMapFallbackTitle}>
+                    {"Tuy\u1ebfn \u0111\u01b0\u1eddng \u0111\u00e3 x\u00e1c minh"}
+                  </ThemedText>
+                    <ThemedText type="small" style={styles.routeMapFallbackMeta}>
+                      {verifiedTripMap?.directions.durationText || "\u0110ang t\u00ednh"} {"\u2022"}{" "}
+                      {verifiedTripMap?.directions.distanceText || "--"}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.routeMapFallbackBody}>
+                    <ThemedText type="smallBold" style={styles.routeMapFallbackPoint}>
+                      {verifiedFromLabel}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.routeMapFallbackArrow}>
+                    {"\u2193"}
+                  </ThemedText>
+                    <ThemedText type="smallBold" style={styles.routeMapFallbackPoint}>
+                      {verifiedToLabel}
+                    </ThemedText>
+                  </View>
+                </View>
+              )}
+              <View style={styles.routeMapTopBar}>
+                <Pressable
+                  style={styles.routeBackButton}
+                  onPress={() => setBookingStep("confirm")}
+                >
+                  <ThemedText type="default" style={styles.routeBackIcon}>
+                    {"\u2190"}
+                  </ThemedText>
+                </Pressable>
+                <View style={styles.routeInfoPill}>
+                  <ThemedText type="smallBold" style={styles.routeInfoText}>
+                    {verifiedTripMap?.directions.durationText || "\u0110ang t\u00ednh"} {"\u2022"}{" "}
+                    {verifiedTripMap?.directions.distanceText || "--"}
+                  </ThemedText>
+                </View>
+              </View>
+              <View style={styles.routeDestinationPill}>
+                <ThemedText
+                  type="smallBold"
+                  style={styles.routeDestinationText}
+                  numberOfLines={1}
+                >
+                  {verifiedToLabel}
                 </ThemedText>
               </View>
             </View>
 
-            <View style={styles.noteGroup}>
-              <ThemedText type="small" style={styles.noteLabel}>
-                Ghi chú cho tài xế
-              </ThemedText>
-              <TextInput
-                placeholder="VD: gần cổng, mặc áo xanh..."
-                placeholderTextColor={theme.textSecondary}
-                style={[
-                  styles.noteInput,
-                  {
-                    color: theme.text,
-                    backgroundColor: theme.backgroundElement,
-                  },
-                ]}
-                value={driverNote}
-                onChangeText={setDriverNote}
-              />
-            </View>
-
-            <View style={styles.rideOptionsList}>
+            <View style={styles.rideOptionsSheet}>
+              <View style={styles.sheetHandle} />
+              <ThemedText type="default" style={styles.rideSheetTitle}>
+                    {"Ch\u1ecdn lo\u1ea1i xe"}
+                  </ThemedText>
               {rideOptions.map((option) => {
                 const isSelected = option.id === selectedRideId;
 
@@ -752,10 +1138,13 @@ export default function SearchScreen() {
               })}
             </View>
 
-            <View style={styles.paymentNotice}>
-              <ThemedText type="small" style={styles.paymentNoticeText}>
-                💵 Thanh toán tiền mặt trực tiếp cho tài xế
-              </ThemedText>
+            <View style={styles.rideUtilityRow}>
+              <View style={styles.utilityChip}>
+                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
+              </View>
+              <View style={styles.utilityChip}>
+                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
+              </View>
             </View>
 
             <Pressable
@@ -780,8 +1169,8 @@ export default function SearchScreen() {
               }}
             >
               <ThemedText type="smallBold" style={styles.bookButtonText}>
-                Đặt xe
-              </ThemedText>
+                    {"\u0110\u1eb7t xe"}
+                  </ThemedText>
             </Pressable>
           </>
         ) : bookingStep === "confirm" && mode !== "shared" ? (
@@ -792,75 +1181,117 @@ export default function SearchScreen() {
               <View style={styles.dotInactive} />
             </View>
 
-            <View style={styles.mapCard}>
-              {verifiedTripMap?.mapImageUrl ? (
-                <Image
-                  source={{ uri: verifiedTripMap.mapImageUrl }}
+            <View style={styles.pickupMapCard}>
+              {verifiedTripMap ? (
+                <WebView
+                  key={`pickup-map-${verifiedTripMap.origin.placeId || verifiedTripMap.origin.formattedAddress}`}
+                  source={{ html: pickupMapHtml }}
                   style={styles.googleMapImage}
-                  resizeMode="cover"
+                  originWhitelist={["*"]}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  mixedContentMode="always"
+                  scrollEnabled
+                  nestedScrollEnabled
+                  onMessage={handlePickupMapMessage}
                 />
               ) : (
                 <>
                   <View style={styles.pinWrap}>
                     <ThemedText type="default" style={styles.pinIcon}>
-                      📍
-                    </ThemedText>
+                    {"\u25cf"}
+                  </ThemedText>
                   </View>
                   <ThemedText type="default" style={styles.mapLabel}>
-                    {toLabel}
+                    {fromLabel}
                   </ThemedText>
                 </>
               )}
-              <View style={styles.mapOverlayBadge}>
-                <ThemedText type="smallBold" style={styles.routeEtaText}>
-                  Google Maps đã xác minh •{" "}
-                  {verifiedTripMap?.directions.durationText || "--"} •{" "}
-                  {verifiedTripMap?.directions.distanceText || "--"}
-                </ThemedText>
+              <View style={styles.pickupMapTopBar}>
+                <Pressable
+                  style={styles.pickupBackButton}
+                  onPress={() => setBookingStep("form")}
+                >
+                  <ThemedText type="default" style={styles.pickupBackIcon}>
+                    {"\u2190"}
+                  </ThemedText>
+                </Pressable>
+                <View style={styles.pickupSearchPill}>
+                  <ThemedText type="default" style={styles.pickupSearchIcon}>
+                    {""}
+                  </ThemedText>
+                  <ThemedText
+                    type="smallBold"
+                    style={styles.pickupSearchText}
+                    numberOfLines={1}
+                  >
+                    {"T\u00ecm ki\u1ebfm"}
+                  </ThemedText>
+                </View>
               </View>
             </View>
 
-            <View
-              style={[
-                styles.summaryCard,
-                { backgroundColor: theme.backgroundElement },
-              ]}
-            >
-              <ThemedText type="default" style={styles.summaryText}>
-                Điểm đón:{" "}
-                <ThemedText type="default" style={styles.summaryStrong}>
-                  {verifiedFromLabel}
-                </ThemedText>
-              </ThemedText>
-              <ThemedText type="default" style={styles.summaryText}>
-                Điểm đến:{" "}
-                <ThemedText type="default" style={styles.summaryStrong}>
-                  {verifiedToLabel}
-                </ThemedText>
-              </ThemedText>
-              {Boolean(scheduledRideTime) && (
-                <ThemedText type="default" style={styles.summaryText}>
-                  Thời gian hẹn:{" "}
-                  <ThemedText type="default" style={styles.summaryStrong}>
-                    {scheduledRideTime}
+            <View style={styles.pickupConfirmSheet}>
+              <View style={styles.pickupAddressRow}>
+                <View style={styles.pickupAddressIconWrap}>
+                  <ThemedText type="default" style={styles.pickupAddressIcon}>
+                    {"\ud83d\udccd"}
                   </ThemedText>
-                </ThemedText>
+                  <ThemedText type="small" style={styles.pickupDistanceText}>
+                    20 m
+                  </ThemedText>
+                </View>
+                <View style={styles.pickupAddressContent}>
+                  <ThemedText
+                    type="default"
+                    style={styles.pickupAddressTitle}
+                    numberOfLines={2}
+                  >
+                    {verifiedFromLabel}
+                  </ThemedText>
+                  <ThemedText
+                    type="small"
+                    style={styles.pickupAddressSubtitle}
+                    numberOfLines={2}
+                  >
+                    {"\u0110i\u1ec3m \u0111\u1ebfn: "}{verifiedToLabel}
+                  </ThemedText>
+                </View>
+              </View>
+
+              <TextInput
+                {...vietnameseTextInputProps}
+                placeholder={"Th\u00eam ghi ch\u00fa cho b\u00e1c t\u00e0i (v\u00ed d\u1ee5: g\u1ea7n c\u1ed5ng)."}
+                placeholderTextColor="#9CA3AF"
+                style={styles.pickupNoteInput}
+                value={driverNote}
+                onChangeText={setDriverNote}
+              />
+
+              {Boolean(scheduledRideTime) && (
+                <View style={styles.pickupScheduleBadge}>
+                  <ThemedText type="smallBold" style={styles.pickupScheduleText}>
+                    {"H\u1eb9n l\u1ecbch: "}{scheduledRideTime}
+                  </ThemedText>
+                </View>
               )}
             </View>
 
             <Pressable
-              style={styles.confirmButton}
+              style={styles.pickupConfirmButton}
               onPress={() => setBookingStep("rideOptions")}
             >
-              <ThemedText type="smallBold" style={styles.confirmButtonText}>
-                Xác nhận điểm đến
+              <ThemedText type="smallBold" style={styles.pickupConfirmButtonText}>
+                {"X\u00e1c nh\u1eadn \u0111i\u1ec3m \u0111\u00f3n"}
               </ThemedText>
             </Pressable>
           </>
         ) : mode !== "shared" ? (
           <>
             <TextInput
-              placeholder="Điểm đón (Vị trí hiện tại)"
+              ref={fromInputRef}
+              {...vietnameseTextInputProps}
+              placeholder={"\u0110i\u1ec3m \u0111\u00f3n (v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i)"}
               placeholderTextColor={theme.textSecondary}
               style={[
                 styles.input,
@@ -869,18 +1300,81 @@ export default function SearchScreen() {
                   backgroundColor: theme.backgroundElement,
                 },
               ]}
-              value={from}
+              value={fromInput}
               onChangeText={(value) => {
-                setFrom(value);
+                setFromInput(value);
+                setSelectedFromPlace(null);
+                setSelectedToPlace(null);
                 setVerifiedTripMap(null);
+                if (value.trim().length < 2) {
+                  setAddressSuggestions((current) => ({
+                    ...current,
+                    from: [],
+                  }));
+                  setSuggestionError((current) => ({
+                    ...current,
+                    from: '',
+                  }));
+                }
                 if (alertMessage) {
-                  setAlertMessage("");
+                  setAlertMessage('');
                 }
               }}
-              onFocus={() => setFocusedField("from")}
+              onFocus={() => setFocusedField('from')}
             />
+            {focusedField === "from" &&
+              (addressSuggestions.from.length > 0 ||
+                loadingSuggestionsFor === "from" ||
+                suggestionError.from) && (
+                <View style={styles.suggestionCard}>
+                  {loadingSuggestionsFor === "from" ? (
+                    <ThemedText type="small" style={styles.suggestionLoading}>
+                      {"\u0110ang t\u1ea3i g\u1ee3i \u00fd..."}
+                    </ThemedText>
+                  ) : suggestionError.from ? (
+                    <ThemedText type="small" style={styles.suggestionError}>
+                      {suggestionError.from}
+                    </ThemedText>
+                  ) : (
+                    addressSuggestions.from.map((suggestion) => (
+                      <Pressable
+                        key={suggestion.placeId}
+                        style={styles.suggestionItem}
+                        onPress={() => selectAddressSuggestion("from", suggestion)}
+                      >
+                        <View style={styles.suggestionIcon}>
+                          <ThemedText type="smallBold" style={styles.suggestionIconText}>
+                    {"\u2022"}
+                  </ThemedText>
+                        </View>
+                        <View style={styles.suggestionContent}>
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.suggestionMainText}
+                            numberOfLines={1}
+                          >
+                            {suggestion.mainText}
+                          </ThemedText>
+                          <ThemedText
+                            type="small"
+                            style={styles.suggestionSecondaryText}
+                            numberOfLines={2}
+                          >
+                            {suggestion.secondaryText || suggestion.description}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    ))
+                  )}
+                  <ThemedText type="small" style={styles.suggestionAttribution}>
+                    Geoapify
+                  </ThemedText>
+                </View>
+              )}
             <TextInput
-              placeholder="Điểm đến"
+              ref={toInputRef}
+              {...vietnameseTextInputProps}
+              placeholder={"\u0110i\u1ec3m \u0111\u1ebfn"}
               placeholderTextColor={theme.textSecondary}
               style={[
                 styles.input,
@@ -889,23 +1383,83 @@ export default function SearchScreen() {
                   backgroundColor: theme.backgroundElement,
                 },
               ]}
-              value={to}
+              value={toInput}
               onChangeText={(value) => {
-                setTo(value);
+                setToInput(value);
+                setSelectedToPlace(null);
                 setVerifiedTripMap(null);
+                if (value.trim().length < 2) {
+                  setAddressSuggestions((current) => ({
+                    ...current,
+                    to: [],
+                  }));
+                  setSuggestionError((current) => ({
+                    ...current,
+                    to: '',
+                  }));
+                }
                 if (alertMessage) {
-                  setAlertMessage("");
+                  setAlertMessage('');
                 }
               }}
-              onFocus={() => setFocusedField("to")}
+              onFocus={() => setFocusedField('to')}
             />
+            {focusedField === "to" &&
+              (addressSuggestions.to.length > 0 ||
+                loadingSuggestionsFor === "to" ||
+                suggestionError.to) && (
+                <View style={styles.suggestionCard}>
+                  {loadingSuggestionsFor === "to" ? (
+                    <ThemedText type="small" style={styles.suggestionLoading}>
+                      {"\u0110ang t\u1ea3i g\u1ee3i \u00fd..."}
+                    </ThemedText>
+                  ) : suggestionError.to ? (
+                    <ThemedText type="small" style={styles.suggestionError}>
+                      {suggestionError.to}
+                    </ThemedText>
+                  ) : (
+                    addressSuggestions.to.map((suggestion) => (
+                      <Pressable
+                        key={suggestion.placeId}
+                        style={styles.suggestionItem}
+                        onPress={() => selectAddressSuggestion("to", suggestion)}
+                      >
+                        <View style={styles.suggestionIcon}>
+                          <ThemedText type="smallBold" style={styles.suggestionIconText}>
+                    {"\u2022"}
+                  </ThemedText>
+                        </View>
+                        <View style={styles.suggestionContent}>
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.suggestionMainText}
+                            numberOfLines={1}
+                          >
+                            {suggestion.mainText}
+                          </ThemedText>
+                          <ThemedText
+                            type="small"
+                            style={styles.suggestionSecondaryText}
+                            numberOfLines={2}
+                          >
+                            {suggestion.secondaryText || suggestion.description}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    ))
+                  )}
+                  <ThemedText type="small" style={styles.suggestionAttribution}>
+                    Geoapify
+                  </ThemedText>
+                </View>
+              )}
 
             <View style={styles.savedList}>
               <View style={styles.savedHeader}>
-                <ThemedText type="smallBold">Địa chỉ đã lưu</ThemedText>
+                <ThemedText type="smallBold">{"H\u1ee7y"}</ThemedText>
                 <Pressable onPress={openCreateAddressModal}>
                   <ThemedText type="smallBold" style={styles.saveAddressButtonText}>
-                    + Lưu địa chỉ
+                    {"+ L\u01b0u \u0111\u1ecba ch\u1ec9"}
                   </ThemedText>
                 </Pressable>
               </View>
@@ -921,7 +1475,7 @@ export default function SearchScreen() {
                     <ThemedText
                       style={[
                         styles.savedItemText,
-                        (from === item.label || to === item.label) &&
+                        (fromInput === item.label || toInput === item.label) &&
                           styles.savedItemTextActive,
                       ]}
                     >
@@ -937,7 +1491,7 @@ export default function SearchScreen() {
                     }
                   >
                     <ThemedText type="smallBold" style={styles.savedMoreText}>
-                      ⋯
+                      {"\u22ef"}
                     </ThemedText>
                   </Pressable>
 
@@ -948,7 +1502,7 @@ export default function SearchScreen() {
                         onPress={() => openEditAddressModal(item)}
                       >
                         <ThemedText type="smallBold" style={styles.savedEditText}>
-                          Sửa
+                          {"S\u1eeda"}
                         </ThemedText>
                       </Pressable>
                       <Pressable
@@ -956,7 +1510,7 @@ export default function SearchScreen() {
                         onPress={() => deleteAddress(item.id)}
                       >
                         <ThemedText type="smallBold" style={styles.savedDeleteText}>
-                          Xóa
+                          {"X\u00f3a"}
                         </ThemedText>
                       </Pressable>
                     </View>
@@ -971,9 +1525,7 @@ export default function SearchScreen() {
                 onPress={openSchedulePicker}
                 disabled={isVerifyingMap}
               >
-                <ThemedText type="smallBold">
-                  {isVerifyingMap ? "Đang xác minh..." : "Hẹn lịch"}
-                </ThemedText>
+                <ThemedText type="smallBold">{"H\u1ee7y"}</ThemedText>
               </Pressable>
 
               <Pressable
@@ -982,7 +1534,7 @@ export default function SearchScreen() {
                 disabled={isVerifyingMap}
               >
                 <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                  {isVerifyingMap ? "Đang xác minh..." : "Tiếp tục"}
+                  {isVerifyingMap ? "\u0110ang x\u00e1c minh..." : "Ti\u1ebfp t\u1ee5c"}
                 </ThemedText>
               </Pressable>
             </View>
@@ -991,8 +1543,8 @@ export default function SearchScreen() {
           <View style={styles.sharedSection}>
             <View style={styles.sharedHeader}>
               <ThemedText type="default" style={styles.sharedTitle}>
-                Đề xuất nhóm ghép sẵn có
-              </ThemedText>
+                    {"\u0110\u1ec1 xu\u1ea5t nh\u00f3m gh\u00e9p s\u1eb5n c\u00f3"}
+                  </ThemedText>
               <Pressable
                 onPress={() => {
                   if (requireLogin()) {
@@ -1001,19 +1553,19 @@ export default function SearchScreen() {
                 }}
               >
                 <ThemedText type="smallBold" style={styles.createButtonText}>
-                  + Tạo
-                </ThemedText>
+                    {"+ T\u1ea1o"}
+                  </ThemedText>
               </Pressable>
             </View>
 
             {suggestedSharedRides.length === 0 ? (
               <View style={styles.emptySharedCard}>
                 <ThemedText type="smallBold" style={styles.emptySharedTitle}>
-                  Chưa có nhóm ghép phù hợp
-                </ThemedText>
+                    {"Ch\u01b0a c\u00f3 nh\u00f3m gh\u00e9p ph\u00f9 h\u1ee3p"}
+                  </ThemedText>
                 <ThemedText type="small" style={styles.emptySharedText}>
-                  Nhóm chỉ có một người sẽ chưa được đề xuất. Khi có thêm người tham gia, hệ thống sẽ hiển thị tại đây.
-                </ThemedText>
+                    {"Nh\u00f3m ch\u1ec9 c\u00f3 m\u1ed9t ng\u01b0\u1eddi s\u1ebd ch\u01b0a \u0111\u01b0\u1ee3c \u0111\u1ec1 xu\u1ea5t. Khi c\u00f3 th\u00eam ng\u01b0\u1eddi tham gia, h\u1ec7 th\u1ed1ng s\u1ebd hi\u1ec3n th\u1ecb t\u1ea1i \u0111\u00e2y."}
+                  </ThemedText>
               </View>
             ) : null}
 
@@ -1024,8 +1576,8 @@ export default function SearchScreen() {
                 <View key={ride.id} style={styles.proposalCard}>
                   <View style={styles.proposalHeader}>
                     <ThemedText type="default" style={styles.proposalHeaderText}>
-                      ĐỀ XUẤT THAM GIA NHÓM
-                    </ThemedText>
+                    {"\u0110\u1ec0 XU\u1ea4T THAM GIA NH\u00d3M"}
+                  </ThemedText>
                   </View>
 
                   <View style={styles.proposalBody}>
@@ -1034,12 +1586,12 @@ export default function SearchScreen() {
                         {ride.vehicle}
                       </ThemedText>
                       <ThemedText type="smallBold" style={styles.savingText}>
-                        Tiết kiệm {proposal.savingPrice}
+                        {"Ti\u1ebft ki\u1ec7m "}{proposal.savingPrice}
                       </ThemedText>
 
                       <View style={styles.priceLine}>
                         <ThemedText type="smallBold" style={styles.priceLabel}>
-                          Đi lẻ:
+                          {"\u0110i l\u1ebb:"}
                         </ThemedText>
                         <ThemedText type="smallBold" style={styles.soloPriceText}>
                           {proposal.soloPrice}
@@ -1047,7 +1599,7 @@ export default function SearchScreen() {
                       </View>
                       <View style={styles.priceLine}>
                         <ThemedText type="smallBold" style={styles.priceLabel}>
-                          Đi ghép:
+                          {"\u0110i gh\u00e9p:"}
                         </ThemedText>
                         <ThemedText type="smallBold" style={styles.sharedPriceText}>
                           {proposal.sharedPrice}
@@ -1057,23 +1609,23 @@ export default function SearchScreen() {
                       <View style={styles.proposalDivider} />
 
                       <ThemedText type="small" style={styles.proposalMuted}>
-                        Thời gian đón dự kiến: {proposal.expectedPickup}
+                        {"Th\u1eddi gian \u0111\u00f3n d\u1ef1 ki\u1ebfn: "}{proposal.expectedPickup}
                       </ThemedText>
                       <ThemedText type="small" style={styles.proposalMuted}>
-                        Dự kiến đến nơi lúc: {proposal.expectedArrival}
+                        {"D\u1ef1 ki\u1ebfn \u0111\u1ebfn n\u01a1i l\u00fac: "}{proposal.expectedArrival}
                       </ThemedText>
                       <ThemedText type="small" style={styles.proposalMuted}>
-                        Hạn ghép xe: 15p
+                        {"H\u1ea1n gh\u00e9p xe: 15p"}
                       </ThemedText>
                       <ThemedText type="small" style={styles.proposalMuted}>
-                        Nhóm: {ride.participantCount}/{ride.capacity} người
+                        {"Nh\u00f3m: "}{ride.participantCount}/{ride.capacity}{" ng\u01b0\u1eddi"}
                       </ThemedText>
 
                       <View style={styles.proposalDivider} />
 
                       <ThemedText type="smallBold" style={styles.proposalSectionTitle}>
-                        Lộ trình nhóm
-                      </ThemedText>
+                    {"L\u1ed9 tr\u00ecnh nh\u00f3m"}
+                  </ThemedText>
                       {proposal.routeSteps.map((step) => (
                         <ThemedText
                           key={`${ride.id}-${step}`}
@@ -1093,7 +1645,7 @@ export default function SearchScreen() {
                         </ThemedText>
                       </View>
                       <ThemedText type="small" style={styles.proposalMuted}>
-                        Đón trong 5 phút
+                        {"\u0110\u00f3n trong 5 ph\u00fat"}
                       </ThemedText>
                     </View>
                   </View>
@@ -1108,16 +1660,16 @@ export default function SearchScreen() {
                       }}
                     >
                       <ThemedText type="smallBold" style={styles.joinProposalText}>
-                        Tham gia nhóm
-                      </ThemedText>
+                    {"Tham gia nh\u00f3m"}
+                  </ThemedText>
                     </Pressable>
                     <Pressable
                       style={styles.backProposalButton}
                       onPress={() => setMode("now")}
                     >
                       <ThemedText type="smallBold" style={styles.backProposalText}>
-                        Quay lại
-                      </ThemedText>
+                    {"Quay l\u1ea1i"}
+                  </ThemedText>
                     </Pressable>
                   </View>
                 </View>
@@ -1143,21 +1695,22 @@ export default function SearchScreen() {
           >
             <View style={styles.addressHeader}>
               <ThemedText type="default" style={styles.addressTitle}>
-                {editingAddressId ? "Sửa địa chỉ" : "Lưu địa chỉ"}
+                {editingAddressId ? "S\u1eeda \u0111\u1ecba ch\u1ec9" : "L\u01b0u \u0111\u1ecba ch\u1ec9"}
               </ThemedText>
               <Pressable style={styles.addressCloseButton} onPress={closeAddressModal}>
                 <ThemedText type="default" style={styles.addressCloseText}>
-                  ×
-                </ThemedText>
+                    {"x"}
+                  </ThemedText>
               </Pressable>
             </View>
 
             <View style={styles.addressField}>
               <ThemedText type="smallBold" style={styles.addressLabel}>
-                Tên địa chỉ
-              </ThemedText>
+                    {"T\u00ean \u0111\u1ecba ch\u1ec9"}
+                  </ThemedText>
               <TextInput
-                placeholder="VD: Đại học FPT, Bến xe Mỹ Đình..."
+                {...vietnameseTextInputProps}
+                placeholder={"VD: \u0110\u1ea1i h\u1ecdc FPT, B\u1ebfn xe M\u1ef9 \u0110\u00ecnh..."}
                 placeholderTextColor="#9CA3AF"
                 style={[
                   styles.addressInput,
@@ -1179,12 +1732,12 @@ export default function SearchScreen() {
                 style={[styles.addressSecondaryButton, { backgroundColor: theme.background }]}
                 onPress={closeAddressModal}
               >
-                <ThemedText type="smallBold">Hủy</ThemedText>
+                <ThemedText type="smallBold">{"H\u1ee7y"}</ThemedText>
               </Pressable>
               <Pressable style={styles.addressPrimaryButton} onPress={saveAddress}>
                 <ThemedText type="smallBold" style={styles.addressPrimaryText}>
-                  Lưu địa chỉ
-                </ThemedText>
+                    {"L\u01b0u \u0111\u1ecba ch\u1ec9"}
+                  </ThemedText>
               </Pressable>
             </View>
           </View>
@@ -1211,12 +1764,12 @@ export default function SearchScreen() {
               onPress={() => setSchedulePickerVisible(false)}
             >
               <ThemedText type="default" style={styles.scheduleBackIcon}>
-                ←
-              </ThemedText>
+                    {"\u2190"}
+                  </ThemedText>
             </Pressable>
             <ThemedText type="default" style={styles.scheduleTitle}>
-              Hẹn giờ
-            </ThemedText>
+                    {"H\u1eb9n gi\u1edd"}
+                  </ThemedText>
             <View style={styles.scheduleBackButton} />
           </View>
 
@@ -1231,10 +1784,10 @@ export default function SearchScreen() {
 
           <View style={styles.scheduleIntro}>
             <ThemedText type="default" style={styles.scheduleQuestion}>
-              Bạn muốn xe đón lúc nào?
-            </ThemedText>
+                    {"B\u1ea1n mu\u1ed1n xe \u0111\u00f3n l\u00fac n\u00e0o?"}
+                  </ThemedText>
             <ThemedText type="default" style={styles.scheduleHint}>
-              Chọn thời gian trong vòng tối đa 7 ngày kể từ hiện tại.
+              {"Ch\u1ecdn th\u1eddi gian trong v\u00f2ng t\u1ed1i \u0111a 7 ng\u00e0y k\u1ec3 t\u1eeb hi\u1ec7n t\u1ea1i."}
             </ThemedText>
           </View>
 
@@ -1353,13 +1906,13 @@ export default function SearchScreen() {
 
           <View style={styles.scheduleResultCard}>
             <ThemedText type="default" style={styles.scheduleResultTitle}>
-              Xe đón bạn lúc {scheduleDisplayText}
+              {"Xe \u0111\u00f3n b\u1ea1n l\u00fac "}{scheduleDisplayText}
             </ThemedText>
             <ThemedText type="default" style={styles.scheduleArrivalText}>
-              Đến nơi lúc {padSchedule(arrivalDate.getHours())}:{padSchedule(arrivalDate.getMinutes())}
+              {"\u0110\u1ebfn n\u01a1i l\u00fac "}{padSchedule(arrivalDate.getHours())}:{padSchedule(arrivalDate.getMinutes())}
             </ThemedText>
             <ThemedText type="small" style={styles.scheduleHint}>
-              di chuyển khoảng {MOCK_TRIP_DURATION_MINUTES} phút
+              {"di chuy\u1ec3n kho\u1ea3ng "}{MOCK_TRIP_DURATION_MINUTES}{" ph\u00fat"}
             </ThemedText>
           </View>
 
@@ -1368,8 +1921,8 @@ export default function SearchScreen() {
             onPress={confirmSchedulePicker}
           >
             <ThemedText type="smallBold" style={styles.scheduleConfirmText}>
-              Xác nhận
-            </ThemedText>
+                    {"X\u00e1c nh\u1eadn"}
+                  </ThemedText>
           </Pressable>
         </View>
       </Modal>
@@ -1384,15 +1937,15 @@ export default function SearchScreen() {
           <View style={styles.createSharedCard}>
             <View style={styles.createSharedHeader}>
               <ThemedText type="default" style={styles.createSharedTitle}>
-                Tạo xe ghép
-              </ThemedText>
+                    {"T\u1ea1o xe gh\u00e9p"}
+                  </ThemedText>
               <Pressable
                 style={styles.createSharedClose}
                 onPress={closeCreateSharedModal}
               >
                 <ThemedText type="default" style={styles.createSharedCloseText}>
-                  ×
-                </ThemedText>
+                    {"x"}
+                  </ThemedText>
               </Pressable>
             </View>
 
@@ -1403,7 +1956,7 @@ export default function SearchScreen() {
             >
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
-                  Loại chuyến
+                  {"Lo\u1ea1i chuy\u1ebfn"}
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
                 <Pressable
@@ -1418,7 +1971,7 @@ export default function SearchScreen() {
                     {sharedForm.tripType}
                   </ThemedText>
                   <ThemedText type="default" style={styles.createSelectArrow}>
-                    ⌄
+                    {"v"}
                   </ThemedText>
                 </Pressable>
                 {openSharedDropdown === "tripType" && (
@@ -1454,7 +2007,7 @@ export default function SearchScreen() {
 
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
-                  Loại xe
+                  {"Lo\u1ea1i xe"}
                 </ThemedText>
                 <Pressable
                   style={styles.createSelect}
@@ -1468,7 +2021,7 @@ export default function SearchScreen() {
                     {sharedVehicleOptions[sharedForm.vehicleIndex].label}
                   </ThemedText>
                   <ThemedText type="default" style={styles.createSelectArrow}>
-                    ⌄
+                    {"v"}
                   </ThemedText>
                 </Pressable>
                 {openSharedDropdown === "vehicle" && (
@@ -1512,7 +2065,7 @@ export default function SearchScreen() {
 
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
-                  Số người tối đa
+                  {"S\u1ed1 ng\u01b0\u1eddi t\u1ed1i \u0111a"}
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
                 <Pressable
@@ -1531,11 +2084,11 @@ export default function SearchScreen() {
                     ]}
                   >
                     {sharedForm.maxSeats
-                      ? `${sharedForm.maxSeats} người`
-                      : "-- Chọn số người --"}
+                      ? `${sharedForm.maxSeats} ng\u01b0\u1eddi`
+                      : "-- Ch\u1ecdn s\u1ed1 ng\u01b0\u1eddi --"}
                   </ThemedText>
                   <ThemedText type="default" style={styles.createSelectArrow}>
-                    ⌄
+                    {"v"}
                   </ThemedText>
                 </Pressable>
                 {openSharedDropdown === "seats" && (
@@ -1567,7 +2120,7 @@ export default function SearchScreen() {
                                 styles.createDropdownTextActive,
                             ]}
                           >
-                            {seat} người
+                            {seat}{" ng\u01b0\u1eddi"}
                           </ThemedText>
                         </Pressable>
                       ))}
@@ -1581,6 +2134,7 @@ export default function SearchScreen() {
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
                 <TextInput
+                  {...vietnameseTextInputProps}
                   placeholder={sharedLocationPlaceholder}
                   placeholderTextColor="#A1A1AA"
                   style={styles.createInput}
@@ -1593,7 +2147,7 @@ export default function SearchScreen() {
                 <View style={styles.createScheduleHeader}>
                   <View style={styles.createCalendarBadge}>
                     <ThemedText type="smallBold" style={styles.createCalendarMonth}>
-                      {sharedCalendarPreview?.monthLabel ?? "Ngày"}
+                      {sharedCalendarPreview?.monthLabel ?? "Ng\u00e0y"}
                     </ThemedText>
                     <ThemedText type="title" style={styles.createCalendarDay}>
                       {sharedCalendarPreview?.dayLabel ?? "--"}
@@ -1601,11 +2155,11 @@ export default function SearchScreen() {
                   </View>
                   <View style={styles.createScheduleIntro}>
                     <ThemedText type="default" style={styles.createScheduleTitle}>
-                      Chọn lịch ngày đi
-                    </ThemedText>
+                    {"Ch\u1ecdn l\u1ecbch ng\u00e0y \u0111i"}
+                  </ThemedText>
                     <ThemedText type="small" style={styles.createScheduleHint}>
-                      Chọn slot cố định và ngày bạn muốn đi ghép xe.
-                    </ThemedText>
+                    {"Ch\u1ecdn slot c\u1ed1 \u0111\u1ecbnh v\u00e0 ng\u00e0y b\u1ea1n mu\u1ed1n \u0111i gh\u00e9p xe."}
+                  </ThemedText>
                   </View>
                 </View>
 
@@ -1656,7 +2210,7 @@ export default function SearchScreen() {
 
                 <View style={styles.createScheduleBlock}>
                   <ThemedText type="smallBold" style={styles.createSubLabel}>
-                    Ngày đi
+                    {"Ng\u00e0y \u0111i"}
                     <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
                   </ThemedText>
                   <ScrollView
@@ -1721,8 +2275,8 @@ export default function SearchScreen() {
                 onPress={createSharedRide}
               >
                 <ThemedText type="smallBold" style={styles.createSubmitText}>
-                  Gửi yêu cầu
-                </ThemedText>
+                    {"G\u1eedi y\u00eau c\u1ea7u"}
+                  </ThemedText>
               </Pressable>
             </ScrollView>
           </View>
@@ -1746,8 +2300,8 @@ export default function SearchScreen() {
               </ThemedText>
             </View>
             <ThemedText type="default" style={styles.alertTitle}>
-              Thiếu thông tin
-            </ThemedText>
+                    {"Thi\u1ebfu th\u00f4ng tin"}
+                  </ThemedText>
             <ThemedText type="default" style={styles.alertMessage}>
               {alertMessage}
             </ThemedText>
@@ -1756,8 +2310,8 @@ export default function SearchScreen() {
               onPress={() => setAlertMessage("")}
             >
               <ThemedText type="smallBold" style={styles.alertButtonText}>
-                Đã hiểu
-              </ThemedText>
+                    {"\u0110\u00e3 hi\u1ec3u"}
+                  </ThemedText>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -1830,6 +2384,69 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EEE",
     cursor: "text",
+  },
+  suggestionCard: {
+    marginTop: -Spacing.one,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  suggestionItem: {
+    minHeight: 70,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  suggestionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#FFF7ED",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  suggestionIconText: {
+    color: BRAND,
+    fontSize: 18,
+  },
+  suggestionContent: {
+    flex: 1,
+    gap: 3,
+  },
+  suggestionMainText: {
+    color: "#111827",
+    fontSize: 16,
+  },
+  suggestionSecondaryText: {
+    color: "#6B7280",
+    lineHeight: 18,
+  },
+  suggestionLoading: {
+    color: "#6B7280",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  suggestionError: {
+    color: "#B45309",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+    lineHeight: 18,
+  },
+  suggestionAttribution: {
+    color: "#9CA3AF",
+    textAlign: "right",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
   },
   savedList: {
     marginTop: Spacing.one,
@@ -2479,6 +3096,47 @@ const styles = StyleSheet.create({
     backgroundColor: MAP_BG,
     overflow: "hidden",
   },
+  pickupMapCard: {
+    minHeight: 390,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: "#EEF4F7",
+  },
+  routeMapCard: {
+    minHeight: 330,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: "#EEF4F7",
+  },
+  routeMapFallback: {
+    flex: 1,
+    backgroundColor: "#FFFDF8",
+    padding: Spacing.four,
+    justifyContent: "space-between",
+  },
+  routeMapFallbackHeader: {
+    gap: Spacing.one,
+  },
+  routeMapFallbackTitle: {
+    color: BRAND,
+  },
+  routeMapFallbackMeta: {
+    color: "#6B7280",
+  },
+  routeMapFallbackBody: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.one,
+  },
+  routeMapFallbackPoint: {
+    color: "#111827",
+    textAlign: "center",
+  },
+  routeMapFallbackArrow: {
+    color: BRAND,
+    fontSize: 24,
+  },
   googleMapImage: {
     ...StyleSheet.absoluteFillObject,
     width: "100%",
@@ -2498,6 +3156,182 @@ const styles = StyleSheet.create({
   routeEtaText: {
     color: "#111827",
     fontWeight: "700",
+  },
+  pickupMapTopBar: {
+    position: "absolute",
+    top: Spacing.three,
+    left: Spacing.three,
+    right: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+  },
+  pickupBackButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  pickupBackIcon: {
+    color: "#111827",
+    fontSize: 28,
+  },
+  pickupSearchPill: {
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    paddingHorizontal: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  pickupSearchIcon: {
+    fontSize: 18,
+  },
+  pickupSearchText: {
+    color: "#111827",
+    fontSize: 18,
+  },
+  pickupPinBubble: {
+    position: "absolute",
+    top: "42%",
+    alignSelf: "center",
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    shadowColor: "#000000",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  pickupPinText: {
+    color: "#111827",
+    fontSize: 16,
+  },
+  pickupConfirmSheet: {
+    marginTop: -Spacing.two,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    padding: Spacing.three,
+    gap: Spacing.three,
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  pickupAddressRow: {
+    flexDirection: "row",
+    gap: Spacing.three,
+  },
+  pickupAddressIconWrap: {
+    width: 58,
+    alignItems: "center",
+    gap: 4,
+  },
+  pickupAddressIcon: {
+    fontSize: 26,
+  },
+  pickupDistanceText: {
+    color: "#6B7280",
+  },
+  pickupAddressContent: {
+    flex: 1,
+    gap: 4,
+  },
+  pickupAddressTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  pickupAddressSubtitle: {
+    color: "#6B7280",
+  },
+  pickupNoteInput: {
+    minHeight: 58,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: Spacing.three,
+    color: "#111827",
+  },
+  pickupScheduleBadge: {
+    borderRadius: 12,
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  pickupScheduleText: {
+    color: "#9A3412",
+  },
+  pickupConfirmButton: {
+    minHeight: 58,
+    borderRadius: 18,
+    backgroundColor: "#23C6C8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickupConfirmButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+  },
+  routeMapTopBar: {
+    position: "absolute",
+    top: Spacing.three,
+    left: Spacing.three,
+    right: Spacing.three,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+  },
+  routeBackButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  routeBackIcon: {
+    color: "#111827",
+    fontSize: 28,
+  },
+  routeInfoPill: {
+    borderRadius: 999,
+    backgroundColor: "rgba(231, 252, 252, 0.95)",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  routeInfoText: {
+    color: "#075E61",
+    fontSize: 15,
+  },
+  routeDestinationPill: {
+    position: "absolute",
+    top: 68,
+    left: 76,
+    right: Spacing.three,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  routeDestinationText: {
+    color: "#111827",
+    fontSize: 15,
   },
   pinWrap: {
     width: 56,
@@ -2556,6 +3390,32 @@ const styles = StyleSheet.create({
   rideOptionsList: {
     gap: Spacing.two,
   },
+  rideOptionsSheet: {
+    marginTop: -Spacing.two,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    padding: Spacing.three,
+    gap: Spacing.two,
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  sheetHandle: {
+    width: 52,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#D1D5DB",
+    alignSelf: "center",
+    marginBottom: Spacing.one,
+  },
+  rideSheetTitle: {
+    color: "#111827",
+    fontSize: 20,
+    fontWeight: "900",
+  },
   rideOption: {
     minHeight: 64,
     borderRadius: 12,
@@ -2569,8 +3429,9 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   rideOptionActive: {
-    borderColor: BRAND,
+    borderColor: "#23C6C8",
     borderWidth: 2,
+    backgroundColor: "#F0FFFF",
   },
   rideOptionName: {
     color: "#111827",
@@ -2591,6 +3452,25 @@ const styles = StyleSheet.create({
   },
   paymentNoticeText: {
     color: "#B45309",
+  },
+  rideUtilityRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  utilityChip: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.two,
+  },
+  utilityChipText: {
+    color: "#374151",
+    textAlign: "center",
   },
   bookButton: {
     minHeight: 56,
@@ -2782,3 +3662,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
+
+
+
