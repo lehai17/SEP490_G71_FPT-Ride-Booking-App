@@ -2,9 +2,11 @@ import { Platform, StyleSheet, Text } from "react-native";
 
 import { Fonts } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { repairTextNode } from "@/utils/repair-text";
 
 export function ThemedText({ style, type = "default", themeColor, ...rest }) {
   const theme = useTheme();
+  const repairedChildren = repairTextNode(rest.children);
 
   return (
     <Text
@@ -21,7 +23,9 @@ export function ThemedText({ style, type = "default", themeColor, ...rest }) {
         style,
       ]}
       {...rest}
-    />
+    >
+      {repairedChildren}
+    </Text>
   );
 }
 
