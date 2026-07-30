@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Location from "expo-location";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   Modal,
@@ -13,6 +14,7 @@ import { WebView } from "react-native-webview";
 
 import { ThemedText } from "@/components/themed-text";
 import {
+  BottomTabInset,
   Colors,
   MaxContentWidth,
   ScreenHeaderTop,
@@ -236,14 +238,6 @@ function createScheduleDate(dateValue, hour, minute) {
   return date;
 }
 
-function extractRoutePoints(routeGeometry) {
-  const coordinates = routeGeometry?.geometry?.coordinates ?? [];
-
-  return coordinates
-    .filter((point) => Array.isArray(point) && point.length >= 2)
-    .map(([lng, lat]) => ({ lat, lng }));
-}
-
 function isScheduleInRange(date) {
   const { min, max } = getScheduleBounds();
   return date >= min && date <= max;
@@ -313,7 +307,9 @@ export default function SearchScreen() {
   const [selectedRideId, setSelectedRideId] = useState("bike");
   const fromInputRef = useRef(null);
   const toInputRef = useRef(null);
+  const hasEditedFromInputRef = useRef(false);
   const [isVerifyingMap, setIsVerifyingMap] = useState(false);
+  const [isFetchingCurrentLocation, setIsFetchingCurrentLocation] = useState(false);
   const [verifiedTripMap, setVerifiedTripMap] = useState(null);
   const [selectedFromPlace, setSelectedFromPlace] = useState(null);
   const [selectedToPlace, setSelectedToPlace] = useState(null);
@@ -483,8 +479,13 @@ export default function SearchScreen() {
             popupText: verifiedTripMap.destination.formattedAddress,
           },
         ],
-        routePoints: extractRoutePoints(verifiedTripMap.directions.routeGeometry),
+        routeGeometry: verifiedTripMap.directions.routeGeometry,
         zoom: 14,
+        fitPadding: {
+          paddingTopLeft: [28, 84],
+          paddingBottomRight: [28, 36],
+          maxZoom: 15,
+        },
       })
     : "";
 
@@ -504,6 +505,35 @@ export default function SearchScreen() {
     }
 
     setToInput(nextValue);
+  };
+
+  const clearAddressField = (field) => {
+    if (field === "from") {
+      hasEditedFromInputRef.current = true;
+      setFromInput("");
+      setSelectedFromPlace(null);
+    } else {
+      setToInput("");
+      setSelectedToPlace(null);
+    }
+
+    setVerifiedTripMap(null);
+    setAddressSuggestions((current) => ({
+      ...current,
+      [field]: [],
+    }));
+    setSuggestionError((current) => ({
+      ...current,
+      [field]: "",
+    }));
+    setAlertMessage("");
+    setFocusedField(field);
+
+    if (field === "from") {
+      fromInputRef.current?.focus();
+    } else {
+      toInputRef.current?.focus();
+    }
   };
 
   const resolvePlaceSuggestion = async (suggestion) => {
@@ -551,6 +581,80 @@ export default function SearchScreen() {
     }
 
     return resolvePlaceSuggestion(matchedSuggestion);
+  };
+
+  const resolveCurrentLocationPlace = async () => {
+    const permission = await Location.requestForegroundPermissionsAsync();
+
+    if (permission.status !== "granted") {
+      throw new Error("Vui l\u00f2ng cho ph\u00e9p truy c\u1eadp v\u1ecb tr\u00ed \u0111\u1ec3 l\u1ea5y \u0111i\u1ec3m \u0111\u00f3n.");
+    }
+
+    const position = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+    const location = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+    };
+    const fallbackPlace = {
+      placeId: "",
+      formattedAddress: "V\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i",
+      description: "V\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i",
+      mainText: "V\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i",
+      location,
+    };
+
+    if (!isGoogleMapsConfigured()) {
+      return fallbackPlace;
+    }
+
+    try {
+      const reversedPlace = await reverseGooglePlaceLocation(location);
+
+      return {
+        ...fallbackPlace,
+        ...reversedPlace,
+        formattedAddress: reversedPlace.formattedAddress || fallbackPlace.formattedAddress,
+        description: reversedPlace.description || fallbackPlace.description,
+        mainText: reversedPlace.mainText || fallbackPlace.mainText,
+        location: reversedPlace.location || location,
+      };
+    } catch {
+      return fallbackPlace;
+    }
+  };
+
+  const useCurrentLocationAsPickup = async () => {
+    if (isFetchingCurrentLocation) {
+      return;
+    }
+
+    setIsFetchingCurrentLocation(true);
+    setAlertMessage("");
+
+    try {
+      const resolvedPlace = await resolveCurrentLocationPlace();
+      syncAddressInputText("from", resolvedPlace.formattedAddress);
+      setSelectedFromPlace(resolvedPlace);
+      setFocusedField("to");
+      setAddressSuggestions((current) => ({
+        ...current,
+        from: [],
+      }));
+      setSuggestionError((current) => ({
+        ...current,
+        from: "",
+      }));
+
+      if (selectedToPlace) {
+        await refreshVerifiedTripWithPickup(resolvedPlace);
+      }
+    } catch (error) {
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i.");
+    } finally {
+      setIsFetchingCurrentLocation(false);
+    }
   };
 
   const refreshVerifiedTripWithPickup = async (nextOrigin) => {
@@ -957,24 +1061,31 @@ export default function SearchScreen() {
     setOpenAddressMenuId("");
   };
 
-  const isMapScreen = mode !== "shared" && bookingStep !== "form";
-
   return (
     <>
       <ScrollView
         style={[styles.container, { backgroundColor: theme.background }]}
         contentContainerStyle={[
           styles.contentContainer,
+          bookingStep === "confirm" && styles.contentContainerFit,
           {
             paddingTop: ScreenHeaderTop,
-            paddingBottom: insets.bottom + Spacing.five,
+            paddingBottom:
+              bookingStep === "confirm"
+                ? insets.bottom + Math.max(BottomTabInset - 44, Spacing.two)
+                : insets.bottom + Spacing.five,
           },
         ]}
-        scrollEnabled={!isMapScreen}
+        scrollEnabled={bookingStep === "form"}
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.content}>
+        <View
+          style={[
+            styles.content,
+            bookingStep === "confirm" && styles.contentFit,
+          ]}
+        >
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => {
@@ -1174,7 +1285,7 @@ export default function SearchScreen() {
             </Pressable>
           </>
         ) : bookingStep === "confirm" && mode !== "shared" ? (
-          <>
+          <View style={styles.confirmStage}>
             <View style={styles.dotsRow}>
               <View style={styles.dotActive} />
               <View style={styles.dotActive} />
@@ -1275,135 +1386,208 @@ export default function SearchScreen() {
                   </ThemedText>
                 </View>
               )}
-            </View>
 
-            <Pressable
-              style={styles.pickupConfirmButton}
-              onPress={() => setBookingStep("rideOptions")}
-            >
-              <ThemedText type="smallBold" style={styles.pickupConfirmButtonText}>
-                {"X\u00e1c nh\u1eadn \u0111i\u1ec3m \u0111\u00f3n"}
-              </ThemedText>
-            </Pressable>
-          </>
+              <Pressable
+                style={styles.pickupConfirmButton}
+                onPress={() => setBookingStep("rideOptions")}
+              >
+                <ThemedText type="smallBold" style={styles.pickupConfirmButtonText}>
+                  {"X\u00e1c nh\u1eadn \u0111i\u1ec3m \u0111\u00f3n"}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
         ) : mode !== "shared" ? (
           <>
-            <TextInput
-              ref={fromInputRef}
-              {...vietnameseTextInputProps}
-              placeholder={"\u0110i\u1ec3m \u0111\u00f3n (v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i)"}
-              placeholderTextColor={theme.textSecondary}
+            <View
               style={[
-                styles.input,
+                styles.inputWrap,
                 {
-                  color: theme.text,
                   backgroundColor: theme.backgroundElement,
                 },
               ]}
-              value={fromInput}
-              onChangeText={(value) => {
-                setFromInput(value);
-                setSelectedFromPlace(null);
-                setSelectedToPlace(null);
-                setVerifiedTripMap(null);
-                if (value.trim().length < 2) {
-                  setAddressSuggestions((current) => ({
-                    ...current,
-                    from: [],
-                  }));
-                  setSuggestionError((current) => ({
-                    ...current,
-                    from: '',
-                  }));
-                }
-                if (alertMessage) {
-                  setAlertMessage('');
-                }
-              }}
-              onFocus={() => setFocusedField('from')}
-            />
-            {focusedField === "from" &&
-              (addressSuggestions.from.length > 0 ||
-                loadingSuggestionsFor === "from" ||
-                suggestionError.from) && (
-                <View style={styles.suggestionCard}>
-                  {loadingSuggestionsFor === "from" ? (
-                    <ThemedText type="small" style={styles.suggestionLoading}>
-                      {"\u0110ang t\u1ea3i g\u1ee3i \u00fd..."}
-                    </ThemedText>
-                  ) : suggestionError.from ? (
-                    <ThemedText type="small" style={styles.suggestionError}>
-                      {suggestionError.from}
-                    </ThemedText>
-                  ) : (
-                    addressSuggestions.from.map((suggestion) => (
-                      <Pressable
-                        key={suggestion.placeId}
-                        style={styles.suggestionItem}
-                        onPress={() => selectAddressSuggestion("from", suggestion)}
-                      >
-                        <View style={styles.suggestionIcon}>
-                          <ThemedText type="smallBold" style={styles.suggestionIconText}>
-                    {"\u2022"}
+            >
+              <TextInput
+                ref={fromInputRef}
+                {...vietnameseTextInputProps}
+                placeholder={"\u0110i\u1ec3m \u0111\u00f3n (v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i)"}
+                placeholderTextColor={theme.textSecondary}
+                style={[
+                  styles.input,
+                  {
+                    color: theme.text,
+                  },
+                ]}
+                value={fromInput}
+                onChangeText={(value) => {
+                  hasEditedFromInputRef.current = true;
+                  setFromInput(value);
+                  setSelectedFromPlace(null);
+                  setSelectedToPlace(null);
+                  setVerifiedTripMap(null);
+                  if (value.trim().length < 2) {
+                    setAddressSuggestions((current) => ({
+                      ...current,
+                      from: [],
+                    }));
+                    setSuggestionError((current) => ({
+                      ...current,
+                      from: '',
+                    }));
+                  }
+                  if (alertMessage) {
+                    setAlertMessage('');
+                  }
+                }}
+                onFocus={() => setFocusedField('from')}
+              />
+              {Boolean(fromInput) && (
+                <Pressable
+                  style={styles.inputClearButton}
+                  onPress={() => clearAddressField("from")}
+                >
+                  <ThemedText type="smallBold" style={styles.inputClearText}>
+                    {"\u00d7"}
                   </ThemedText>
-                        </View>
-                        <View style={styles.suggestionContent}>
-                          <ThemedText
-                            type="smallBold"
-                            style={styles.suggestionMainText}
-                            numberOfLines={1}
-                          >
-                            {suggestion.mainText}
-                          </ThemedText>
-                          <ThemedText
-                            type="small"
-                            style={styles.suggestionSecondaryText}
-                            numberOfLines={2}
-                          >
-                            {suggestion.secondaryText || suggestion.description}
-                          </ThemedText>
-                        </View>
-                      </Pressable>
-                    ))
-                  )}
+                </Pressable>
+              )}
+            </View>
+            {focusedField === "from" && (
+              <View style={styles.suggestionCard}>
+                <Pressable
+                  style={styles.currentLocationSuggestion}
+                  onPress={useCurrentLocationAsPickup}
+                  disabled={isFetchingCurrentLocation}
+                >
+                  <View style={styles.suggestionIcon}>
+                    <ThemedText type="smallBold" style={styles.suggestionIconText}>
+                      {"\u25cf"}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.suggestionContent}>
+                    <ThemedText
+                      type="smallBold"
+                      style={styles.suggestionMainText}
+                      numberOfLines={1}
+                    >
+                      {"S\u1eed d\u1ee5ng v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i"}
+                    </ThemedText>
+                    <ThemedText
+                      type="small"
+                      style={styles.suggestionSecondaryText}
+                      numberOfLines={2}
+                    >
+                      {isFetchingCurrentLocation
+                        ? "\u0110ang l\u1ea5y v\u1ecb tr\u00ed..."
+                        : "B\u1ea5m \u0111\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 GPS v\u00e0o \u00f4 \u0111i\u1ec3m \u0111\u00f3n."}
+                    </ThemedText>
+                  </View>
+                </Pressable>
+
+                {(addressSuggestions.from.length > 0 ||
+                  loadingSuggestionsFor === "from" ||
+                  suggestionError.from) && <View style={styles.suggestionDivider} />}
+
+                {loadingSuggestionsFor === "from" ? (
+                  <ThemedText type="small" style={styles.suggestionLoading}>
+                    {"\u0110ang t\u1ea3i g\u1ee3i \u00fd..."}
+                  </ThemedText>
+                ) : suggestionError.from ? (
+                  <ThemedText type="small" style={styles.suggestionError}>
+                    {suggestionError.from}
+                  </ThemedText>
+                ) : (
+                  addressSuggestions.from.map((suggestion) => (
+                    <Pressable
+                      key={suggestion.placeId}
+                      style={styles.suggestionItem}
+                      onPress={() => selectAddressSuggestion("from", suggestion)}
+                    >
+                      <View style={styles.suggestionIcon}>
+                        <ThemedText type="smallBold" style={styles.suggestionIconText}>
+                          {"\u2022"}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.suggestionContent}>
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.suggestionMainText}
+                          numberOfLines={1}
+                        >
+                          {suggestion.mainText}
+                        </ThemedText>
+                        <ThemedText
+                          type="small"
+                          style={styles.suggestionSecondaryText}
+                          numberOfLines={2}
+                        >
+                          {suggestion.secondaryText || suggestion.description}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                  ))
+                )}
+
+                {(addressSuggestions.from.length > 0 ||
+                  loadingSuggestionsFor === "from" ||
+                  suggestionError.from) && (
                   <ThemedText type="small" style={styles.suggestionAttribution}>
                     Geoapify
                   </ThemedText>
-                </View>
-              )}
-            <TextInput
-              ref={toInputRef}
-              {...vietnameseTextInputProps}
-              placeholder={"\u0110i\u1ec3m \u0111\u1ebfn"}
-              placeholderTextColor={theme.textSecondary}
+                )}
+              </View>
+            )}
+            <View
               style={[
-                styles.input,
+                styles.inputWrap,
                 {
-                  color: theme.text,
                   backgroundColor: theme.backgroundElement,
                 },
               ]}
-              value={toInput}
-              onChangeText={(value) => {
-                setToInput(value);
-                setSelectedToPlace(null);
-                setVerifiedTripMap(null);
-                if (value.trim().length < 2) {
-                  setAddressSuggestions((current) => ({
-                    ...current,
-                    to: [],
-                  }));
-                  setSuggestionError((current) => ({
-                    ...current,
-                    to: '',
-                  }));
-                }
-                if (alertMessage) {
-                  setAlertMessage('');
-                }
-              }}
-              onFocus={() => setFocusedField('to')}
-            />
+            >
+              <TextInput
+                ref={toInputRef}
+                {...vietnameseTextInputProps}
+                placeholder={"\u0110i\u1ec3m \u0111\u1ebfn"}
+                placeholderTextColor={theme.textSecondary}
+                style={[
+                  styles.input,
+                  {
+                    color: theme.text,
+                  },
+                ]}
+                value={toInput}
+                onChangeText={(value) => {
+                  setToInput(value);
+                  setSelectedToPlace(null);
+                  setVerifiedTripMap(null);
+                  if (value.trim().length < 2) {
+                    setAddressSuggestions((current) => ({
+                      ...current,
+                      to: [],
+                    }));
+                    setSuggestionError((current) => ({
+                      ...current,
+                      to: '',
+                    }));
+                  }
+                  if (alertMessage) {
+                    setAlertMessage('');
+                  }
+                }}
+                onFocus={() => setFocusedField('to')}
+              />
+              {Boolean(toInput) && (
+                <Pressable
+                  style={styles.inputClearButton}
+                  onPress={() => clearAddressField("to")}
+                >
+                  <ThemedText type="smallBold" style={styles.inputClearText}>
+                    {"\u00d7"}
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
             {focusedField === "to" &&
               (addressSuggestions.to.length > 0 ||
                 loadingSuggestionsFor === "to" ||
@@ -1456,7 +1640,7 @@ export default function SearchScreen() {
 
             <View style={styles.savedList}>
               <View style={styles.savedHeader}>
-                <ThemedText type="smallBold">{"H\u1ee7y"}</ThemedText>
+                <ThemedText type="smallBold">{"\u0110\u1ecba ch\u1ec9 \u0111\u00e3 l\u01b0u"}</ThemedText>
                 <Pressable onPress={openCreateAddressModal}>
                   <ThemedText type="smallBold" style={styles.saveAddressButtonText}>
                     {"+ L\u01b0u \u0111\u1ecba ch\u1ec9"}
@@ -1525,7 +1709,9 @@ export default function SearchScreen() {
                 onPress={openSchedulePicker}
                 disabled={isVerifyingMap}
               >
-                <ThemedText type="smallBold">{"H\u1ee7y"}</ThemedText>
+                <ThemedText type="smallBold" style={styles.secondaryButtonText}>
+                  {"H\u1eb9n l\u1ecbch"}
+                </ThemedText>
               </Pressable>
 
               <Pressable
@@ -2327,11 +2513,17 @@ const styles = StyleSheet.create({
   contentContainer: {
     alignItems: "center",
   },
+  contentContainerFit: {
+    flexGrow: 1,
+  },
   content: {
     width: "100%",
     maxWidth: MaxContentWidth,
     paddingHorizontal: Spacing.three,
     gap: Spacing.three,
+  },
+  contentFit: {
+    flex: 1,
   },
   headerRow: {
     flexDirection: "row",
@@ -2377,13 +2569,36 @@ const styles = StyleSheet.create({
   segmentTextActive: {
     color: "#FFFFFF",
   },
-  input: {
+  inputWrap: {
     minHeight: 54,
     borderRadius: 18,
-    paddingHorizontal: Spacing.three,
     borderWidth: 1,
     borderColor: "#EEE",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.one,
+  },
+  input: {
+    flex: 1,
+    minHeight: 52,
+    paddingRight: Spacing.one,
     cursor: "text",
+  },
+  inputClearButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFE2C2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inputClearText: {
+    color: "#C75B00",
+    fontSize: 16,
+    lineHeight: 18,
   },
   suggestionCard: {
     marginTop: -Spacing.one,
@@ -2406,6 +2621,21 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
+  },
+  currentLocationSuggestion: {
+    minHeight: 70,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    backgroundColor: "#FFF7ED",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FFE2C2",
+  },
+  suggestionDivider: {
+    height: 1,
+    backgroundColor: "#F3F4F6",
   },
   suggestionIcon: {
     width: 38,
@@ -2920,43 +3150,50 @@ const styles = StyleSheet.create({
   scheduleBackButton: {
     width: 44,
     height: 44,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFE2C2",
   },
   scheduleBackIcon: {
-    color: "#111113",
-    fontSize: 32,
+    color: "#C75B00",
+    fontSize: 24,
+    fontWeight: "900",
   },
   scheduleTitle: {
     color: "#111113",
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: "900",
   },
   scheduleCalendarCard: {
-    width: 96,
+    width: 110,
     alignSelf: "center",
     marginTop: Spacing.four,
-    borderRadius: 10,
+    borderRadius: 18,
     overflow: "hidden",
-    backgroundColor: "#F4F4F5",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+    shadowColor: "#C75B00",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
     elevation: 4,
   },
   scheduleCalendarMonth: {
     textAlign: "center",
     color: "#FFFFFF",
-    backgroundColor: "#09090B",
-    paddingVertical: 8,
-    fontSize: 20,
+    backgroundColor: BRAND,
+    paddingVertical: 10,
+    fontSize: 18,
     fontWeight: "900",
   },
   scheduleCalendarDay: {
     textAlign: "center",
-    color: "#09090B",
-    paddingVertical: 18,
-    fontSize: 42,
+    color: "#111113",
+    paddingVertical: 20,
+    fontSize: 40,
     fontWeight: "900",
   },
   scheduleIntro: {
@@ -2967,41 +3204,48 @@ const styles = StyleSheet.create({
   scheduleQuestion: {
     color: "#09090B",
     textAlign: "center",
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
   },
   scheduleHint: {
-    color: "#9CA3AF",
+    color: "#9A3412",
     textAlign: "center",
   },
   schedulePickerPanel: {
     marginTop: "auto",
-    minHeight: 190,
-    borderRadius: 42,
-    backgroundColor: "#FFF7ED",
+    minHeight: 220,
+    borderRadius: 30,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FFE2C2",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.three,
     gap: Spacing.two,
+    shadowColor: "#C75B00",
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
   scheduleDateColumn: {
     flex: 1.45,
-    maxHeight: 180,
+    maxHeight: 200,
   },
   scheduleTimeColumn: {
     flex: 0.65,
-    maxHeight: 180,
+    maxHeight: 200,
   },
   schedulePickerRow: {
     minHeight: 54,
-    borderRadius: 999,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: Spacing.two,
   },
   schedulePickerRowActive: {
-    backgroundColor: "#FED7AA",
+    backgroundColor: "#FFF1E6",
   },
   schedulePickerDateText: {
     color: "#3F3F46",
@@ -3012,12 +3256,12 @@ const styles = StyleSheet.create({
   },
   scheduleTimeCell: {
     minHeight: 54,
-    borderRadius: 999,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
   scheduleTimeCellActive: {
-    backgroundColor: "#FED7AA",
+    backgroundColor: "#FFE4CC",
   },
   scheduleTimeText: {
     color: "#3F3F46",
@@ -3026,35 +3270,42 @@ const styles = StyleSheet.create({
   },
   scheduleColon: {
     color: BRAND,
-    fontSize: 26,
+    fontSize: 30,
     fontWeight: "900",
   },
   scheduleResultCard: {
     marginTop: Spacing.four,
     borderRadius: 24,
-    backgroundColor: "#F4F4F5",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFE2C2",
     padding: Spacing.four,
     gap: Spacing.two,
   },
   scheduleResultTitle: {
     color: "#09090B",
     textAlign: "center",
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "900",
   },
   scheduleArrivalText: {
-    color: "#111113",
+    color: "#C75B00",
     textAlign: "center",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
   },
   scheduleConfirmButton: {
     minHeight: 60,
-    borderRadius: 18,
+    borderRadius: 20,
     marginTop: "auto",
     backgroundColor: BRAND,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#C75B00",
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   scheduleConfirmText: {
     color: "#FFFFFF",
@@ -3064,6 +3315,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
     alignSelf: "flex-start",
+  },
+  confirmStage: {
+    flex: 1,
+    gap: Spacing.two,
   },
   dotActive: {
     width: 10,
@@ -3097,7 +3352,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   pickupMapCard: {
-    minHeight: 390,
+    flex: 1,
+    minHeight: 285,
     borderRadius: 18,
     overflow: "hidden",
     backgroundColor: "#EEF4F7",
@@ -3225,8 +3481,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
-    padding: Spacing.three,
-    gap: Spacing.three,
+    padding: Spacing.two,
+    gap: Spacing.two,
     shadowColor: "#000000",
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -3234,15 +3490,15 @@ const styles = StyleSheet.create({
   },
   pickupAddressRow: {
     flexDirection: "row",
-    gap: Spacing.three,
+    gap: Spacing.two,
   },
   pickupAddressIconWrap: {
-    width: 58,
+    width: 48,
     alignItems: "center",
     gap: 4,
   },
   pickupAddressIcon: {
-    fontSize: 26,
+    fontSize: 22,
   },
   pickupDistanceText: {
     color: "#6B7280",
@@ -3253,40 +3509,40 @@ const styles = StyleSheet.create({
   },
   pickupAddressTitle: {
     color: "#111827",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "900",
   },
   pickupAddressSubtitle: {
     color: "#6B7280",
   },
   pickupNoteInput: {
-    minHeight: 58,
-    borderRadius: 18,
+    minHeight: 46,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "#F1F5F9",
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.two,
     color: "#111827",
   },
   pickupScheduleBadge: {
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: "#FFF7ED",
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
   },
   pickupScheduleText: {
     color: "#9A3412",
   },
   pickupConfirmButton: {
-    minHeight: 58,
-    borderRadius: 18,
+    minHeight: 50,
+    borderRadius: 14,
     backgroundColor: "#23C6C8",
     alignItems: "center",
     justifyContent: "center",
   },
   pickupConfirmButtonText: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 16,
   },
   routeMapTopBar: {
     position: "absolute",
@@ -3493,10 +3749,13 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: Colors.light.backgroundElement,
+    borderColor: "#FFD2AE",
+    backgroundColor: "#FFF7ED",
     alignItems: "center",
     justifyContent: "center",
+  },
+  secondaryButtonText: {
+    color: "#C75B00",
   },
   primaryButton: {
     flex: 3,
