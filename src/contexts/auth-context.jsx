@@ -1,8 +1,11 @@
-import { createContext, useContext, useState } from "react";
+import * as SecureStore from "expo-secure-store";
+import { createContext, useContext, useEffect, useState } from "react";
 
 import * as authApi from "@/services/auth-api";
 
 const AuthContext = createContext(null);
+
+const SESSION_STORAGE_KEY = "fpt-ride.auth.session";
 
 function buildSession(loginResponse, profileResponse) {
   return {
@@ -18,12 +21,92 @@ function buildSession(loginResponse, profileResponse) {
   };
 }
 
+async function persistSession(session) {
+  await SecureStore.setItemAsync(
+    SESSION_STORAGE_KEY,
+    JSON.stringify(session ?? null)
+  );
+}
+
+async function clearPersistedSession() {
+  await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshingProfile, setIsRefreshingProfile] = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
+  const [rememberSession, setRememberSession] = useState(false);
 
-  async function refreshProfile(nextSession = session) {
+  useEffect(() => {
+    let isMounted = true;
+
+    async function restoreSession() {
+      try {
+        const storedSession = await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
+
+        if (!storedSession) {
+          if (isMounted) {
+            setRememberSession(false);
+          }
+          return;
+        }
+
+        const parsedSession = JSON.parse(storedSession);
+
+        if (!parsedSession?.accessToken || !parsedSession?.userId) {
+          await clearPersistedSession();
+
+          if (isMounted) {
+            setRememberSession(false);
+          }
+
+          return;
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setSession(parsedSession);
+        setRememberSession(true);
+
+        try {
+          const profile = await authApi.getProfile(
+            parsedSession.userId,
+            parsedSession.accessToken
+          );
+          const refreshedSession = buildSession(parsedSession, profile);
+
+          if (isMounted) {
+            setSession(refreshedSession);
+          }
+
+          await persistSession(refreshedSession);
+        } catch {
+          await clearPersistedSession();
+
+          if (isMounted) {
+            setSession(null);
+            setRememberSession(false);
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setIsRestoringSession(false);
+        }
+      }
+    }
+
+    restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  async function refreshProfile(nextSession = session, shouldPersist = rememberSession) {
     if (!nextSession?.accessToken || !nextSession?.userId) {
       return null;
     }
@@ -36,14 +119,21 @@ export function AuthProvider({ children }) {
         nextSession.accessToken
       );
 
+      let updatedSession = null;
+
       setSession((currentSession) => {
         const activeSession =
           currentSession?.userId === nextSession.userId
             ? currentSession
             : nextSession;
 
-        return buildSession(activeSession, profile);
+        updatedSession = buildSession(activeSession, profile);
+        return updatedSession;
       });
+
+      if (shouldPersist && updatedSession) {
+        await persistSession(updatedSession);
+      }
 
       return profile;
     } finally {
@@ -51,7 +141,9 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function login(credentials) {
+  async function login(credentials, options = {}) {
+    const shouldRemember = Boolean(options.rememberSession);
+
     setIsSubmitting(true);
 
     try {
@@ -59,23 +151,72 @@ export function AuthProvider({ children }) {
       const nextSession = buildSession(loginResponse);
 
       setSession(nextSession);
-      const profile = await refreshProfile(nextSession);
+      setRememberSession(shouldRemember);
 
-      return buildSession(loginResponse, profile);
+      const profile = await refreshProfile(nextSession, shouldRemember);
+      const resolvedSession = buildSession(loginResponse, profile);
+
+      setSession(resolvedSession);
+
+      if (shouldRemember) {
+        await persistSession(resolvedSession);
+      } else {
+        await clearPersistedSession();
+      }
+
+      return resolvedSession;
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  async function register(registerPayload) {
+  async function register(registerPayload, options = {}) {
     setIsSubmitting(true);
 
     try {
-      await authApi.register(registerPayload);
-      return await login({
-        email: registerPayload.email,
-        password: registerPayload.password,
-      });
+      const result = await authApi.register(registerPayload);
+      setRememberSession(Boolean(options.rememberSession));
+      return result;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function sendVerifyEmailOtp(email) {
+    setIsSubmitting(true);
+
+    try {
+      return await authApi.sendVerifyEmailOtp({ email });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function verifyEmailOtp(payload) {
+    setIsSubmitting(true);
+
+    try {
+      return await authApi.verifyEmailOtp(payload);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function forgotPassword(email) {
+    setIsSubmitting(true);
+
+    try {
+      return await authApi.forgotPassword({ email });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function resetPasswordWithOtp(payload) {
+    setIsSubmitting(true);
+
+    try {
+      return await authApi.resetPassword(payload);
     } finally {
       setIsSubmitting(false);
     }
@@ -95,7 +236,16 @@ export function AuthProvider({ children }) {
         session.accessToken
       );
 
-      setSession((currentSession) => buildSession(currentSession, profile));
+      let updatedSession = null;
+
+      setSession((currentSession) => {
+        updatedSession = buildSession(currentSession, profile);
+        return updatedSession;
+      });
+
+      if (rememberSession && updatedSession) {
+        await persistSession(updatedSession);
+      }
 
       return profile;
     } finally {
@@ -105,6 +255,21 @@ export function AuthProvider({ children }) {
 
   function logout() {
     setSession(null);
+    void clearPersistedSession();
+  }
+
+  async function changePassword(payload) {
+    if (!session?.accessToken) {
+      throw new Error("Bạn cần đăng nhập trước.");
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      return await authApi.changePassword(payload, session.accessToken);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const value = {
@@ -112,8 +277,15 @@ export function AuthProvider({ children }) {
     isAuthenticated: Boolean(session?.accessToken),
     isSubmitting,
     isRefreshingProfile,
+    isRestoringSession,
+    rememberSession,
     login,
     register,
+    sendVerifyEmailOtp,
+    verifyEmailOtp,
+    forgotPassword,
+    resetPasswordWithOtp,
+    changePassword,
     refreshProfile,
     saveProfile,
     logout,

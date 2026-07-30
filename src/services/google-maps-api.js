@@ -190,10 +190,7 @@ function createApproximateRoute(origin, destination) {
     },
     geometry: {
       type: "LineString",
-      coordinates: [
-        [origin.location.lng, origin.location.lat],
-        [destination.location.lng, destination.location.lat],
-      ],
+      coordinates: [],
     },
   };
 
@@ -205,6 +202,17 @@ function createApproximateRoute(origin, destination) {
     endAddress: destination.formattedAddress,
     isFallbackRoute: true,
   };
+}
+
+function normalizeRouteGeometry(geometry) {
+  if (!geometry) {
+    return {
+      type: "LineString",
+      coordinates: [],
+    };
+  }
+
+  return geometry;
 }
 
 function mapGeoapifyRoute(payload, origin, destination) {
@@ -225,10 +233,7 @@ function mapGeoapifyRoute(payload, origin, destination) {
         linewidth: 5,
         linestyle: "solid",
       },
-      geometry: feature.geometry ?? {
-        type: "LineString",
-        coordinates: [],
-      },
+      geometry: normalizeRouteGeometry(feature.geometry),
     },
     startAddress: route.start_address || origin.formattedAddress,
     endAddress: route.end_address || destination.formattedAddress,
@@ -370,7 +375,9 @@ export async function getGoogleDirections(origin, destination) {
         waypoints: `${origin.location.lat},${origin.location.lng}|${destination.location.lat},${destination.location.lng}`,
         mode: "drive",
         format: "geojson",
-        lang: "vi",
+        type: "balanced",
+        traffic: "approximated",
+        details: "instruction_details,route_details",
       })
     );
     const payload = await response.json();
@@ -471,16 +478,17 @@ export function getGooglePlaceMapUrl({ point, width = 640, height = 720, zoom = 
 export function buildGeoapifyInteractiveMapHtml({
   center,
   markers = [],
-  routePoints = [],
+  routeGeometry = null,
   zoom = 16,
   routeColor = "#ff7a00",
   draggableMarkerIndex = -1,
+  fitPadding = null,
 }) {
   assertGeoapifyKey();
 
   const safeCenter = center ?? markers[0] ?? { lat: 21.0137, lng: 105.5262 };
   const safeMarkers = markers.filter(Boolean);
-  const safeRoutePoints = routePoints.filter(Boolean);
+  const safeRouteGeometry = routeGeometry ?? null;
   const apiKey = GEOAPIFY_API_KEY;
 
   return `<!doctype html>
@@ -500,7 +508,8 @@ export function buildGeoapifyInteractiveMapHtml({
     <script>
       const center = ${JSON.stringify(safeCenter)};
       const markers = ${JSON.stringify(safeMarkers)};
-      const routePoints = ${JSON.stringify(safeRoutePoints)};
+      const routeGeometry = ${JSON.stringify(safeRouteGeometry)};
+      const fitPadding = ${JSON.stringify(fitPadding)};
       const draggableMarkerIndex = ${Number.isInteger(draggableMarkerIndex) ? draggableMarkerIndex : -1};
       const map = L.map("map", {
         zoomControl: true,
@@ -564,18 +573,76 @@ export function buildGeoapifyInteractiveMapHtml({
         }
       });
 
-      if (routePoints.length > 1) {
-        const route = L.polyline(routePoints, {
-          color: "${routeColor}",
-          weight: 5,
-          opacity: 0.95,
-        }).addTo(map);
-        routePoints.forEach((point) => bounds.push(point));
+      function toLeafletRoutePoints(geometry) {
+        if (!geometry || !Array.isArray(geometry.coordinates)) {
+          return [];
+        }
+
+        const lineCoordinates =
+          geometry.type === "MultiLineString"
+            ? geometry.coordinates.flat()
+            : geometry.coordinates;
+
+        return lineCoordinates
+          .map((coordinate) => {
+            const lng = Number(coordinate?.[0]);
+            const lat = Number(coordinate?.[1]);
+            return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
+          })
+          .filter(Boolean);
       }
 
-      if (bounds.length > 0) {
-        map.fitBounds(bounds, { padding: [24, 24] });
+      const routePoints = toLeafletRoutePoints(routeGeometry?.geometry);
+
+      if (routePoints.length > 1) {
+        const routeOutline = L.polyline(routePoints, {
+          color: "#ffffff",
+          weight: 10,
+          opacity: 0.95,
+          lineJoin: "round",
+          lineCap: "round",
+        }).addTo(map);
+
+        const routeLine = L.polyline(routePoints, {
+          color: "${routeColor}",
+          weight: 6,
+          opacity: 1,
+          lineJoin: "round",
+          lineCap: "round",
+        }).addTo(map);
+
+        const routeBounds = routeLine.getBounds();
+        if (routeBounds.isValid()) {
+          bounds.push(routeBounds.getSouthWest());
+          bounds.push(routeBounds.getNorthEast());
+        }
       }
+
+      function fitMapToContent() {
+        if (bounds.length === 0) {
+          return;
+        }
+
+        map.invalidateSize();
+
+        if (fitPadding?.paddingTopLeft && fitPadding?.paddingBottomRight) {
+          map.fitBounds(bounds, {
+            paddingTopLeft: fitPadding.paddingTopLeft,
+            paddingBottomRight: fitPadding.paddingBottomRight,
+            maxZoom: fitPadding.maxZoom,
+          });
+          return;
+        }
+
+        map.fitBounds(bounds, {
+          padding: fitPadding?.padding ?? [32, 32],
+          maxZoom: fitPadding?.maxZoom,
+        });
+      }
+
+      fitMapToContent();
+      setTimeout(fitMapToContent, 150);
+      setTimeout(fitMapToContent, 450);
     </script>
   </body>
 </html>`;
