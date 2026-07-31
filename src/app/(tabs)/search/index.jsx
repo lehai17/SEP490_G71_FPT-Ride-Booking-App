@@ -87,7 +87,6 @@ const sharedVehicleOptions = [
   { label: "Xe 4 ch\u1ed7", vehicle: "Xe 4 ch\u1ed7", capacity: 4, price: "30.000\u0111" },
   { label: "Xe 7 ch\u1ed7", vehicle: "Xe 7 ch\u1ed7", capacity: 7, price: "42.000\u0111" },
 ];
-const sharedSeatOptions = ["2", "3", "4", "5", "6", "7"];
 const sharedSlotOptions = [
   { id: "slot-1", label: "Slot 1", time: "07:30" },
   { id: "slot-2", label: "Slot 2", time: "10:00" },
@@ -98,7 +97,6 @@ const sharedSlotOptions = [
 const defaultSharedForm = {
   tripType: sharedTripTypes[0],
   vehicleIndex: 0,
-  maxSeats: "",
   location: "",
   slotId: "",
   date: "",
@@ -307,6 +305,7 @@ export default function SearchScreen() {
   const [selectedRideId, setSelectedRideId] = useState("bike");
   const fromInputRef = useRef(null);
   const toInputRef = useRef(null);
+  const sharedLocationPickedRef = useRef("");
   const hasEditedFromInputRef = useRef(false);
   const [isVerifyingMap, setIsVerifyingMap] = useState(false);
   const [isFetchingCurrentLocation, setIsFetchingCurrentLocation] = useState(false);
@@ -330,6 +329,9 @@ export default function SearchScreen() {
   const [sharedForm, setSharedForm] = useState(defaultSharedForm);
   const [openSharedDropdown, setOpenSharedDropdown] = useState("");
   const [sharedFormError, setSharedFormError] = useState("");
+  const [sharedLocationSuggestions, setSharedLocationSuggestions] = useState([]);
+  const [sharedLocationLoading, setSharedLocationLoading] = useState(false);
+  const [sharedLocationError, setSharedLocationError] = useState("");
   const [savedAddresses, setSavedAddresses] = useState(initialSavedAddresses);
   const [addressModalVisible, setAddressModalVisible] = useState(false);
   const [addressForm, setAddressForm] = useState(defaultAddressForm);
@@ -398,6 +400,63 @@ export default function SearchScreen() {
       clearTimeout(timeoutId);
     };
   }, [bookingStep, deferredFrom, deferredTo, focusedField, mode]);
+
+  useEffect(() => {
+    if (!createSharedVisible) {
+      return undefined;
+    }
+
+    const query = sharedForm.location.trim();
+
+    if (query && query === sharedLocationPickedRef.current) {
+      return undefined;
+    }
+
+    if (query.length < 2) {
+      setSharedLocationSuggestions([]);
+      setSharedLocationError("");
+      setSharedLocationLoading(false);
+      return undefined;
+    }
+
+    let isActive = true;
+    const timeoutId = setTimeout(async () => {
+      if (!isGoogleMapsConfigured()) {
+        return;
+      }
+
+      setSharedLocationLoading(true);
+
+      try {
+        const suggestions = await getGooglePlaceSuggestions(query);
+
+        if (isActive) {
+          setSharedLocationSuggestions(suggestions);
+          setSharedLocationError(
+            suggestions.length
+              ? ""
+              : "Chưa có gợi ý phù hợp, thử nhập rõ hơn tên đường/quận."
+          );
+        }
+      } catch (error) {
+        if (isActive) {
+          setSharedLocationSuggestions([]);
+          setSharedLocationError(
+            error.message || "Không tải được gợi ý. Kiểm tra API bản đồ trong Geoapify."
+          );
+        }
+      } finally {
+        if (isActive) {
+          setSharedLocationLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
+  }, [createSharedVisible, sharedForm.location]);
 
   const selectSingleRide = () => {
     setMode("now");
@@ -876,12 +935,37 @@ export default function SearchScreen() {
   const updateSharedForm = (field, value) => {
     setSharedForm((current) => ({ ...current, [field]: value }));
     setSharedFormError("");
+
+    if (field === "location" && value.trim() !== sharedLocationPickedRef.current) {
+      sharedLocationPickedRef.current = "";
+    }
+  };
+
+  const clearSharedLocation = () => {
+    sharedLocationPickedRef.current = "";
+    updateSharedForm("location", "");
+    setSharedLocationSuggestions([]);
+    setSharedLocationError("");
+  };
+
+  const selectSharedLocationSuggestion = (suggestion) => {
+    const formattedAddress =
+      suggestion.formattedAddress || suggestion.description || suggestion.mainText || "";
+
+    sharedLocationPickedRef.current = formattedAddress.trim();
+    updateSharedForm("location", formattedAddress);
+    setSharedLocationSuggestions([]);
+    setSharedLocationError("");
   };
 
   const closeCreateSharedModal = () => {
     setCreateSharedVisible(false);
     setOpenSharedDropdown("");
     setSharedFormError("");
+    sharedLocationPickedRef.current = "";
+    setSharedLocationSuggestions([]);
+    setSharedLocationLoading(false);
+    setSharedLocationError("");
   };
 
   const createSharedRide = () => {
@@ -891,11 +975,6 @@ export default function SearchScreen() {
 
     if (!sharedForm.tripType) {
       setSharedFormError("Vui l\u00f2ng ch\u1ecdn lo\u1ea1i chuy\u1ebfn");
-      return;
-    }
-
-    if (!sharedForm.maxSeats) {
-      setSharedFormError("Vui l\u00f2ng ch\u1ecdn s\u1ed1 ng\u01b0\u1eddi t\u1ed1i \u0111a");
       return;
     }
 
@@ -927,7 +1006,7 @@ export default function SearchScreen() {
         vehicle: selectedVehicle.vehicle,
         price: selectedVehicle.price,
         distance: "18 km",
-        seats: `1/${sharedForm.maxSeats} th\u00e0nh vi\u00ean`,
+        seats: `1/${selectedVehicle.capacity} th\u00e0nh vi\u00ean`,
         note: scheduleText,
         scheduleText,
         date: selectedSharedDate.value,
@@ -936,7 +1015,7 @@ export default function SearchScreen() {
         driver: "L\u00ea Nguy\u1ec5n \u0110\u1ea1i H\u1ea3i",
         destination: route,
         participantCount: 1,
-        capacity: Number(sharedForm.maxSeats),
+        capacity: selectedVehicle.capacity,
         perPersonPrice: "15.000\u0111/ng\u01b0\u1eddi",
       },
       ...current,
@@ -1737,11 +1816,11 @@ export default function SearchScreen() {
                     setCreateSharedVisible(true);
                   }
                 }}
-              >
-                <ThemedText type="smallBold" style={styles.createButtonText}>
-                    {"+ T\u1ea1o"}
-                  </ThemedText>
-              </Pressable>
+                >
+                  <ThemedText type="smallBold" style={styles.createButtonText}>
+                      {"+ T\u1ea1o y\u00eau c\u1ea7u"}
+                    </ThemedText>
+                </Pressable>
             </View>
 
             {suggestedSharedRides.length === 0 ? (
@@ -2156,9 +2235,11 @@ export default function SearchScreen() {
                   <ThemedText type="default" style={styles.createSelectText}>
                     {sharedForm.tripType}
                   </ThemedText>
-                  <ThemedText type="default" style={styles.createSelectArrow}>
-                    {"v"}
-                  </ThemedText>
+                  <View style={styles.createSelectIndicator}>
+                    <ThemedText type="smallBold" style={styles.createSelectChevron}>
+                      {openSharedDropdown === "tripType" ? "\u2303" : "\u2304"}
+                    </ThemedText>
+                  </View>
                 </Pressable>
                 {openSharedDropdown === "tripType" && (
                   <View style={styles.createDropdown}>
@@ -2206,9 +2287,11 @@ export default function SearchScreen() {
                   <ThemedText type="default" style={styles.createSelectText}>
                     {sharedVehicleOptions[sharedForm.vehicleIndex].label}
                   </ThemedText>
-                  <ThemedText type="default" style={styles.createSelectArrow}>
-                    {"v"}
-                  </ThemedText>
+                  <View style={styles.createSelectIndicator}>
+                    <ThemedText type="smallBold" style={styles.createSelectChevron}>
+                      {openSharedDropdown === "vehicle" ? "\u2303" : "\u2304"}
+                    </ThemedText>
+                  </View>
                 </Pressable>
                 {openSharedDropdown === "vehicle" && (
                   <View style={styles.createDropdown}>
@@ -2224,10 +2307,6 @@ export default function SearchScreen() {
                           setSharedForm((current) => ({
                             ...current,
                             vehicleIndex: index,
-                            maxSeats:
-                              Number(current.maxSeats) > item.capacity
-                                ? ""
-                                : current.maxSeats,
                           }));
                           setOpenSharedDropdown("");
                           setSharedFormError("");
@@ -2251,82 +2330,79 @@ export default function SearchScreen() {
 
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
-                  {"S\u1ed1 ng\u01b0\u1eddi t\u1ed1i \u0111a"}
-                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
-                </ThemedText>
-                <Pressable
-                  style={styles.createSelect}
-                  onPress={() =>
-                    setOpenSharedDropdown(
-                      openSharedDropdown === "seats" ? "" : "seats"
-                    )
-                  }
-                >
-                  <ThemedText
-                    type="default"
-                    style={[
-                      styles.createSelectText,
-                      !sharedForm.maxSeats && styles.createPlaceholderText,
-                    ]}
-                  >
-                    {sharedForm.maxSeats
-                      ? `${sharedForm.maxSeats} ng\u01b0\u1eddi`
-                      : "-- Ch\u1ecdn s\u1ed1 ng\u01b0\u1eddi --"}
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.createSelectArrow}>
-                    {"v"}
-                  </ThemedText>
-                </Pressable>
-                {openSharedDropdown === "seats" && (
-                  <View style={styles.createDropdown}>
-                    {sharedSeatOptions
-                      .filter(
-                        (seat) =>
-                          Number(seat) <=
-                          sharedVehicleOptions[sharedForm.vehicleIndex].capacity
-                      )
-                      .map((seat) => (
-                        <Pressable
-                          key={seat}
-                          style={[
-                            styles.createDropdownItem,
-                            sharedForm.maxSeats === seat &&
-                              styles.createDropdownItemActive,
-                          ]}
-                          onPress={() => {
-                            updateSharedForm("maxSeats", seat);
-                            setOpenSharedDropdown("");
-                          }}
-                        >
-                          <ThemedText
-                            type="smallBold"
-                            style={[
-                              styles.createDropdownText,
-                              sharedForm.maxSeats === seat &&
-                                styles.createDropdownTextActive,
-                            ]}
-                          >
-                            {seat}{" ng\u01b0\u1eddi"}
-                          </ThemedText>
-                        </Pressable>
-                      ))}
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.createField}>
-                <ThemedText type="small" style={styles.createLabel}>
                   {sharedLocationLabel}
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
-                <TextInput
-                  {...vietnameseTextInputProps}
-                  placeholder={sharedLocationPlaceholder}
-                  placeholderTextColor="#A1A1AA"
-                  style={styles.createInput}
-                  value={sharedForm.location}
-                  onChangeText={(value) => updateSharedForm("location", value)}
-                />
+                <View style={styles.createLocationInputWrap}>
+                  <TextInput
+                    {...vietnameseTextInputProps}
+                    placeholder={sharedLocationPlaceholder}
+                    placeholderTextColor="#A1A1AA"
+                    style={styles.createInput}
+                    value={sharedForm.location}
+                    onChangeText={(value) => updateSharedForm("location", value)}
+                  />
+                  {Boolean(sharedForm.location) && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="X\u00f3a \u0111\u1ecba ch\u1ec9"
+                      style={styles.createInputClearButton}
+                      onPress={clearSharedLocation}
+                    >
+                      <ThemedText type="smallBold" style={styles.createInputClearText}>
+                        {"\u00d7"}
+                      </ThemedText>
+                    </Pressable>
+                  )}
+                </View>
+                {(sharedLocationLoading ||
+                  sharedLocationError ||
+                  sharedLocationSuggestions.length > 0) && (
+                  <View style={styles.sharedSuggestionCard}>
+                    {sharedLocationLoading ? (
+                      <ThemedText type="small" style={styles.suggestionLoading}>
+                        {"\u0110ang t\u1ea3i g\u1ee3i \u00fd..."}
+                      </ThemedText>
+                    ) : sharedLocationError ? (
+                      <ThemedText type="small" style={styles.suggestionError}>
+                        {sharedLocationError}
+                      </ThemedText>
+                    ) : (
+                      sharedLocationSuggestions.map((suggestion) => (
+                        <Pressable
+                          key={suggestion.placeId || suggestion.description}
+                          style={styles.suggestionItem}
+                          onPress={() => selectSharedLocationSuggestion(suggestion)}
+                        >
+                          <View style={styles.suggestionIcon}>
+                            <ThemedText type="smallBold" style={styles.suggestionIconText}>
+                              {"\u2022"}
+                            </ThemedText>
+                          </View>
+                          <View style={styles.suggestionContent}>
+                            <ThemedText
+                              type="smallBold"
+                              style={styles.suggestionMainText}
+                              numberOfLines={1}
+                            >
+                              {suggestion.mainText || suggestion.description || ""}
+                            </ThemedText>
+                            <ThemedText
+                              type="small"
+                              style={styles.suggestionSecondaryText}
+                              numberOfLines={2}
+                            >
+                              {suggestion.secondaryText || suggestion.formattedAddress || ""}
+                            </ThemedText>
+                          </View>
+                        </Pressable>
+                      ))
+                    )}
+                    <ThemedText type="small" style={styles.suggestionAttribution}>
+                      Geoapify
+                    </ThemedText>
+                  </View>
+                )}
               </View>
 
               <View style={styles.createScheduleCard}>
@@ -2461,7 +2537,7 @@ export default function SearchScreen() {
                 onPress={createSharedRide}
               >
                 <ThemedText type="smallBold" style={styles.createSubmitText}>
-                    {"G\u1eedi y\u00eau c\u1ea7u"}
+                    {"T\u1ea1o y\u00eau c\u1ea7u"}
                   </ThemedText>
               </Pressable>
             </ScrollView>
@@ -2948,13 +3024,19 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#111827",
   },
-  createPlaceholderText: {
-    color: "#111827",
+  createSelectIndicator: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF1E6",
   },
-  createSelectArrow: {
-    color: "#111827",
-    fontSize: 22,
-    lineHeight: 24,
+  createSelectChevron: {
+    color: BRAND,
+    fontSize: 18,
+    lineHeight: 19,
+    fontWeight: "800",
   },
   createDropdown: {
     borderWidth: 1,
@@ -2983,8 +3065,42 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
     paddingHorizontal: Spacing.two,
+    paddingRight: 48,
     color: "#111827",
     backgroundColor: "#FFFFFF",
+  },
+  createLocationInputWrap: {
+    position: "relative",
+    justifyContent: "center",
+  },
+  createInputClearButton: {
+    position: "absolute",
+    right: Spacing.one,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFE2C2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createInputClearText: {
+    color: "#C75B00",
+    fontSize: 16,
+    lineHeight: 18,
+  },
+  sharedSuggestionCard: {
+    marginTop: Spacing.one,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
   },
   createScheduleCard: {
     borderRadius: 20,
