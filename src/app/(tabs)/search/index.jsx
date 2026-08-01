@@ -34,6 +34,7 @@ import {
   reverseGooglePlaceLocation,
   isGoogleMapsConfigured,
 } from "@/services/google-maps-api";
+import { estimateFare } from "@/services/pricing-api";
 
 const BRAND = "#FF7A00";
 const MAP_BG = "#FFF3C9";
@@ -60,21 +61,21 @@ const rideOptions = [
     icon: "Xe m\u00e1y",
     name: "Xe m\u00e1y",
     eta: "\u0110\u00f3n trong 3 ph\u00fat",
-    price: "25.000\u0111",
+    vehicleType: 1,
   },
   {
     id: "car4",
     icon: "Xe 4 ch\u1ed7",
     name: "Xe 4 ch\u1ed7",
     eta: "\u0110\u00f3n trong 5 ph\u00fat",
-    price: "46.000\u0111",
+    vehicleType: 2,
   },
   {
     id: "car7",
     icon: "Xe 7 ch\u1ed7",
     name: "Xe 7 ch\u1ed7",
     eta: "\u0110\u00f3n trong 7 ph\u00fat",
-    price: "60.000\u0111",
+    vehicleType: 4,
   },
 ];
 
@@ -105,6 +106,55 @@ const defaultSharedForm = {
 const defaultAddressForm = {
   label: "",
 };
+
+function formatCurrencyVnd(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+
+  return `${Math.round(value).toLocaleString("vi-VN")}đ`;
+}
+
+function parseDistanceKm(distanceText) {
+  if (!distanceText) {
+    return 0;
+  }
+
+  const normalized = String(distanceText).replace(",", ".");
+  const kmMatch = normalized.match(/([\d.]+)\s*km/i);
+
+  if (kmMatch) {
+    return Number.parseFloat(kmMatch[1]) || 0;
+  }
+
+  const meterMatch = normalized.match(/([\d.]+)\s*m\b/i);
+
+  if (meterMatch) {
+    return (Number.parseFloat(meterMatch[1]) || 0) / 1000;
+  }
+
+  return Number.parseFloat(normalized) || 0;
+}
+
+function parseDurationMinute(durationText) {
+  if (!durationText) {
+    return 0;
+  }
+
+  const normalized = String(durationText).replace(",", ".");
+  const hourMatch = normalized.match(/([\d.]+)\s*gi(?:ờ|o)/i);
+  const minuteMatch = normalized.match(/([\d.]+)\s*ph(?:ú|u)t/i);
+
+  const hours = hourMatch ? Number.parseFloat(hourMatch[1]) || 0 : 0;
+  const minutes = minuteMatch ? Number.parseFloat(minuteMatch[1]) || 0 : 0;
+
+  if (hours > 0 || minutes > 0) {
+    return Math.round(hours * 60 + minutes);
+  }
+
+  const fallbackMatch = normalized.match(/([\d.]+)/);
+  return fallbackMatch ? Math.round(Number.parseFloat(fallbackMatch[1]) || 0) : 0;
+}
 
 function getSharedProposal(ride) {
   const isCar7 = ride.vehicle.includes("7");
@@ -303,6 +353,9 @@ export default function SearchScreen() {
   const [alertMessage, setAlertMessage] = useState("");
   const [driverNote, setDriverNote] = useState("");
   const [selectedRideId, setSelectedRideId] = useState("bike");
+  const [ridePriceQuotes, setRidePriceQuotes] = useState({});
+  const [isLoadingRidePrices, setIsLoadingRidePrices] = useState(false);
+  const [ridePriceError, setRidePriceError] = useState("");
   const fromInputRef = useRef(null);
   const toInputRef = useRef(null);
   const sharedLocationPickedRef = useRef("");
@@ -457,6 +510,74 @@ export default function SearchScreen() {
       clearTimeout(timeoutId);
     };
   }, [createSharedVisible, sharedForm.location]);
+
+  useEffect(() => {
+    if (bookingStep !== "rideOptions" || !verifiedTripMap) {
+      setRidePriceQuotes({});
+      setRidePriceError("");
+      setIsLoadingRidePrices(false);
+      return undefined;
+    }
+
+    const distanceKm = parseDistanceKm(verifiedTripMap.directions.distanceText);
+    const durationMinute = parseDurationMinute(verifiedTripMap.directions.durationText);
+
+    if (distanceKm <= 0 || durationMinute <= 0) {
+      setRidePriceQuotes({});
+      setRidePriceError("Không thể tính giá từ quãng đường hiện tại.");
+      setIsLoadingRidePrices(false);
+      return undefined;
+    }
+
+    let isActive = true;
+
+    const loadRidePrices = async () => {
+      setIsLoadingRidePrices(true);
+      setRidePriceError("");
+
+      try {
+        const results = await Promise.all(
+          rideOptions.map(async (option) => {
+            try {
+              const response = await estimateFare({
+                vehicleType: option.vehicleType,
+                rideType: "SingleRide",
+                estimatedDistanceKm: distanceKm,
+                estimatedDurationMinute: durationMinute,
+              });
+
+              return [option.id, response.estimatedFare];
+            } catch {
+              return [option.id, null];
+            }
+          })
+        );
+
+        if (isActive) {
+          setRidePriceQuotes(
+            Object.fromEntries(
+              results.map(([id, fare]) => [id, fare == null ? null : formatCurrencyVnd(fare)])
+            )
+          );
+        }
+      } catch (error) {
+        if (isActive) {
+          setRidePriceQuotes({});
+          setRidePriceError(error.message || "Không tải được giá cước từ BE.");
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingRidePrices(false);
+        }
+      }
+    };
+
+    loadRidePrices();
+
+    return () => {
+      isActive = false;
+    };
+  }, [bookingStep, verifiedTripMap]);
 
   const selectSingleRide = () => {
     setMode("now");
@@ -1299,6 +1420,11 @@ export default function SearchScreen() {
               <ThemedText type="default" style={styles.rideSheetTitle}>
                     {"Ch\u1ecdn lo\u1ea1i xe"}
                   </ThemedText>
+              {Boolean(ridePriceError) && (
+                <ThemedText type="small" style={styles.paymentNoticeText}>
+                  {ridePriceError}
+                </ThemedText>
+              )}
               {rideOptions.map((option) => {
                 const isSelected = option.id === selectedRideId;
 
@@ -1311,30 +1437,23 @@ export default function SearchScreen() {
                       isSelected && styles.rideOptionActive,
                     ]}
                     onPress={() => setSelectedRideId(option.id)}
-                  >
+                    >
                     <View>
                       <ThemedText type="smallBold" style={styles.rideOptionName}>
-                        {option.icon} {option.name}
+                        {option.name}
                       </ThemedText>
                       <ThemedText type="small" style={styles.rideOptionEta}>
                         {option.eta}
                       </ThemedText>
                     </View>
                     <ThemedText type="default" style={styles.rideOptionPrice}>
-                      {option.price}
+                      {isLoadingRidePrices
+                        ? "Đang tính..."
+                        : ridePriceQuotes[option.id] ?? "--"}
                     </ThemedText>
                   </Pressable>
                 );
               })}
-            </View>
-
-            <View style={styles.rideUtilityRow}>
-              <View style={styles.utilityChip}>
-                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
-              </View>
-              <View style={styles.utilityChip}>
-                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
-              </View>
             </View>
 
             <Pressable
@@ -1359,9 +1478,18 @@ export default function SearchScreen() {
               }}
             >
               <ThemedText type="smallBold" style={styles.bookButtonText}>
-                    {"\u0110\u1eb7t xe"}
-                  </ThemedText>
+                {"\u0110\u1eb7t xe"}
+              </ThemedText>
             </Pressable>
+
+            <View style={styles.rideUtilityRow}>
+              <View style={styles.utilityChip}>
+                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
+              </View>
+              <View style={styles.utilityChip}>
+                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
+              </View>
+            </View>
           </>
         ) : bookingStep === "confirm" && mode !== "shared" ? (
           <View style={styles.confirmStage}>

@@ -3,6 +3,7 @@ const GEOAPIFY_GEOCODE_BASE_URL = "https://api.geoapify.com/v1/geocode";
 const GEOAPIFY_PLACE_DETAILS_BASE_URL = "https://api.geoapify.com/v2/place-details";
 const GEOAPIFY_ROUTING_BASE_URL = "https://api.geoapify.com/v1/routing";
 const GEOAPIFY_STATIC_MAP_BASE_URL = "https://maps.geoapify.com/v1/staticmap";
+const XANH_STYLE_AVERAGE_SPEED_KMH = 30;
 
 const ADDRESS_COORDINATE_FALLBACKS = {
   "Đại học FPT, Thạch Hòa": {
@@ -179,6 +180,24 @@ function formatDuration(seconds) {
   return minutes === 0 ? `${hours} giờ` : `${hours} giờ ${minutes} phút`;
 }
 
+function estimateRideDurationSeconds(distanceKm) {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
+    return 0;
+  }
+
+  return (distanceKm / XANH_STYLE_AVERAGE_SPEED_KMH) * 3600;
+}
+
+function getRouteDistanceKm(route) {
+  const distanceMeters = Number(route?.distance);
+
+  if (Number.isFinite(distanceMeters) && distanceMeters > 0) {
+    return distanceMeters / 1000;
+  }
+
+  return 0;
+}
+
 function createApproximateRoute(origin, destination) {
   const distanceKm = haversineDistanceKm(origin.location, destination.location);
   const routeGeometry = {
@@ -196,7 +215,7 @@ function createApproximateRoute(origin, destination) {
 
   return {
     distanceText: `${distanceKm.toFixed(1)} km`,
-    durationText: formatDuration((distanceKm / 30) * 3600),
+    durationText: formatDuration(estimateRideDurationSeconds(distanceKm)),
     routeGeometry,
     startAddress: origin.formattedAddress,
     endAddress: destination.formattedAddress,
@@ -223,9 +242,12 @@ function mapGeoapifyRoute(payload, origin, destination) {
   }
 
   const route = feature.properties ?? {};
+  const distanceKm = getRouteDistanceKm(route);
   return {
     distanceText: formatDistance(route.distance, route.distance_units),
-    durationText: formatDuration(route.time),
+    durationText: formatDuration(
+      estimateRideDurationSeconds(distanceKm) || route.time
+    ),
     routeGeometry: {
       type: "Feature",
       properties: {
