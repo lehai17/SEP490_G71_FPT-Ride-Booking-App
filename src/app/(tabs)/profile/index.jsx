@@ -241,16 +241,35 @@ export default function ProfileScreen() {
     setErrorMessage("");
     setSuccessMessage("");
 
+    const normalizedLoginForm = {
+      email: loginForm.email.trim(),
+      password: loginForm.password.trim(),
+    };
+
     try {
-      await login(loginForm, { rememberSession: rememberMe });
+      await login(normalizedLoginForm, { rememberSession: rememberMe });
       setLoginForm(EMPTY_LOGIN_FORM);
       setShowLoginPassword(false);
       setSuccessMessage("Đăng nhập thành công.");
     } catch (error) {
       const nextMessage = error.message ?? "Đăng nhập thất bại.";
-      const isNotVerified = String(nextMessage)
-        .toLowerCase()
-        .includes("not verified");
+      const normalizedMessage = String(nextMessage).toLowerCase();
+      const isAmbiguousLoginError =
+        normalizedMessage.includes("invalid email or password") &&
+        normalizedMessage.includes("not verified");
+      const isNotVerified =
+        normalizedMessage.includes("not verified") && !isAmbiguousLoginError;
+
+      if (isNotVerified) {
+        openVerificationStep({
+          email: normalizedLoginForm.email,
+          password: normalizedLoginForm.password,
+        });
+        setErrorMessage(
+          "T\u00e0i kho\u1ea3n ch\u01b0a x\u00e1c minh email. B\u1ea5m G\u1eedi l\u1ea1i OTP r\u1ed3i nh\u1eadp m\u00e3 \u0111\u1ec3 ho\u00e0n t\u1ea5t x\u00e1c minh."
+        );
+        return;
+      }
 
       setErrorMessage(
         isNotVerified
