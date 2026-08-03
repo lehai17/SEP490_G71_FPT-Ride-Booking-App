@@ -84,14 +84,16 @@ export default function HomeScreen() {
               </ThemedText>
             </View>
 
-            <View style={styles.statusBadge}>
-              <ThemedText type="smallBold" style={styles.statusText}>
-                {isAuthenticated ? "ĐÃ ĐĂNG NHẬP" : "KHÁCH"}
-              </ThemedText>
-            </View>
+            {!isAuthenticated ? (
+              <View style={styles.statusBadge}>
+                <ThemedText type="smallBold" style={styles.statusText}>
+                  KHÁCH
+                </ThemedText>
+              </View>
+            ) : null}
           </View>
 
-          {!isAuthenticated ? (
+          {!session?.accessToken ? (
             <View style={styles.authActions}>
               <Pressable
                 style={({ pressed }) => [

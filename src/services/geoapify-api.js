@@ -267,11 +267,11 @@ function createGeoapifyMarker(point, color, label) {
   return `lonlat:${point.location.lng},${point.location.lat};color:${color};size:48;text:${label}`;
 }
 
-export function isGoogleMapsConfigured() {
+export function isGeoapifyConfigured() {
   return Boolean(GEOAPIFY_API_KEY);
 }
 
-export async function getGooglePlaceSuggestions(input) {
+export async function getGeoapifyPlaceSuggestions(input) {
   const trimmedInput = input.trim();
 
   if (trimmedInput.length < 2) {
@@ -304,7 +304,7 @@ export async function getGooglePlaceSuggestions(input) {
     .slice(0, 5);
 }
 
-export async function getGooglePlaceDetails(placeId) {
+export async function getGeoapifyPlaceDetails(placeId) {
   assertGeoapifyKey();
 
   const response = await fetch(
@@ -332,16 +332,16 @@ export async function getGooglePlaceDetails(placeId) {
   return mapGeoapifyPlace(result);
 }
 
-export async function verifyGoogleAddress(address) {
+export async function verifyGeoapifyAddress(address) {
   if (!address.trim()) {
     throw new Error("Vui lòng nhập địa chỉ cần xác minh.");
   }
 
   const fallback = getFallbackGeocode(address);
-  const suggestions = await getGooglePlaceSuggestions(address);
+  const suggestions = await getGeoapifyPlaceSuggestions(address);
 
   if (suggestions.length > 0 && suggestions[0].placeId) {
-    return verifyGooglePlaceId(suggestions[0].placeId, suggestions[0].description);
+    return verifyGeoapifyPlaceId(suggestions[0].placeId, suggestions[0].description);
   }
 
   if (fallback) {
@@ -356,13 +356,13 @@ export async function verifyGoogleAddress(address) {
   throw new Error(`Không tìm thấy địa chỉ "${address}" trên Geoapify.`);
 }
 
-export async function verifyGooglePlaceId(placeId, fallbackAddress) {
+export async function verifyGeoapifyPlaceId(placeId, fallbackAddress) {
   if (!placeId) {
-    return verifyGoogleAddress(fallbackAddress);
+    return verifyGeoapifyAddress(fallbackAddress);
   }
 
   try {
-    const place = await getGooglePlaceDetails(placeId);
+    const place = await getGeoapifyPlaceDetails(placeId);
 
     if (place.location) {
       return {
@@ -387,10 +387,10 @@ export async function verifyGooglePlaceId(placeId, fallbackAddress) {
     throw error;
   }
 
-  return verifyGoogleAddress(fallbackAddress);
+  return verifyGeoapifyAddress(fallbackAddress);
 }
 
-export async function getGoogleDirections(origin, destination) {
+export async function getGeoapifyDirections(origin, destination) {
   try {
     const response = await fetch(
       buildGeoapifyUrl(GEOAPIFY_ROUTING_BASE_URL, {
@@ -414,7 +414,7 @@ export async function getGoogleDirections(origin, destination) {
   }
 }
 
-export async function reverseGooglePlaceLocation(location) {
+export async function reverseGeoapifyPlaceLocation(location) {
   assertGeoapifyKey();
 
   const response = await fetch(
@@ -443,7 +443,7 @@ export async function reverseGooglePlaceLocation(location) {
   };
 }
 
-export function getGoogleStaticMapUrl({
+export function getGeoapifyStaticMapUrl({
   origin,
   destination,
   routeGeometry,
@@ -477,7 +477,7 @@ export function getGoogleStaticMapUrl({
   return `${GEOAPIFY_STATIC_MAP_BASE_URL}?${params.toString()}`;
 }
 
-export function getGooglePlaceMapUrl({ point, width = 640, height = 720, zoom = 16 }) {
+export function getGeoapifyPlaceMapUrl({ point, width = 640, height = 720, zoom = 16 }) {
   assertGeoapifyKey();
 
   const params = new URLSearchParams({

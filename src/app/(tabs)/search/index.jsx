@@ -25,16 +25,17 @@ import { useAuth } from "@/contexts/auth-context";
 import { rideGroups } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 import {
-  getGoogleDirections,
+  getGeoapifyDirections,
   buildGeoapifyInteractiveMapHtml,
-  getGooglePlaceDetails,
-  getGooglePlaceSuggestions,
-  getGooglePlaceMapUrl,
-  getGoogleStaticMapUrl,
-  reverseGooglePlaceLocation,
-  isGoogleMapsConfigured,
-} from "@/services/google-maps-api";
+  getGeoapifyPlaceDetails,
+  getGeoapifyPlaceSuggestions,
+  getGeoapifyPlaceMapUrl,
+  getGeoapifyStaticMapUrl,
+  reverseGeoapifyPlaceLocation,
+  isGeoapifyConfigured,
+} from "@/services/geoapify-api";
 import { estimateFare } from "@/services/pricing-api";
+import { persistBookedTrip } from "@/services/trip-storage";
 
 const BRAND = "#FF7A00";
 const MAP_BG = "#FFF3C9";
@@ -112,7 +113,7 @@ function formatCurrencyVnd(value) {
     return "--";
   }
 
-  return `${Math.round(value).toLocaleString("vi-VN")}đ`;
+  return `${Math.round(value).toLocaleString("vi-VN")}\u0111`;
 }
 
 function parseDistanceKm(distanceText) {
@@ -142,8 +143,8 @@ function parseDurationMinute(durationText) {
   }
 
   const normalized = String(durationText).replace(",", ".");
-  const hourMatch = normalized.match(/([\d.]+)\s*gi(?:ờ|o)/i);
-  const minuteMatch = normalized.match(/([\d.]+)\s*ph(?:ú|u)t/i);
+  const hourMatch = normalized.match(/([\d.]+)\s*gi(?:\u1edd|o)/i);
+  const minuteMatch = normalized.match(/([\d.]+)\s*ph(?:\u00fa|u)t/i);
 
   const hours = hourMatch ? Number.parseFloat(hourMatch[1]) || 0 : 0;
   const minutes = minuteMatch ? Number.parseFloat(minuteMatch[1]) || 0 : 0;
@@ -170,10 +171,18 @@ function getSharedProposal(ride) {
     savingPrice,
     expectedPickup: isCar7 ? "6:35" : "7:30",
     expectedArrival: isCar7 ? "7:20" : "8:10",
+    pickupDirection: isCar7
+      ? "Chi\u1ec1u: Nh\u00e0 \u2192 Tr\u01b0\u1eddng"
+      : "Chi\u1ec1u: Tr\u01b0\u1eddng \u2192 Nh\u00e0",
+    driverStatus: "\u0110\u00e3 c\u00f3 t\u00e0i x\u1ebf",
     routeSteps: [
       `1. ${startPoint}`,
       `2. ${ride.driver.split(" ").slice(-2).join(" ") || "Kh\u00e1ch"} - ${endPoint}`,
       "3. B\u1ea1n - M\u00ea Tr\u00ec",
+    ],
+    notes: [
+      "1. \u0110\u1ed3ng \u00fd tham gia s\u1ebd gi\u1eef ch\u1ed7",
+      "2. H\u1ee7y sau th\u1eddi gian \u0111\u00f3ng nh\u00f3m s\u1ebd b\u1ecb c\u1ea3nh c\u00e1o",
     ],
   };
 }
@@ -280,6 +289,31 @@ function createScheduleDateOptions() {
   return options;
 }
 
+function getSharedSlotDateTime(dateValue, slotTime) {
+  if (!dateValue || !slotTime) {
+    return null;
+  }
+
+  const date = parseScheduleDateValue(dateValue);
+  const [hour, minute] = slotTime.split(":").map(Number);
+  date.setHours(hour || 0, minute || 0, 0, 0);
+  return date;
+}
+
+function isSharedSlotAvailable(slot, dateValue) {
+  if (!dateValue) {
+    return true;
+  }
+
+  const slotDateTime = getSharedSlotDateTime(dateValue, slot.time);
+
+  if (!slotDateTime) {
+    return true;
+  }
+
+  return slotDateTime.getTime() - Date.now() > MIN_PICKUP_BUFFER_MINUTES * 60 * 1000;
+}
+
 function createScheduleDate(dateValue, hour, minute) {
   const date = parseScheduleDateValue(dateValue);
   date.setHours(Number(hour), Number(minute), 0, 0);
@@ -377,7 +411,8 @@ export default function SearchScreen() {
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState(getDefaultBookingSchedule);
   const [scheduledRideTime, setScheduledRideTime] = useState("");
-  const [sharedRides, setSharedRides] = useState(rideGroups);
+  const [sharedRides] = useState(rideGroups);
+  const [pendingSharedRequests, setPendingSharedRequests] = useState([]);
   const [createSharedVisible, setCreateSharedVisible] = useState(false);
   const [sharedForm, setSharedForm] = useState(defaultSharedForm);
   const [openSharedDropdown, setOpenSharedDropdown] = useState("");
@@ -410,14 +445,14 @@ export default function SearchScreen() {
 
     let isActive = true;
     const timeoutId = setTimeout(async () => {
-      if (!isGoogleMapsConfigured()) {
+      if (!isGeoapifyConfigured()) {
         return;
       }
 
       setLoadingSuggestionsFor(focusedField);
 
       try {
-        const suggestions = await getGooglePlaceSuggestions(query);
+        const suggestions = await getGeoapifyPlaceSuggestions(query);
 
         if (isActive) {
           setAddressSuggestions((current) => ({
@@ -455,6 +490,20 @@ export default function SearchScreen() {
   }, [bookingStep, deferredFrom, deferredTo, focusedField, mode]);
 
   useEffect(() => {
+    if (!sharedForm.slotId || !sharedForm.date) {
+      return;
+    }
+
+    const selectedSlot = sharedSlotOptions.find(
+      (slot) => slot.id === sharedForm.slotId
+    );
+
+    if (selectedSlot && !isSharedSlotAvailable(selectedSlot, sharedForm.date)) {
+      updateSharedForm("slotId", "");
+    }
+  }, [sharedForm.date, sharedForm.slotId]);
+
+  useEffect(() => {
     if (!createSharedVisible) {
       return undefined;
     }
@@ -474,28 +523,28 @@ export default function SearchScreen() {
 
     let isActive = true;
     const timeoutId = setTimeout(async () => {
-      if (!isGoogleMapsConfigured()) {
+      if (!isGeoapifyConfigured()) {
         return;
       }
 
       setSharedLocationLoading(true);
 
       try {
-        const suggestions = await getGooglePlaceSuggestions(query);
+        const suggestions = await getGeoapifyPlaceSuggestions(query);
 
         if (isActive) {
           setSharedLocationSuggestions(suggestions);
           setSharedLocationError(
             suggestions.length
               ? ""
-              : "Chưa có gợi ý phù hợp, thử nhập rõ hơn tên đường/quận."
+              : "Ch\u01b0a c\u00f3 g\u1ee3i \u00fd ph\u00f9 h\u1ee3p, th\u1eed nh\u1eadp r\u00f5 h\u01a1n t\u00ean \u0111\u01b0\u1eddng/qu\u1eadn."
           );
         }
       } catch (error) {
         if (isActive) {
           setSharedLocationSuggestions([]);
           setSharedLocationError(
-            error.message || "Không tải được gợi ý. Kiểm tra API bản đồ trong Geoapify."
+            error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c g\u1ee3i \u00fd. Ki\u1ec3m tra API b\u1ea3n \u0111\u1ed3 trong Geoapify."
           );
         }
       } finally {
@@ -524,7 +573,7 @@ export default function SearchScreen() {
 
     if (distanceKm <= 0 || durationMinute <= 0) {
       setRidePriceQuotes({});
-      setRidePriceError("Không thể tính giá từ quãng đường hiện tại.");
+      setRidePriceError("Kh\u00f4ng th\u1ec3 t\u00ednh gi\u00e1 t\u1eeb qu\u00e3ng \u0111\u01b0\u1eddng hi\u1ec7n t\u1ea1i.");
       setIsLoadingRidePrices(false);
       return undefined;
     }
@@ -563,7 +612,7 @@ export default function SearchScreen() {
       } catch (error) {
         if (isActive) {
           setRidePriceQuotes({});
-          setRidePriceError(error.message || "Không tải được giá cước từ BE.");
+          setRidePriceError(error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c gi\u00e1 c\u01b0\u1edbc t\u1eeb BE.");
         }
       } finally {
         if (isActive) {
@@ -598,6 +647,9 @@ export default function SearchScreen() {
     verifiedTripMap?.origin.formattedAddress ?? fromLabel;
   const verifiedToLabel =
     verifiedTripMap?.destination.formattedAddress ?? toLabel;
+  const selectedRideOption =
+    rideOptions.find((option) => option.id === selectedRideId) ?? rideOptions[0];
+  const selectedRidePrice = ridePriceQuotes[selectedRideOption.id] ?? "";
   const scheduleDateOptions = createScheduleDateOptions();
   const selectedScheduleDate =
     scheduleDateOptions.find((option) => option.value === scheduleDraft.date) ??
@@ -605,7 +657,10 @@ export default function SearchScreen() {
   const selectedSharedDate = scheduleDateOptions.find(
     (option) => option.value === sharedForm.date
   );
-  const selectedSharedSlot = sharedSlotOptions.find(
+  const availableSharedSlotOptions = sharedSlotOptions.filter((slot) =>
+    isSharedSlotAvailable(slot, selectedSharedDate?.value)
+  );
+  const selectedSharedSlot = availableSharedSlotOptions.find(
     (option) => option.id === sharedForm.slotId
   );
   const sharedCalendarPreview = selectedSharedDate ?? scheduleDateOptions[0];
@@ -729,7 +784,7 @@ export default function SearchScreen() {
       };
     }
 
-    const place = await getGooglePlaceDetails(suggestion.placeId);
+    const place = await getGeoapifyPlaceDetails(suggestion.placeId);
 
     return {
       ...suggestion,
@@ -741,7 +796,7 @@ export default function SearchScreen() {
   };
 
   const resolveSavedAddress = async (label) => {
-    const suggestions = await getGooglePlaceSuggestions(label);
+    const suggestions = await getGeoapifyPlaceSuggestions(label);
     const normalizedLabel = label.trim().toLowerCase();
     const matchedSuggestion =
       suggestions.find((suggestion) => {
@@ -785,12 +840,12 @@ export default function SearchScreen() {
       location,
     };
 
-    if (!isGoogleMapsConfigured()) {
+    if (!isGeoapifyConfigured()) {
       return fallbackPlace;
     }
 
     try {
-      const reversedPlace = await reverseGooglePlaceLocation(location);
+      const reversedPlace = await reverseGeoapifyPlaceLocation(location);
 
       return {
         ...fallbackPlace,
@@ -870,7 +925,7 @@ export default function SearchScreen() {
             mainText: formattedAddress,
             location,
           }
-        : await reverseGooglePlaceLocation(location);
+        : await reverseGeoapifyPlaceLocation(location);
 
       syncAddressInputText("from", resolvedPlace.formattedAddress);
       setSelectedFromPlace(resolvedPlace);
@@ -896,8 +951,8 @@ export default function SearchScreen() {
   };
 
   const createVerifiedTripMap = async (origin, destination) => {
-    const directions = await getGoogleDirections(origin, destination);
-    const driverDirections = await getGoogleDirections(MOCK_DRIVER_POINT, origin);
+    const directions = await getGeoapifyDirections(origin, destination);
+    const driverDirections = await getGeoapifyDirections(MOCK_DRIVER_POINT, origin);
 
     return {
       origin,
@@ -905,20 +960,85 @@ export default function SearchScreen() {
       driverOrigin: MOCK_DRIVER_POINT,
       directions,
       driverDirections,
-      mapImageUrl: getGoogleStaticMapUrl({
+      mapImageUrl: getGeoapifyStaticMapUrl({
         origin,
         destination,
         routeGeometry: directions.routeGeometry,
       }),
-      pickupMapImageUrl: getGooglePlaceMapUrl({
+      pickupMapImageUrl: getGeoapifyPlaceMapUrl({
         point: origin,
       }),
-      driverMapImageUrl: getGoogleStaticMapUrl({
+      driverMapImageUrl: getGeoapifyStaticMapUrl({
         origin: MOCK_DRIVER_POINT,
         destination: origin,
         routeGeometry: driverDirections.routeGeometry,
       }),
     };
+  };
+
+  const handleBookRide = async () => {
+    if (!requireLogin()) {
+      return;
+    }
+
+    if (!verifiedTripMap) {
+      setAlertMessage("Vui l\u00f2ng x\u00e1c nh\u1eadn \u0111i\u1ec3m \u0111\u00f3n v\u00e0 \u0111i\u1ec3m \u0111\u1ebfn tr\u01b0\u1edbc khi \u0111\u1eb7t xe.");
+      return;
+    }
+
+    const bookedTrip = {
+      id: `trip-${Date.now()}`,
+      status: "searching",
+      statusLabel: "Đang tìm tài xế",
+      icon: selectedRideOption.icon || "🚗",
+      route: `${verifiedFromLabel} → ${verifiedToLabel}`,
+      pickup: verifiedFromLabel,
+      destination: verifiedToLabel,
+      vehicleName: selectedRideOption.name,
+      vehicleType: String(selectedRideOption.vehicleType),
+      estimatedFare: selectedRidePrice,
+      tripDistance: verifiedTripMap.directions.distanceText,
+      tripDuration: verifiedTripMap.directions.durationText,
+      pickupLatitude: verifiedTripMap.origin.location.lat,
+      pickupLongitude: verifiedTripMap.origin.location.lng,
+      destinationLatitude: verifiedTripMap.destination.location.lat,
+      destinationLongitude: verifiedTripMap.destination.location.lng,
+      driverOrigin:
+        verifiedTripMap.driverOrigin.formattedAddress ?? MOCK_DRIVER_LOCATION,
+      mapImageUrl: verifiedTripMap.driverMapImageUrl ?? "",
+      duration: verifiedTripMap.driverDirections.durationText ?? "",
+      distance: verifiedTripMap.driverDirections.distanceText ?? "",
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await persistBookedTrip(bookedTrip);
+    } catch {
+      // Nếu lưu cục bộ thất bại thì vẫn cho đi tiếp sang màn chuyến đi.
+    }
+
+    router.push({
+      pathname: "/trips",
+      params: {
+        activeRide: "1",
+        pickup: verifiedFromLabel,
+        destination: verifiedToLabel,
+        vehicleName: selectedRideOption.name,
+        vehicleType: String(selectedRideOption.vehicleType),
+        estimatedFare: selectedRidePrice,
+        tripDistance: verifiedTripMap.directions.distanceText,
+        tripDuration: verifiedTripMap.directions.durationText,
+        pickupLatitude: String(verifiedTripMap.origin.location.lat),
+        pickupLongitude: String(verifiedTripMap.origin.location.lng),
+        destinationLatitude: String(verifiedTripMap.destination.location.lat),
+        destinationLongitude: String(verifiedTripMap.destination.location.lng),
+        driverOrigin:
+          verifiedTripMap.driverOrigin.formattedAddress ?? MOCK_DRIVER_LOCATION,
+        mapImageUrl: verifiedTripMap.driverMapImageUrl ?? "",
+        duration: verifiedTripMap.driverDirections.durationText ?? "",
+        distance: verifiedTripMap.driverDirections.distanceText ?? "",
+      },
+    });
   };
 
     const verifyBookingLocations = async () => {
@@ -1120,7 +1240,7 @@ export default function SearchScreen() {
       : `\u0110\u1ea1i h\u1ecdc FPT \u2192 ${sharedForm.location.trim()}`;
     const scheduleText = `${selectedSharedSlot.label} (${selectedSharedSlot.time}) \u2022 ${selectedSharedDate.display}`;
 
-    setSharedRides((current) => [
+    setPendingSharedRequests((current) => [
       {
         id: `shared-created-${Date.now()}`,
         route,
@@ -1132,12 +1252,14 @@ export default function SearchScreen() {
         scheduleText,
         date: selectedSharedDate.value,
         slotId: selectedSharedSlot.id,
-        status: "\u0110\u00e3 tham gia",
-        driver: "L\u00ea Nguy\u1ec5n \u0110\u1ea1i H\u1ea3i",
+        status: "Pending",
+        statusLabel: "\u0110ang ch\u1edd gh\u00e9p nh\u00f3m",
+        driver: "Ch\u01b0a c\u00f3 t\u00e0i x\u1ebf",
         destination: route,
         participantCount: 1,
         capacity: selectedVehicle.capacity,
         perPersonPrice: "15.000\u0111/ng\u01b0\u1eddi",
+        createdAt: new Date().toISOString(),
       },
       ...current,
     ]);
@@ -1268,11 +1390,14 @@ export default function SearchScreen() {
         contentContainerStyle={[
           styles.contentContainer,
           bookingStep === "confirm" && styles.contentContainerFit,
+          bookingStep === "rideOptions" && styles.contentContainerFit,
           {
             paddingTop: ScreenHeaderTop,
             paddingBottom:
               bookingStep === "confirm"
                 ? insets.bottom + Math.max(BottomTabInset - 44, Spacing.two)
+                : bookingStep === "rideOptions"
+                  ? insets.bottom + Math.max(BottomTabInset - 54, Spacing.one)
                 : insets.bottom + Spacing.five,
           },
         ]}
@@ -1284,6 +1409,7 @@ export default function SearchScreen() {
           style={[
             styles.content,
             bookingStep === "confirm" && styles.contentFit,
+            bookingStep === "rideOptions" && styles.contentRideOptions,
           ]}
         >
         <View style={styles.headerRow}>
@@ -1448,47 +1574,17 @@ export default function SearchScreen() {
                     </View>
                     <ThemedText type="default" style={styles.rideOptionPrice}>
                       {isLoadingRidePrices
-                        ? "Đang tính..."
+                        ? "\u0110ang t\u00ednh..."
                         : ridePriceQuotes[option.id] ?? "--"}
                     </ThemedText>
                   </Pressable>
                 );
               })}
-            </View>
-
-            <Pressable
-              style={styles.bookButton}
-              onPress={() => {
-                if (requireLogin()) {
-                  router.push({
-                    pathname: "/trips",
-                    params: {
-                      activeRide: "1",
-                      pickup: verifiedFromLabel,
-                      destination: verifiedToLabel,
-                      driverOrigin:
-                        verifiedTripMap?.driverOrigin.formattedAddress ??
-                        MOCK_DRIVER_LOCATION,
-                      mapImageUrl: verifiedTripMap?.driverMapImageUrl ?? "",
-                      duration: verifiedTripMap?.driverDirections.durationText ?? "",
-                      distance: verifiedTripMap?.driverDirections.distanceText ?? "",
-                    },
-                  });
-                }
-              }}
-            >
-              <ThemedText type="smallBold" style={styles.bookButtonText}>
-                {"\u0110\u1eb7t xe"}
-              </ThemedText>
-            </Pressable>
-
-            <View style={styles.rideUtilityRow}>
-              <View style={styles.utilityChip}>
-                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
-              </View>
-              <View style={styles.utilityChip}>
-                <ThemedText type="smallBold" style={styles.utilityChipText}>`r`n                  {"GreenNow"}`r`n                </ThemedText>
-              </View>
+              <Pressable style={styles.bookButton} onPress={handleBookRide}>
+                <ThemedText type="smallBold" style={styles.bookButtonText}>
+                  {"\u0110\u1eb7t xe"}
+                </ThemedText>
+              </Pressable>
             </View>
           </>
         ) : bookingStep === "confirm" && mode !== "shared" ? (
@@ -1934,6 +2030,44 @@ export default function SearchScreen() {
           </>
         ) : (
           <View style={styles.sharedSection}>
+            {pendingSharedRequests.length > 0 ? (
+              <View style={styles.pendingSharedSection}>
+                <ThemedText type="default" style={styles.pendingSharedTitle}>
+                  {"Y\u00eau c\u1ea7u xe gh\u00e9p c\u1ee7a b\u1ea1n"}
+                </ThemedText>
+
+                {pendingSharedRequests.map((request) => (
+                  <View key={request.id} style={styles.pendingSharedCard}>
+                    <View style={styles.pendingSharedHeader}>
+                      <ThemedText type="smallBold" style={styles.pendingSharedVehicle}>
+                        {request.vehicle}
+                      </ThemedText>
+                      <View style={styles.pendingBadge}>
+                        <ThemedText type="smallBold" style={styles.pendingBadgeText}>
+                          {"Pending"}
+                        </ThemedText>
+                      </View>
+                    </View>
+
+                    <ThemedText
+                      type="smallBold"
+                      style={styles.pendingSharedRoute}
+                      numberOfLines={2}
+                    >
+                      {request.route}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.pendingSharedMeta}>
+                      {request.scheduleText}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.pendingSharedMeta}>
+                      {"Nh\u00f3m: "}{request.participantCount}/{request.capacity}
+                      {" ng\u01b0\u1eddi \u2022 "}{request.statusLabel}
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             <View style={styles.sharedHeader}>
               <ThemedText type="default" style={styles.sharedTitle}>
                     {"\u0110\u1ec1 xu\u1ea5t nh\u00f3m gh\u00e9p s\u1eb5n c\u00f3"}
@@ -1979,7 +2113,7 @@ export default function SearchScreen() {
                         {ride.vehicle}
                       </ThemedText>
                       <ThemedText type="smallBold" style={styles.savingText}>
-                        {"Ti\u1ebft ki\u1ec7m "}{proposal.savingPrice}
+                        {"\ud83d\udcb0 Ti\u1ebft ki\u1ec7m "}{proposal.savingPrice}
                       </ThemedText>
 
                       <View style={styles.priceLine}>
@@ -1999,25 +2133,31 @@ export default function SearchScreen() {
                         </ThemedText>
                       </View>
 
-                      <View style={styles.proposalDivider} />
+                      <View style={styles.proposalDashedDivider} />
 
-                      <ThemedText type="small" style={styles.proposalMuted}>
+                      <ThemedText type="smallBold" style={styles.proposalHighlight}>
                         {"Th\u1eddi gian \u0111\u00f3n d\u1ef1 ki\u1ebfn: "}{proposal.expectedPickup}
                       </ThemedText>
                       <ThemedText type="small" style={styles.proposalMuted}>
                         {"D\u1ef1 ki\u1ebfn \u0111\u1ebfn n\u01a1i l\u00fac: "}{proposal.expectedArrival}
                       </ThemedText>
                       <ThemedText type="small" style={styles.proposalMuted}>
-                        {"H\u1ea1n gh\u00e9p xe: 15p"}
+                        {"H\u1ea1n gh\u00e9p xe (\u0111\u1ebfm ng\u01b0\u1ee3c th\u1eddi gian): 15p"}
                       </ThemedText>
                       <ThemedText type="small" style={styles.proposalMuted}>
                         {"Nh\u00f3m: "}{ride.participantCount}/{ride.capacity}{" ng\u01b0\u1eddi"}
                       </ThemedText>
+                      <ThemedText type="small" style={styles.proposalMuted}>
+                        {"Slot 1: 7:30 - "}{proposal.pickupDirection}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.proposalMuted}>
+                        {"T\u00e0i x\u1ebf: "}{proposal.driverStatus}
+                      </ThemedText>
 
-                      <View style={styles.proposalDivider} />
+                      <View style={styles.proposalDashedDivider} />
 
                       <ThemedText type="smallBold" style={styles.proposalSectionTitle}>
-                    {"L\u1ed9 tr\u00ecnh nh\u00f3m"}
+                    {"L\u1ed9 tr\u00ecnh nh\u00f3m (\u0111\u00f3n xa \u2192 g\u1ea7n):"}
                   </ThemedText>
                       {proposal.routeSteps.map((step) => (
                         <ThemedText
@@ -2029,9 +2169,24 @@ export default function SearchScreen() {
                         </ThemedText>
                       ))}
 
+                      <View style={styles.proposalDashedDivider} />
+
+                      <ThemedText type="smallBold" style={styles.proposalWarningTitle}>
+                        {"L\u01b0u \u00fd"}
+                      </ThemedText>
+                      {proposal.notes.map((note) => (
+                        <ThemedText
+                          key={`${ride.id}-${note}`}
+                          type="small"
+                          style={styles.proposalMuted}
+                        >
+                          {note}
+                        </ThemedText>
+                      ))}
+
                       <View style={styles.proposalFooterLine}>
                         <ThemedText type="smallBold" style={styles.proposalVehicle}>
-                          {ride.vehicle}
+                          {"\ud83d\ude97 "}{ride.vehicle}
                         </ThemedText>
                         <ThemedText type="default" style={styles.proposalTotal}>
                           {proposal.sharedPrice}
@@ -2330,7 +2485,7 @@ export default function SearchScreen() {
           <View style={styles.createSharedCard}>
             <View style={styles.createSharedHeader}>
               <ThemedText type="default" style={styles.createSharedTitle}>
-                    {"T\u1ea1o xe gh\u00e9p"}
+                    {"T\u1ea1o y\u00eau c\u1ea7u xe gh\u00e9p"}
                   </ThemedText>
               <Pressable
                 style={styles.createSharedClose}
@@ -2559,7 +2714,7 @@ export default function SearchScreen() {
                     <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
                   </ThemedText>
                   <View style={styles.slotGrid}>
-                    {sharedSlotOptions.map((slot) => {
+                    {availableSharedSlotOptions.map((slot) => {
                       const isSelected = sharedForm.slotId === slot.id;
 
                       return (
@@ -2596,6 +2751,11 @@ export default function SearchScreen() {
                       );
                     })}
                   </View>
+                  {availableSharedSlotOptions.length === 0 ? (
+                    <ThemedText type="small" style={styles.createError}>
+                      {"H\u00f4m nay kh\u00f4ng c\u00f2n slot n\u00e0o c\u00e1ch th\u1eddi gian hi\u1ec7n t\u1ea1i h\u01a1n 60 ph\u00fat."}
+                    </ThemedText>
+                  ) : null}
                 </View>
 
                 <View style={styles.createScheduleBlock}>
@@ -2822,7 +2982,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
   },
@@ -2832,7 +2992,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
     backgroundColor: "#FFF7ED",
     borderBottomWidth: 1,
     borderBottomColor: "#FFE2C2",
@@ -2984,7 +3144,7 @@ const styles = StyleSheet.create({
   alertTitle: {
     color: "#111827",
     fontWeight: "800",
-    fontSize: 20,
+    fontSize: 18,
   },
   alertMessage: {
     color: "#4B5563",
@@ -3106,7 +3266,7 @@ const styles = StyleSheet.create({
   },
   createSharedTitle: {
     color: "#111827",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
   },
   createSharedClose: {
@@ -3301,7 +3461,7 @@ const styles = StyleSheet.create({
     borderColor: "#FED7AA",
     backgroundColor: "#FFFBF7",
     paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
     justifyContent: "center",
     gap: 4,
   },
@@ -3360,7 +3520,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "#FFF7ED",
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
   },
   createScheduleSummaryText: {
     color: "#9A3412",
@@ -3529,7 +3689,7 @@ const styles = StyleSheet.create({
   scheduleResultTitle: {
     color: "#09090B",
     textAlign: "center",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900",
   },
   scheduleArrivalText: {
@@ -3553,7 +3713,7 @@ const styles = StyleSheet.create({
   },
   scheduleConfirmText: {
     color: "#FFFFFF",
-    fontSize: 20,
+    fontSize: 18,
   },
   dotsRow: {
     flexDirection: "row",
@@ -3603,7 +3763,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#EEF4F7",
   },
   routeMapCard: {
-    minHeight: 330,
+    minHeight: 290,
     borderRadius: 18,
     overflow: "hidden",
     backgroundColor: "#EEF4F7",
@@ -3650,7 +3810,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(255, 255, 255, 0.92)",
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
     alignItems: "center",
   },
   routeEtaText: {
@@ -3709,7 +3869,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
     shadowColor: "#000000",
     shadowOpacity: 0.12,
     shadowRadius: 10,
@@ -3780,7 +3940,7 @@ const styles = StyleSheet.create({
   pickupConfirmButton: {
     minHeight: 50,
     borderRadius: 14,
-    backgroundColor: "#23C6C8",
+    backgroundColor: BRAND,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3813,7 +3973,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(231, 252, 252, 0.95)",
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
   },
   routeInfoText: {
     color: "#075E61",
@@ -3827,7 +3987,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(255, 255, 255, 0.95)",
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
   },
   routeDestinationText: {
     color: "#111827",
@@ -3896,8 +4056,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
-    padding: Spacing.three,
-    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    gap: Spacing.one,
     shadowColor: "#000000",
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -3913,16 +4074,16 @@ const styles = StyleSheet.create({
   },
   rideSheetTitle: {
     color: "#111827",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900",
   },
   rideOption: {
-    minHeight: 64,
+    minHeight: 56,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#F3F4F6",
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -3947,37 +4108,19 @@ const styles = StyleSheet.create({
   paymentNotice: {
     borderRadius: 10,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.one,
     backgroundColor: "#FFF7ED",
   },
   paymentNoticeText: {
     color: "#B45309",
   },
-  rideUtilityRow: {
-    flexDirection: "row",
-    gap: Spacing.two,
-  },
-  utilityChip: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: Spacing.two,
-  },
-  utilityChipText: {
-    color: "#374151",
-    textAlign: "center",
-  },
   bookButton: {
-    minHeight: 56,
+    minHeight: 50,
     borderRadius: 14,
     backgroundColor: BRAND,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: Spacing.one,
   },
   bookButtonText: {
     color: "#FFFFFF",
@@ -4018,6 +4161,54 @@ const styles = StyleSheet.create({
   sharedSection: {
     gap: Spacing.three,
     marginTop: Spacing.one,
+  },
+  pendingSharedSection: {
+    gap: Spacing.two,
+  },
+  pendingSharedTitle: {
+    color: "#111827",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  pendingSharedCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+    backgroundColor: "#FFFBF7",
+    padding: Spacing.three,
+    gap: Spacing.one,
+    shadowColor: "#000000",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  pendingSharedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  pendingSharedVehicle: {
+    color: "#111827",
+  },
+  pendingBadge: {
+    borderRadius: 999,
+    backgroundColor: "#FFF3E8",
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 4,
+  },
+  pendingBadgeText: {
+    color: "#C75B00",
+    fontSize: 12,
+  },
+  pendingSharedRoute: {
+    color: "#111827",
+  },
+  pendingSharedMeta: {
+    color: "#6B7280",
   },
   sharedHeader: {
     flexDirection: "row",
@@ -4112,11 +4303,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
     marginVertical: 5,
   },
+  proposalDashedDivider: {
+    borderTopWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#FDBA74",
+    marginVertical: 7,
+  },
   proposalMuted: {
     color: "#9CA3AF",
   },
+  proposalHighlight: {
+    color: "#FB7185",
+  },
   proposalSectionTitle: {
     color: "#6B7280",
+  },
+  proposalWarningTitle: {
+    color: "#FB7185",
   },
   proposalFooterLine: {
     marginTop: Spacing.one,
@@ -4165,6 +4368,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
+
+
+
 
 
 
