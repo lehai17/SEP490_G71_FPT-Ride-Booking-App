@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image,
   Modal,
@@ -23,6 +23,10 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { tripSections } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
+import {
+  loadBookedTrips,
+  toActiveTripSectionItem,
+} from "@/services/trip-storage";
 
 const BRAND = "#FF7A00";
 const BORDER = "#E9E9E9";
@@ -261,6 +265,47 @@ export default function TripsScreen() {
   const [formError, setFormError] = useState("");
   const [ratingsByTripId, setRatingsByTripId] = useState({});
   const [reportsByTripId, setReportsByTripId] = useState({});
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function restoreBookedTrips() {
+      const bookedTrips = await loadBookedTrips();
+
+      if (!isMounted || !bookedTrips.length) {
+        return;
+      }
+
+      setTripsBySection((current) => {
+        const nextActive = [...(current.active ?? [])];
+        const nextHistory = [...(current.history ?? [])];
+
+        bookedTrips.forEach((trip) => {
+          const item = toActiveTripSectionItem(trip);
+          const targetList =
+            trip.status === "completed" || trip.status === "history"
+              ? nextHistory
+              : nextActive;
+
+          if (!targetList.some((existing) => existing.id === item.id)) {
+            targetList.unshift(item);
+          }
+        });
+
+        return {
+          ...current,
+          active: nextActive,
+          history: nextHistory,
+        };
+      });
+    }
+
+    restoreBookedTrips();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const items = tripsBySection[selectedTab] ?? [];
   const hasActiveRide = params.activeRide === "1";
