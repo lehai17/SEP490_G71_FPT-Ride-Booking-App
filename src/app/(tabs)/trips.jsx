@@ -27,13 +27,13 @@ import {
   loadBookedTrips,
   toActiveTripSectionItem,
 } from "@/services/trip-storage";
+import { getDriverTrips, getPassengerTrips } from "@/services/trip-api";
 
 const BRAND = "#FF7A00";
 const BORDER = "#E9E9E9";
 const MUTED = "#6B7280";
 
 const tabs = [
-  { key: "active", label: "Đang đi" },
   { key: "scheduled", label: "Đã đặt trước" },
   { key: "history", label: "Lịch sử", minWidth: 88 },
 ];
@@ -229,14 +229,85 @@ function getScheduledTripView(item) {
   };
 }
 
+function formatCurrencyVnd(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "--";
+  }
+
+  return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
+}
+
+function formatTripDate(value) {
+  if (!value) {
+    return "--";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "--";
+  }
+
+  return date.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+function getTripFare(trip) {
+  return (
+    trip?.pricing?.estimatedFare ??
+    trip?.estimatedFare ??
+    trip?.fareAmount ??
+    trip?.fare ??
+    null
+  );
+}
+
+function getTripIcon(vehicleType) {
+  const normalizedType = String(vehicleType ?? "").toLowerCase();
+
+  if (normalizedType.includes("bike") || normalizedType === "1") {
+    return "🛵";
+  }
+
+  return "🚗";
+}
+
+function mapTripToHistoryItem(trip) {
+  const status = String(trip?.status ?? "").toLowerCase();
+  const date =
+    trip?.completedAt ?? trip?.cancelledAt ?? trip?.acceptedAt ?? trip?.createdAt;
+  const fare = getTripFare(trip);
+
+  return {
+    id: trip.id,
+    icon: getTripIcon(trip.vehicleType),
+    route: `${trip.pickupAddress || "Điểm đón"} → ${
+      trip.destinationAddress || "Điểm đến"
+    }`,
+    meta: `${formatTripDate(date)} · ${formatCurrencyVnd(fare)}`,
+    actionPrimary: status === "completed" ? "Đánh giá" : "Chi tiết",
+    actionSecondary: "Báo cáo",
+    rating: null,
+  };
+}
+
 export default function TripsScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams();
   const router = useRouter();
   const safeAreaInsets = useSafeAreaInsets();
-  const { isAuthenticated } = useAuth();
-  const [selectedTab, setSelectedTab] = useState("active");
-  const [tripsBySection, setTripsBySection] = useState(tripSections);
+  const { isAuthenticated, session } = useAuth();
+  const [selectedTab, setSelectedTab] = useState("scheduled");
+  const [tripsBySection, setTripsBySection] = useState({
+    ...tripSections,
+    history: [],
+  });
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -278,24 +349,22 @@ export default function TripsScreen() {
 
       setTripsBySection((current) => {
         const nextActive = [...(current.active ?? [])];
-        const nextHistory = [...(current.history ?? [])];
 
         bookedTrips.forEach((trip) => {
-          const item = toActiveTripSectionItem(trip);
-          const targetList =
-            trip.status === "completed" || trip.status === "history"
-              ? nextHistory
-              : nextActive;
+          if (trip.status === "completed" || trip.status === "history") {
+            return;
+          }
 
-          if (!targetList.some((existing) => existing.id === item.id)) {
-            targetList.unshift(item);
+          const item = toActiveTripSectionItem(trip);
+
+          if (!nextActive.some((existing) => existing.id === item.id)) {
+            nextActive.unshift(item);
           }
         });
 
         return {
           ...current,
           active: nextActive,
-          history: nextHistory,
         };
       });
     }
@@ -306,6 +375,58 @@ export default function TripsScreen() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !session?.accessToken) {
+      Promise.resolve().then(() => {
+        setTripsBySection((current) => ({
+          ...current,
+          history: [],
+        }));
+      });
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadTripHistoryFromDb() {
+      setIsHistoryLoading(true);
+
+      try {
+        const role = String(session.role ?? "").toLowerCase();
+        const trips =
+          role === "driver"
+            ? await getDriverTrips(session.accessToken)
+            : await getPassengerTrips(session.accessToken);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setTripsBySection((current) => ({
+          ...current,
+          history: Array.isArray(trips) ? trips.map(mapTripToHistoryItem) : [],
+        }));
+      } catch {
+        if (isMounted) {
+          setTripsBySection((current) => ({
+            ...current,
+            history: [],
+          }));
+        }
+      } finally {
+        if (isMounted) {
+          setIsHistoryLoading(false);
+        }
+      }
+    }
+
+    loadTripHistoryFromDb();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [historyRefreshKey, isAuthenticated, selectedTab, session?.accessToken, session?.role]);
 
   const items = tripsBySection[selectedTab] ?? [];
   const hasActiveRide = params.activeRide === "1";
@@ -567,7 +688,13 @@ export default function TripsScreen() {
                   tab.minWidth && { minWidth: tab.minWidth },
                   isActive && styles.tabButtonActive,
                 ]}
-                onPress={() => setSelectedTab(tab.key)}
+                onPress={() => {
+                  setSelectedTab(tab.key);
+
+                  if (tab.key === "history") {
+                    setHistoryRefreshKey((current) => current + 1);
+                  }
+                }}
               >
                 <ThemedText
                   type="smallBold"
@@ -789,6 +916,34 @@ export default function TripsScreen() {
                   </View>
                 );
               })}
+            </View>
+          ) : selectedTab === "history" && isHistoryLoading ? (
+            <View
+              style={[
+                styles.emptyActiveCard,
+                { backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <ThemedText type="default" style={styles.emptyActiveTitle}>
+                Đang tải lịch sử chuyến đi
+              </ThemedText>
+              <ThemedText type="small" style={styles.emptyActiveText}>
+                Hệ thống đang lấy dữ liệu chuyến đi từ DB.
+              </ThemedText>
+            </View>
+          ) : selectedTab === "history" && items.length === 0 ? (
+            <View
+              style={[
+                styles.emptyActiveCard,
+                { backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <ThemedText type="default" style={styles.emptyActiveTitle}>
+                Chưa có lịch sử chuyến đi
+              </ThemedText>
+              <ThemedText type="small" style={styles.emptyActiveText}>
+                Các chuyến đã hoàn thành hoặc đã hủy sẽ hiển thị tại đây.
+              </ThemedText>
             </View>
           ) : (
             <ThemedView
