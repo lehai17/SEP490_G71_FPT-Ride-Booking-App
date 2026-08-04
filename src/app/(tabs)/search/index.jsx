@@ -35,6 +35,7 @@ import {
   isGeoapifyConfigured,
 } from "@/services/geoapify-api";
 import { estimateFare } from "@/services/pricing-api";
+import { createTrip, getTrip } from "@/services/trip-api";
 import { persistBookedTrip } from "@/services/trip-storage";
 
 const BRAND = "#FF7A00";
@@ -79,6 +80,7 @@ const rideOptions = [
     vehicleType: 4,
   },
 ];
+const availableRideOptions = rideOptions.filter((option) => option.id !== "car7");
 
 const sharedTripTypes = [
   "Chuy\u1ebfn \u0111i (T\u1eeb n\u01a1i kh\u00e1c \u0111\u1ebfn FPT)",
@@ -114,6 +116,26 @@ function formatCurrencyVnd(value) {
   }
 
   return `${Math.round(value).toLocaleString("vi-VN")}\u0111`;
+}
+
+function formatTripDateTime(value) {
+  if (!value) {
+    return "V\u1eeba ho\u00e0n th\u00e0nh";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "V\u1eeba ho\u00e0n th\u00e0nh";
+  }
+
+  return date.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 function parseDistanceKm(distanceText) {
@@ -155,6 +177,71 @@ function parseDurationMinute(durationText) {
 
   const fallbackMatch = normalized.match(/([\d.]+)/);
   return fallbackMatch ? Math.round(Number.parseFloat(fallbackMatch[1]) || 0) : 0;
+}
+
+function normalizeTripStatus(status) {
+  return String(status ?? "pending").replace(/\s+/g, "").toLowerCase();
+}
+
+function isTerminalTripStatus(status) {
+  const normalizedStatus = normalizeTripStatus(status);
+  return normalizedStatus === "completed" || normalizedStatus === "cancelled";
+}
+
+function getTripStatusView(status, hasDriver) {
+  const normalizedStatus = normalizeTripStatus(status);
+
+  if (normalizedStatus === "driverarrived") {
+    return {
+      title: "T\u00e0i x\u1ebf \u0111\u00e3 \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n",
+      subtitle: "Vui l\u00f2ng ra \u0111\u00fang \u0111i\u1ec3m \u0111\u00f3n v\u00e0 ki\u1ec3m tra bi\u1ec3n s\u1ed1 xe tr\u01b0\u1edbc khi l\u00ean xe.",
+      label: "T\u00e0i x\u1ebf \u0111\u00e3 \u0111\u1ebfn",
+      icon: "\u2713",
+    };
+  }
+
+  if (normalizedStatus === "inprogress") {
+    return {
+      title: "Chuy\u1ebfn \u0111i \u0111ang di\u1ec5n ra",
+      subtitle: "B\u1ea1n \u0111ang tr\u00ean chuy\u1ebfn \u0111i. H\u1ec7 th\u1ed1ng s\u1ebd c\u1eadp nh\u1eadt khi t\u00e0i x\u1ebf ho\u00e0n th\u00e0nh chuy\u1ebfn.",
+      label: "Chuy\u1ebfn \u0111i \u0111ang di\u1ec5n ra",
+      icon: "\u2192",
+    };
+  }
+
+  if (normalizedStatus === "completed") {
+    return {
+      title: "Chuy\u1ebfn \u0111i \u0111\u00e3 ho\u00e0n th\u00e0nh",
+      subtitle: "C\u1ea3m \u01a1n b\u1ea1n \u0111\u00e3 s\u1eed d\u1ee5ng FPT Ride. B\u1ea1n c\u00f3 th\u1ec3 \u0111\u00e1nh gi\u00e1 t\u00e0i x\u1ebf sau chuy\u1ebfn \u0111i.",
+      label: "Ho\u00e0n th\u00e0nh",
+      icon: "\u2713",
+    };
+  }
+
+  if (normalizedStatus === "cancelled") {
+    return {
+      title: "Chuy\u1ebfn \u0111i \u0111\u00e3 b\u1ecb h\u1ee7y",
+      subtitle: "Y\u00eau c\u1ea7u chuy\u1ebfn \u0111i n\u00e0y \u0111\u00e3 k\u1ebft th\u00fac. B\u1ea1n c\u00f3 th\u1ec3 quay l\u1ea1i \u0111\u1eb7t chuy\u1ebfn m\u1edbi.",
+      label: "\u0110\u00e3 h\u1ee7y",
+      icon: "!",
+    };
+  }
+
+  if (hasDriver || normalizedStatus === "accepted") {
+    return {
+      title: "T\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn chuy\u1ebfn",
+      subtitle: "T\u00e0i x\u1ebf \u0111ang di chuy\u1ec3n \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n c\u1ee7a b\u1ea1n.",
+      label: "\u0110\u00e3 c\u00f3 t\u00e0i x\u1ebf nh\u1eadn chuy\u1ebfn",
+      icon: "\u25cf",
+    };
+  }
+
+  return {
+    title: "\u0110ang t\u00ecm t\u00e0i x\u1ebf cho b\u1ea1n",
+    subtitle: "Y\u00eau c\u1ea7u chuy\u1ebfn \u0111i \u0111\u00e3 \u0111\u01b0\u1ee3c l\u01b0u. H\u1ec7 th\u1ed1ng \u0111ang qu\u00e9t t\u00e0i x\u1ebf ph\u00f9 h\u1ee3p xung quanh.",
+    label: "\u0110ang t\u00ecm t\u00e0i x\u1ebf",
+    icon: "\u25cf",
+  };
 }
 
 function getSharedProposal(ride) {
@@ -373,7 +460,7 @@ function getDefaultBookingSchedule() {
 export default function SearchScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { session, isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const rawMode = params.mode ?? "now";
@@ -420,6 +507,9 @@ export default function SearchScreen() {
   const [sharedLocationSuggestions, setSharedLocationSuggestions] = useState([]);
   const [sharedLocationLoading, setSharedLocationLoading] = useState(false);
   const [sharedLocationError, setSharedLocationError] = useState("");
+  const [isBookingRide, setIsBookingRide] = useState(false);
+  const [activeBookedRide, setActiveBookedRide] = useState(null);
+  const [acceptedTrip, setAcceptedTrip] = useState(null);
   const [savedAddresses, setSavedAddresses] = useState(initialSavedAddresses);
   const [addressModalVisible, setAddressModalVisible] = useState(false);
   const [addressForm, setAddressForm] = useState(defaultAddressForm);
@@ -430,6 +520,27 @@ export default function SearchScreen() {
   const deferredTo = useDeferredValue(toInput);
   const suggestedSharedRides = sharedRides.filter(
     (ride) => ride.participantCount > 1
+  );
+  const trackedTripStatus = normalizeTripStatus(
+    acceptedTrip?.status ?? activeBookedRide?.status
+  );
+  const hasAssignedDriver = Boolean(
+    acceptedTrip?.driverId ?? activeBookedRide?.driverId
+  );
+  const tripStatusView = getTripStatusView(trackedTripStatus, hasAssignedDriver);
+  const shouldShowTripStatusCard =
+    hasAssignedDriver || isTerminalTripStatus(trackedTripStatus);
+  const canCancelTrackedTrip =
+    trackedTripStatus === "pending" ||
+    trackedTripStatus === "accepted" ||
+    trackedTripStatus === "driverarrived";
+  const isCompletedTrip = trackedTripStatus === "completed";
+  const completedFare =
+    acceptedTrip?.pricing?.estimatedFare != null
+      ? formatCurrencyVnd(Number(acceptedTrip.pricing.estimatedFare))
+      : activeBookedRide?.estimatedFare ?? selectedRidePrice;
+  const completedAtText = formatTripDateTime(
+    acceptedTrip?.completedAt ?? activeBookedRide?.completedAt
   );
 
   useEffect(() => {
@@ -488,6 +599,52 @@ export default function SearchScreen() {
       clearTimeout(timeoutId);
     };
   }, [bookingStep, deferredFrom, deferredTo, focusedField, mode]);
+
+  useEffect(() => {
+    if (
+      bookingStep !== "findingDriver" ||
+      !activeBookedRide?.id ||
+      isTerminalTripStatus(acceptedTrip?.status) ||
+      !session?.accessToken
+    ) {
+      return undefined;
+    }
+
+    let isActive = true;
+
+    const loadTripStatus = async () => {
+      try {
+        const trip = await getTrip(activeBookedRide.id, session.accessToken);
+        const shouldUpdateTrip =
+          Boolean(trip?.driverId) ||
+          normalizeTripStatus(trip?.status) !== "pending";
+
+        if (isActive && shouldUpdateTrip) {
+          setAcceptedTrip(trip);
+          setActiveBookedRide((current) => ({
+            ...(current ?? {}),
+            status: normalizeTripStatus(trip.status),
+            statusLabel: getTripStatusView(trip.status, Boolean(trip.driverId)).label,
+            driverId: trip.driverId,
+            driverName: trip.driverName,
+            driverPhone: trip.driverPhone,
+            driverLicensePlate: trip.driverLicensePlate,
+            driverVehicleInfo: trip.driverVehicleInfo,
+          }));
+        }
+      } catch {
+        // Bo qua loi tam thoi trong luc BE/driver chua cap nhat trang thai.
+      }
+    };
+
+    loadTripStatus();
+    const intervalId = setInterval(loadTripStatus, 3000);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [activeBookedRide?.id, acceptedTrip?.status, bookingStep, session?.accessToken]);
 
   useEffect(() => {
     if (!sharedForm.slotId || !sharedForm.date) {
@@ -586,7 +743,7 @@ export default function SearchScreen() {
 
       try {
         const results = await Promise.all(
-          rideOptions.map(async (option) => {
+          availableRideOptions.map(async (option) => {
             try {
               const response = await estimateFare({
                 vehicleType: option.vehicleType,
@@ -648,7 +805,8 @@ export default function SearchScreen() {
   const verifiedToLabel =
     verifiedTripMap?.destination.formattedAddress ?? toLabel;
   const selectedRideOption =
-    rideOptions.find((option) => option.id === selectedRideId) ?? rideOptions[0];
+    availableRideOptions.find((option) => option.id === selectedRideId) ??
+    availableRideOptions[0];
   const selectedRidePrice = ridePriceQuotes[selectedRideOption.id] ?? "";
   const scheduleDateOptions = createScheduleDateOptions();
   const selectedScheduleDate =
@@ -976,7 +1134,7 @@ export default function SearchScreen() {
     };
   };
 
-  const handleBookRide = async () => {
+  const handleBookRideLegacy = async () => {
     if (!requireLogin()) {
       return;
     }
@@ -1039,6 +1197,93 @@ export default function SearchScreen() {
         distance: verifiedTripMap.driverDirections.distanceText ?? "",
       },
     });
+  };
+
+  void handleBookRideLegacy;
+
+  const handleBookRide = async () => {
+    if (!requireLogin()) {
+      return;
+    }
+
+    if (!verifiedTripMap) {
+      setAlertMessage("Vui l\u00f2ng x\u00e1c nh\u1eadn \u0111i\u1ec3m \u0111\u00f3n v\u00e0 \u0111i\u1ec3m \u0111\u1ebfn tr\u01b0\u1edbc khi \u0111\u1eb7t xe.");
+      return;
+    }
+
+    if (isBookingRide) {
+      return;
+    }
+
+    setIsBookingRide(true);
+    setAlertMessage("");
+    setAcceptedTrip(null);
+
+    const createTripPayload = {
+      pickupLatitude: verifiedTripMap.origin.location.lat,
+      pickupLongitude: verifiedTripMap.origin.location.lng,
+      pickupAddress: verifiedFromLabel,
+      destinationLatitude: verifiedTripMap.destination.location.lat,
+      destinationLongitude: verifiedTripMap.destination.location.lng,
+      destinationAddress: verifiedToLabel,
+      vehicleType: selectedRideOption.vehicleType,
+      tripType: 1,
+    };
+
+    try {
+      const tripResponse = await createTrip(createTripPayload, session?.accessToken);
+      const bookedTrip = {
+        id: tripResponse.id || `trip-${Date.now()}`,
+        status: (tripResponse.status || "pending").toLowerCase(),
+        statusLabel: "\u0110ang t\u00ecm t\u00e0i x\u1ebf",
+        icon: selectedRideOption.icon || "Xe",
+        route: `${verifiedFromLabel} \u2192 ${verifiedToLabel}`,
+        pickup: tripResponse.pickupAddress || verifiedFromLabel,
+        destination: tripResponse.destinationAddress || verifiedToLabel,
+        vehicleName: selectedRideOption.name,
+        vehicleType: String(selectedRideOption.vehicleType),
+        estimatedFare:
+          tripResponse.pricing?.estimatedFare != null
+            ? formatCurrencyVnd(tripResponse.pricing.estimatedFare)
+            : selectedRidePrice,
+        tripDistance:
+          tripResponse.estimatedDistanceKm != null
+            ? `${tripResponse.estimatedDistanceKm} km`
+            : verifiedTripMap.directions.distanceText,
+        tripDuration:
+          tripResponse.estimatedDurationMinute != null
+            ? `${tripResponse.estimatedDurationMinute} ph\u00fat`
+            : verifiedTripMap.directions.durationText,
+        pickupLatitude: verifiedTripMap.origin.location.lat,
+        pickupLongitude: verifiedTripMap.origin.location.lng,
+        destinationLatitude: verifiedTripMap.destination.location.lat,
+        destinationLongitude: verifiedTripMap.destination.location.lng,
+        driverOrigin:
+          verifiedTripMap.driverOrigin.formattedAddress ?? MOCK_DRIVER_LOCATION,
+        mapImageUrl: verifiedTripMap.driverMapImageUrl ?? "",
+        duration: verifiedTripMap.driverDirections.durationText ?? "",
+        distance: verifiedTripMap.driverDirections.distanceText ?? "",
+        createdAt: tripResponse.createdAt || new Date().toISOString(),
+      };
+
+      try {
+        await persistBookedTrip(bookedTrip);
+      } catch {
+        // Neu luu cuc bo that bai thi van hien man tim tai xe.
+      }
+
+      setActiveBookedRide(bookedTrip);
+      setAcceptedTrip(null);
+      setBookingStep("findingDriver");
+    } catch (error) {
+      if (error?.message === "An error occurred") {
+        setAlertMessage("BE \u0111ang l\u1ed7i khi t\u1ea1o chuy\u1ebfn \u0111i. H\u00e3y ki\u1ec3m tra b\u1ea3ng gi\u00e1 active c\u1ee7a lo\u1ea1i xe \u0111ang ch\u1ecdn.");
+      } else {
+        setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 t\u1ea1o chuy\u1ebfn \u0111i.");
+      }
+    } finally {
+      setIsBookingRide(false);
+    }
   };
 
     const verifyBookingLocations = async () => {
@@ -1391,11 +1636,14 @@ export default function SearchScreen() {
           styles.contentContainer,
           bookingStep === "confirm" && styles.contentContainerFit,
           bookingStep === "rideOptions" && styles.contentContainerFit,
+          bookingStep === "findingDriver" && styles.contentContainerFit,
           {
             paddingTop: ScreenHeaderTop,
             paddingBottom:
               bookingStep === "confirm"
                 ? insets.bottom + Math.max(BottomTabInset - 44, Spacing.two)
+                : bookingStep === "findingDriver"
+                  ? insets.bottom + Math.max(BottomTabInset - 54, Spacing.one)
                 : bookingStep === "rideOptions"
                   ? insets.bottom + Math.max(BottomTabInset - 54, Spacing.one)
                 : insets.bottom + Spacing.five,
@@ -1410,11 +1658,17 @@ export default function SearchScreen() {
             styles.content,
             bookingStep === "confirm" && styles.contentFit,
             bookingStep === "rideOptions" && styles.contentRideOptions,
+            bookingStep === "findingDriver" && styles.contentFit,
           ]}
         >
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => {
+              if (bookingStep === "findingDriver") {
+                setBookingStep("rideOptions");
+                return;
+              }
+
               if (bookingStep === "rideOptions") {
                 setBookingStep("confirm");
                 return;
@@ -1469,7 +1723,159 @@ export default function SearchScreen() {
           </Pressable>
         </View>
 
-        {bookingStep === "rideOptions" && mode !== "shared" ? (
+        {bookingStep === "findingDriver" && mode !== "shared" ? (
+          <View style={styles.findingDriverStage}>
+            <View
+              style={[
+                styles.findingRadarCard,
+                shouldShowTripStatusCard && styles.driverAcceptedCard,
+              ]}
+            >
+              {shouldShowTripStatusCard ? (
+                <>
+                  <View
+                    style={[
+                      styles.driverAvatar,
+                      trackedTripStatus === "completed" && styles.completedAvatar,
+                      trackedTripStatus === "cancelled" && styles.cancelledAvatar,
+                    ]}
+                  >
+                    <ThemedText type="subtitle" style={styles.driverAvatarText}>
+                      {hasAssignedDriver
+                        ? (acceptedTrip?.driverName || "T").trim().slice(0, 1).toUpperCase()
+                        : tripStatusView.icon}
+                    </ThemedText>
+                  </View>
+                  <ThemedText type="subtitle" style={styles.findingTitle}>
+                    {tripStatusView.title}
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.findingSubtitle}>
+                    {tripStatusView.subtitle}
+                  </ThemedText>
+                  {hasAssignedDriver ? (
+                    <View style={styles.driverInfoBox}>
+                      <ThemedText type="default" style={styles.driverNameText}>
+                        {acceptedTrip?.driverName || activeBookedRide?.driverName || "T\u00e0i x\u1ebf"}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.driverInfoText}>
+                        {"S\u0110T: "}{acceptedTrip?.driverPhone || activeBookedRide?.driverPhone || "Ch\u01b0a c\u00f3"}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.driverInfoText}>
+                        {"Bi\u1ec3n s\u1ed1: "}{acceptedTrip?.driverLicensePlate || activeBookedRide?.driverLicensePlate || "Ch\u01b0a c\u00f3"}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.driverInfoText}>
+                        {"Xe: "}{acceptedTrip?.driverVehicleInfo || activeBookedRide?.driverVehicleInfo || acceptedTrip?.vehicleType || "Ch\u01b0a c\u00f3"}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <View style={styles.radarOuter}>
+                    <View style={styles.radarMiddle}>
+                      <View style={styles.radarInner}>
+                        <ThemedText type="default" style={styles.radarIcon}>
+                          {"\u25cf"}
+                        </ThemedText>
+                      </View>
+                    </View>
+                  </View>
+                  <ThemedText type="subtitle" style={styles.findingTitle}>
+                    {tripStatusView.title}
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.findingSubtitle}>
+                    {tripStatusView.subtitle}
+                  </ThemedText>
+                </>
+              )}
+            </View>
+
+            <View style={styles.findingTripCard}>
+              <View style={styles.findingTripHeader}>
+                <ThemedText type="smallBold" style={styles.findingVehicle}>
+                  {activeBookedRide?.vehicleName ?? selectedRideOption.name}
+                </ThemedText>
+                <ThemedText type="smallBold" style={styles.findingFare}>
+                  {activeBookedRide?.estimatedFare ?? selectedRidePrice}
+                </ThemedText>
+              </View>
+              <ThemedText type="small" style={styles.findingMeta}>
+                {(activeBookedRide?.tripDuration ?? verifiedTripMap?.directions.durationText ?? "--")} {"\u2022"}{" "}
+                {(activeBookedRide?.tripDistance ?? verifiedTripMap?.directions.distanceText ?? "--")}
+              </ThemedText>
+              <ThemedText type="smallBold" style={styles.findingStatusText}>
+                {tripStatusView.label}
+              </ThemedText>
+              <View style={styles.findingRouteBox}>
+                <ThemedText type="smallBold" style={styles.findingAddress} numberOfLines={2}>
+                  {"\u0110\u00f3n: "}{activeBookedRide?.pickup ?? verifiedFromLabel}
+                </ThemedText>
+                <ThemedText type="smallBold" style={styles.findingAddress} numberOfLines={2}>
+                  {"\u0110\u1ebfn: "}{activeBookedRide?.destination ?? verifiedToLabel}
+                </ThemedText>
+              </View>
+              {isCompletedTrip ? (
+                <View style={styles.completedSummaryBox}>
+                  <View style={styles.completedSummaryRow}>
+                    <ThemedText type="small" style={styles.completedSummaryLabel}>
+                      {"T\u1ed5ng ti\u1ec1n"}
+                    </ThemedText>
+                    <ThemedText type="smallBold" style={styles.completedSummaryValue}>
+                      {completedFare}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.completedSummaryRow}>
+                    <ThemedText type="small" style={styles.completedSummaryLabel}>
+                      {"Th\u1eddi gian ho\u00e0n th\u00e0nh"}
+                    </ThemedText>
+                    <ThemedText type="smallBold" style={styles.completedSummaryValue}>
+                      {completedAtText}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+              {isCompletedTrip ? (
+                <View style={styles.completedActionRow}>
+                  <Pressable style={styles.completedReviewButton}>
+                    <ThemedText type="smallBold" style={styles.completedReviewText}>
+                      {"\u0110\u00e1nh gi\u00e1 t\u00e0i x\u1ebf"}
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    style={styles.completedHomeButton}
+                    onPress={() => router.push("/")}
+                  >
+                    <ThemedText type="smallBold" style={styles.completedHomeText}>
+                      {"V\u1ec1 trang ch\u1ee7"}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  style={[
+                    styles.findingSecondaryButton,
+                    canCancelTrackedTrip && styles.cancelRideButton,
+                  ]}
+                  onPress={() => {
+                    if (!canCancelTrackedTrip) {
+                      setBookingStep("rideOptions");
+                    }
+                  }}
+                >
+                  <ThemedText
+                    type="smallBold"
+                    style={[
+                      styles.findingSecondaryText,
+                      canCancelTrackedTrip && styles.cancelRideButtonText,
+                    ]}
+                  >
+                    {canCancelTrackedTrip ? "H\u1ee7y chuy\u1ebfn" : "Quay l\u1ea1i"}
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        ) : bookingStep === "rideOptions" && mode !== "shared" ? (
           <>
             <View style={styles.dotsRow}>
               <View style={styles.dotActive} />
@@ -1551,7 +1957,7 @@ export default function SearchScreen() {
                   {ridePriceError}
                 </ThemedText>
               )}
-              {rideOptions.map((option) => {
+              {availableRideOptions.map((option) => {
                 const isSelected = option.id === selectedRideId;
 
                 return (
@@ -1580,9 +1986,13 @@ export default function SearchScreen() {
                   </Pressable>
                 );
               })}
-              <Pressable style={styles.bookButton} onPress={handleBookRide}>
+              <Pressable
+                style={[styles.bookButton, isBookingRide && styles.bookButtonDisabled]}
+                onPress={handleBookRide}
+                disabled={isBookingRide}
+              >
                 <ThemedText type="smallBold" style={styles.bookButtonText}>
-                  {"\u0110\u1eb7t xe"}
+                  {isBookingRide ? "\u0110ang \u0111\u1eb7t..." : "\u0110\u1eb7t xe"}
                 </ThemedText>
               </Pressable>
             </View>
@@ -3768,6 +4178,214 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#EEF4F7",
   },
+  findingDriverStage: {
+    flex: 1,
+    justifyContent: "center",
+    gap: Spacing.three,
+  },
+  findingRadarCard: {
+    borderRadius: 28,
+    backgroundColor: "#FFF7ED",
+    padding: Spacing.four,
+    alignItems: "center",
+    gap: Spacing.two,
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+  },
+  driverAcceptedCard: {
+    backgroundColor: "#FFFDF8",
+    borderColor: BRAND,
+  },
+  driverAvatar: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: BRAND,
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  completedAvatar: {
+    backgroundColor: "#16A34A",
+    shadowColor: "#16A34A",
+  },
+  cancelledAvatar: {
+    backgroundColor: "#EF4444",
+    shadowColor: "#EF4444",
+  },
+  driverAvatarText: {
+    color: "#FFFFFF",
+    fontSize: 34,
+  },
+  driverInfoBox: {
+    width: "100%",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    padding: Spacing.three,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+  },
+  driverNameText: {
+    color: "#111827",
+    fontWeight: "900",
+    fontSize: 18,
+  },
+  driverInfoText: {
+    color: "#4B5563",
+  },
+  radarOuter: {
+    width: 176,
+    height: 176,
+    borderRadius: 88,
+    backgroundColor: "rgba(255, 122, 0, 0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radarMiddle: {
+    width: 124,
+    height: 124,
+    borderRadius: 62,
+    backgroundColor: "rgba(255, 122, 0, 0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radarInner: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: BRAND,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  radarIcon: {
+    color: "#FFFFFF",
+    fontSize: 24,
+  },
+  findingTitle: {
+    color: "#111827",
+    textAlign: "center",
+    fontSize: 24,
+  },
+  findingSubtitle: {
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 21,
+  },
+  findingTripCard: {
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    padding: Spacing.three,
+    gap: Spacing.two,
+    shadowColor: "#000000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  findingTripHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  findingVehicle: {
+    color: "#111827",
+    fontSize: 17,
+  },
+  findingFare: {
+    color: BRAND,
+    fontSize: 17,
+  },
+  findingMeta: {
+    color: "#6B7280",
+  },
+  findingStatusText: {
+    color: BRAND,
+  },
+  findingRouteBox: {
+    borderRadius: 16,
+    backgroundColor: "#F9FAFB",
+    padding: Spacing.two,
+    gap: Spacing.one,
+  },
+  findingAddress: {
+    color: "#374151",
+  },
+  completedSummaryBox: {
+    borderRadius: 16,
+    backgroundColor: "#FFF7ED",
+    padding: Spacing.two,
+    gap: Spacing.one,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+  },
+  completedSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  completedSummaryLabel: {
+    color: "#6B7280",
+    flex: 1,
+  },
+  completedSummaryValue: {
+    color: "#111827",
+    flexShrink: 0,
+    textAlign: "right",
+  },
+  completedActionRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  completedReviewButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  completedReviewText: {
+    color: "#FFFFFF",
+  },
+  completedHomeButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  completedHomeText: {
+    color: "#C75B00",
+  },
+  findingSecondaryButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelRideButton: {
+    borderColor: "#FCA5A5",
+    backgroundColor: "#FEF2F2",
+  },
+  findingSecondaryText: {
+    color: "#C75B00",
+  },
+  cancelRideButtonText: {
+    color: "#DC2626",
+  },
   routeMapFallback: {
     flex: 1,
     backgroundColor: "#FFFDF8",
@@ -4121,6 +4739,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: Spacing.one,
+  },
+  bookButtonDisabled: {
+    opacity: 0.72,
   },
   bookButtonText: {
     color: "#FFFFFF",
