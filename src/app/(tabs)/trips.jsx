@@ -26,12 +26,18 @@ import { useTheme } from "@/hooks/use-theme";
 import {
   loadBookedTrips,
   toActiveTripSectionItem,
-} from "@/services/trip-storage";
-import { getDriverTrips, getPassengerTrips } from "@/services/trip-api";
+  toScheduledTripSectionItem,
+} from "@/features/booking/services/trip-storage";
+import {
+  getDriverTrips,
+  getPassengerTrips,
+} from "@/features/booking/services/trip-api";
+import { mapTripToHistoryItem } from "@/features/trip-history/utils/trip-history-mapper";
 
 const BRAND = "#FF7A00";
 const BORDER = "#E9E9E9";
 const MUTED = "#6B7280";
+const HISTORY_PAGE_SIZE = 3;
 
 const tabs = [
   { key: "scheduled", label: "Đã đặt trước" },
@@ -229,31 +235,16 @@ function getScheduledTripView(item) {
   };
 }
 
-function formatCurrencyVnd(value) {
-  const numberValue = Number(value);
+function isScheduledTrip(trip) {
+  const tripType = String(trip?.tripType ?? "").toLowerCase();
+  const status = String(trip?.status ?? "").toLowerCase();
 
-  if (!Number.isFinite(numberValue)) {
-    return "--";
-  }
-
-  return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
-}
-
-function formatTripDate(value) {
-  if (!value) {
-    return "--";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "--";
-  }
-
-  return date.toLocaleDateString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-  });
+  return (
+    tripType === "scheduled" ||
+    tripType === "2" ||
+    status === "scheduled" ||
+    Boolean(trip?.scheduledAt)
+  );
 }
 
 function getTripFare(trip) {
@@ -266,33 +257,59 @@ function getTripFare(trip) {
   );
 }
 
-function getTripIcon(vehicleType) {
-  const normalizedType = String(vehicleType ?? "").toLowerCase();
+function formatCurrencyVnd(value) {
+  const numberValue = Number(value);
 
-  if (normalizedType.includes("bike") || normalizedType === "1") {
-    return "🛵";
+  if (!Number.isFinite(numberValue)) {
+    return "--";
   }
 
-  return "🚗";
+  return `${Math.round(numberValue).toLocaleString("vi-VN")}\u0111`;
 }
 
-function mapTripToHistoryItem(trip) {
-  const status = String(trip?.status ?? "").toLowerCase();
-  const date =
-    trip?.completedAt ?? trip?.cancelledAt ?? trip?.acceptedAt ?? trip?.createdAt;
-  const fare = getTripFare(trip);
+function formatDistanceKm(value) {
+  const numberValue = Number(value);
 
-  return {
+  if (!Number.isFinite(numberValue)) {
+    return "";
+  }
+
+  const roundedValue =
+    numberValue >= 10
+      ? Math.round(numberValue)
+      : Math.round(numberValue * 10) / 10;
+
+  return `${roundedValue.toLocaleString("vi-VN")} km`;
+}
+
+function formatDurationMinute(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "";
+  }
+
+  return `${Math.max(1, Math.round(numberValue))} ph\u00fat`;
+}
+
+function mapTripToScheduledItem(trip) {
+  return toScheduledTripSectionItem({
     id: trip.id,
-    icon: getTripIcon(trip.vehicleType),
-    route: `${trip.pickupAddress || "Điểm đón"} → ${
-      trip.destinationAddress || "Điểm đến"
+    icon:
+      String(trip.vehicleType ?? "").toLowerCase().includes("bike") ||
+      String(trip.vehicleType ?? "") === "1"
+        ? "\ud83d\udef5"
+        : "\ud83d\ude97",
+    route: `${trip.pickupAddress || "\u0110i\u1ec3m \u0111\u00f3n"} \u2192 ${
+      trip.destinationAddress || "\u0110i\u1ec3m \u0111\u1ebfn"
     }`,
-    meta: `${formatTripDate(date)} · ${formatCurrencyVnd(fare)}`,
-    actionPrimary: status === "completed" ? "Đánh giá" : "Chi tiết",
-    actionSecondary: "Báo cáo",
-    rating: null,
-  };
+    pickup: trip.pickupAddress,
+    destination: trip.destinationAddress,
+    estimatedFare: formatCurrencyVnd(getTripFare(trip)),
+    scheduledAt: trip.scheduledAt,
+    distanceText: formatDistanceKm(trip.estimatedDistanceKm),
+    durationText: formatDurationMinute(trip.estimatedDurationMinute),
+  });
 }
 
 export default function TripsScreen() {
@@ -308,6 +325,9 @@ export default function TripsScreen() {
   });
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const [scheduledSortOrder, setScheduledSortOrder] = useState("newest");
+  const [historySortOrder, setHistorySortOrder] = useState("newest");
+  const [historyPage, setHistoryPage] = useState(1);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -349,15 +369,27 @@ export default function TripsScreen() {
 
       setTripsBySection((current) => {
         const nextActive = [...(current.active ?? [])];
+        const nextScheduled = [...(current.scheduled ?? [])];
 
         bookedTrips.forEach((trip) => {
-          if (trip.status === "completed" || trip.status === "history") {
+          if (
+            trip.status === "completed" ||
+            trip.status === "history" ||
+            trip.status === "cancelled"
+          ) {
             return;
           }
 
-          const item = toActiveTripSectionItem(trip);
+          const isScheduled = isScheduledTrip(trip);
+          const item = isScheduled
+            ? toScheduledTripSectionItem(trip)
+            : toActiveTripSectionItem(trip);
 
-          if (!nextActive.some((existing) => existing.id === item.id)) {
+          if (isScheduled) {
+            if (!nextScheduled.some((existing) => existing.id === item.id)) {
+              nextScheduled.unshift(item);
+            }
+          } else if (!nextActive.some((existing) => existing.id === item.id)) {
             nextActive.unshift(item);
           }
         });
@@ -365,6 +397,7 @@ export default function TripsScreen() {
         return {
           ...current,
           active: nextActive,
+          scheduled: nextScheduled,
         };
       });
     }
@@ -405,8 +438,12 @@ export default function TripsScreen() {
 
         setTripsBySection((current) => ({
           ...current,
+          scheduled: Array.isArray(trips)
+            ? trips.filter(isScheduledTrip).map(mapTripToScheduledItem)
+            : current.scheduled,
           history: Array.isArray(trips) ? trips.map(mapTripToHistoryItem) : [],
         }));
+        setHistoryPage(1);
       } catch {
         if (isMounted) {
           setTripsBySection((current) => ({
@@ -428,7 +465,43 @@ export default function TripsScreen() {
     };
   }, [historyRefreshKey, isAuthenticated, selectedTab, session?.accessToken, session?.role]);
 
-  const items = tripsBySection[selectedTab] ?? [];
+  const rawItems = tripsBySection[selectedTab] ?? [];
+  const sortedScheduledItems =
+    selectedTab === "scheduled"
+      ? [...rawItems].sort((firstTrip, secondTrip) => {
+          const firstTime = firstTrip.sortTimestamp ?? 0;
+          const secondTime = secondTrip.sortTimestamp ?? 0;
+
+          return scheduledSortOrder === "newest"
+            ? secondTime - firstTime
+            : firstTime - secondTime;
+        })
+      : rawItems;
+  const sortedHistoryItems =
+    selectedTab === "history"
+      ? [...rawItems].sort((firstTrip, secondTrip) => {
+          const firstTime = firstTrip.sortTimestamp ?? 0;
+          const secondTime = secondTrip.sortTimestamp ?? 0;
+
+          return historySortOrder === "newest"
+            ? secondTime - firstTime
+            : firstTime - secondTime;
+        })
+      : rawItems;
+  const totalHistoryPages = Math.max(
+    1,
+    Math.ceil(sortedHistoryItems.length / HISTORY_PAGE_SIZE)
+  );
+  const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
+  const items =
+    selectedTab === "history"
+      ? sortedHistoryItems.slice(
+          (currentHistoryPage - 1) * HISTORY_PAGE_SIZE,
+          currentHistoryPage * HISTORY_PAGE_SIZE
+        )
+      : selectedTab === "scheduled"
+        ? sortedScheduledItems
+      : rawItems;
   const hasActiveRide = params.activeRide === "1";
   const activePickup =
     typeof params.pickup === "string" && params.pickup
@@ -708,6 +781,73 @@ export default function TripsScreen() {
             })}
           </View>
 
+          {selectedTab === "history" ? (
+            <View style={styles.historyFilterRow}>
+              {[
+                { key: "newest", label: "M\u1edbi nh\u1ea5t" },
+                { key: "oldest", label: "C\u0169 nh\u1ea5t" },
+              ].map((option) => {
+                const isActive = historySortOrder === option.key;
+
+                return (
+                  <Pressable
+                    key={option.key}
+                    style={[
+                      styles.historyFilterButton,
+                      isActive && styles.historyFilterButtonActive,
+                    ]}
+                    onPress={() => {
+                      setHistorySortOrder(option.key);
+                      setHistoryPage(1);
+                    }}
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={[
+                        styles.historyFilterText,
+                        isActive && styles.historyFilterTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {selectedTab === "scheduled" ? (
+            <View style={styles.historyFilterRow}>
+              {[
+                { key: "newest", label: "M\u1edbi nh\u1ea5t" },
+                { key: "oldest", label: "C\u0169 nh\u1ea5t" },
+              ].map((option) => {
+                const isActive = scheduledSortOrder === option.key;
+
+                return (
+                  <Pressable
+                    key={option.key}
+                    style={[
+                      styles.historyFilterButton,
+                      isActive && styles.historyFilterButtonActive,
+                    ]}
+                    onPress={() => setScheduledSortOrder(option.key)}
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={[
+                        styles.historyFilterText,
+                        isActive && styles.historyFilterTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
           {selectedTab === "active" ? (
             <View style={styles.activeJourney}>
               {hasActiveRide ? (
@@ -882,6 +1022,19 @@ export default function TripsScreen() {
                       <ThemedText type="default" style={styles.scheduledMetaLine}>
                         {item.icon} {trip.vehicle}
                       </ThemedText>
+                      {Boolean(item.distanceText || item.durationText) && (
+                        <ThemedText type="default" style={styles.scheduledMetaLine}>
+                          {"Qu\u00e3ng \u0111\u01b0\u1eddng: "}
+                          <ThemedText
+                            type="default"
+                            style={styles.scheduledMetaStrong}
+                          >
+                            {[item.distanceText, item.durationText]
+                              .filter(Boolean)
+                              .join(" \u2022 ")}
+                          </ThemedText>
+                        </ThemedText>
+                      )}
                     </View>
 
                     <View style={styles.scheduledJourneyBottom}>
@@ -946,9 +1099,10 @@ export default function TripsScreen() {
               </ThemedText>
             </View>
           ) : (
-            <ThemedView
-              style={[styles.listCard, { backgroundColor: theme.backgroundElement }]}
-            >
+            <>
+              <ThemedView
+                style={[styles.listCard, { backgroundColor: theme.backgroundElement }]}
+              >
               {items.map((item, index) => {
               const savedRating = ratingsByTripId[item.id]?.rating;
               const displayRating = savedRating ?? item.rating;
@@ -1028,7 +1182,59 @@ export default function TripsScreen() {
                 </View>
               );
               })}
-            </ThemedView>
+              </ThemedView>
+              {selectedTab === "history" && sortedHistoryItems.length > HISTORY_PAGE_SIZE ? (
+                <View style={styles.historyPaginationRow}>
+                  <Pressable
+                    style={[
+                      styles.historyPageButton,
+                      currentHistoryPage === 1 && styles.historyPageButtonDisabled,
+                    ]}
+                    disabled={currentHistoryPage === 1}
+                    onPress={() => setHistoryPage((current) => Math.max(1, current - 1))}
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={[
+                        styles.historyPageButtonText,
+                        currentHistoryPage === 1 && styles.historyPageButtonTextDisabled,
+                      ]}
+                    >
+                      {"Tr\u01b0\u1edbc"}
+                    </ThemedText>
+                  </Pressable>
+
+                  <ThemedText type="smallBold" style={styles.historyPageInfo}>
+                    {`Trang ${currentHistoryPage}/${totalHistoryPages}`}
+                  </ThemedText>
+
+                  <Pressable
+                    style={[
+                      styles.historyPageButton,
+                      currentHistoryPage === totalHistoryPages &&
+                        styles.historyPageButtonDisabled,
+                    ]}
+                    disabled={currentHistoryPage === totalHistoryPages}
+                    onPress={() =>
+                      setHistoryPage((current) =>
+                        Math.min(totalHistoryPages, current + 1)
+                      )
+                    }
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={[
+                        styles.historyPageButtonText,
+                        currentHistoryPage === totalHistoryPages &&
+                          styles.historyPageButtonTextDisabled,
+                      ]}
+                    >
+                      {"Sau"}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              ) : null}
+            </>
           )}
         </View>
       </ScrollView>
@@ -1663,6 +1869,30 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: "#FFFFFF",
   },
+  historyFilterRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  historyFilterButton: {
+    minHeight: 38,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyFilterButtonActive: {
+    backgroundColor: BRAND,
+    borderColor: BRAND,
+  },
+  historyFilterText: {
+    color: "#C75B00",
+  },
+  historyFilterTextActive: {
+    color: "#FFFFFF",
+  },
   activeJourney: {
     gap: Spacing.three,
   },
@@ -1985,6 +2215,33 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     color: "#EAB308",
+  },
+  historyPaginationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  historyPageButton: {
+    minHeight: 38,
+    minWidth: 88,
+    borderRadius: 999,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.three,
+  },
+  historyPageButtonDisabled: {
+    backgroundColor: "#F3F4F6",
+  },
+  historyPageButtonText: {
+    color: "#FFFFFF",
+  },
+  historyPageButtonTextDisabled: {
+    color: "#9CA3AF",
+  },
+  historyPageInfo: {
+    color: "#374151",
   },
   chatCard: {
     width: "100%",

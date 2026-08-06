@@ -19,6 +19,16 @@ export function getTrip(tripId, accessToken) {
   });
 }
 
+export function cancelTrip(tripId, payload, accessToken) {
+  return apiRequest(`/trips/${tripId}/cancel/passenger`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getPassengerTrips(accessToken) {
   return apiRequest("/passengers/trips", {
     method: "GET",
