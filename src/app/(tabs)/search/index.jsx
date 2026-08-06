@@ -33,13 +33,19 @@ import {
   getGeoapifyStaticMapUrl,
   reverseGeoapifyPlaceLocation,
   isGeoapifyConfigured,
-} from "@/services/geoapify-api";
-import { estimateFare } from "@/services/pricing-api";
-import { createTrip, getTrip } from "@/services/trip-api";
-import { persistBookedTrip } from "@/services/trip-storage";
+} from "@/features/booking/services/geoapify-api";
+import { estimateFare } from "@/features/booking/services/pricing-api";
+import {
+  cancelTrip,
+  createTrip,
+  getTrip,
+} from "@/features/booking/services/trip-api";
+import { persistBookedTrip } from "@/features/booking/services/trip-storage";
 
 const BRAND = "#FF7A00";
 const MAP_BG = "#FFF3C9";
+const PICKUP_BLUE = "#2563EB";
+const DESTINATION_GREEN = "#16A34A";
 const MOCK_DRIVER_POINT = {
   placeId: "",
   formattedAddress: "C\u1ed5ng ch\u00ednh \u0110\u1ea1i h\u1ecdc FPT, Th\u1ea1ch H\u00f2a, H\u00e0 N\u1ed9i",
@@ -118,6 +124,47 @@ function formatCurrencyVnd(value) {
   return `${Math.round(value).toLocaleString("vi-VN")}\u0111`;
 }
 
+function formatDistanceKm(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "--";
+  }
+
+  const roundedValue =
+    numberValue >= 10
+      ? Math.round(numberValue)
+      : Math.round(numberValue * 10) / 10;
+
+  return `${roundedValue.toLocaleString("vi-VN")} km`;
+}
+
+function formatDurationMinute(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "--";
+  }
+
+  return `${Math.max(1, Math.round(numberValue))} ph\u00fat`;
+}
+
+function getTripEstimatedFare(trip) {
+  return trip?.pricing?.estimatedFare ?? trip?.estimatedFare ?? null;
+}
+
+function getTripDistanceText(trip, fallbackText = "--") {
+  return trip?.estimatedDistanceKm != null
+    ? formatDistanceKm(trip.estimatedDistanceKm)
+    : fallbackText;
+}
+
+function getTripDurationText(trip, fallbackText = "--") {
+  return trip?.estimatedDurationMinute != null
+    ? formatDurationMinute(trip.estimatedDurationMinute)
+    : fallbackText;
+}
+
 function formatTripDateTime(value) {
   if (!value) {
     return "V\u1eeba ho\u00e0n th\u00e0nh";
@@ -138,45 +185,61 @@ function formatTripDateTime(value) {
   });
 }
 
-function parseDistanceKm(distanceText) {
-  if (!distanceText) {
-    return 0;
-  }
-
-  const normalized = String(distanceText).replace(",", ".");
-  const kmMatch = normalized.match(/([\d.]+)\s*km/i);
-
-  if (kmMatch) {
-    return Number.parseFloat(kmMatch[1]) || 0;
-  }
-
-  const meterMatch = normalized.match(/([\d.]+)\s*m\b/i);
-
-  if (meterMatch) {
-    return (Number.parseFloat(meterMatch[1]) || 0) / 1000;
-  }
-
-  return Number.parseFloat(normalized) || 0;
+function toRadians(value) {
+  return (Number(value) * Math.PI) / 180;
 }
 
-function parseDurationMinute(durationText) {
-  if (!durationText) {
+function calculateBackendDistanceKm(origin, destination) {
+  if (!origin?.location || !destination?.location) {
     return 0;
   }
 
-  const normalized = String(durationText).replace(",", ".");
-  const hourMatch = normalized.match(/([\d.]+)\s*gi(?:\u1edd|o)/i);
-  const minuteMatch = normalized.match(/([\d.]+)\s*ph(?:\u00fa|u)t/i);
+  const originLat = Number(origin.location.lat);
+  const originLng = Number(origin.location.lng);
+  const destinationLat = Number(destination.location.lat);
+  const destinationLng = Number(destination.location.lng);
 
-  const hours = hourMatch ? Number.parseFloat(hourMatch[1]) || 0 : 0;
-  const minutes = minuteMatch ? Number.parseFloat(minuteMatch[1]) || 0 : 0;
-
-  if (hours > 0 || minutes > 0) {
-    return Math.round(hours * 60 + minutes);
+  if (
+    !Number.isFinite(originLat) ||
+    !Number.isFinite(originLng) ||
+    !Number.isFinite(destinationLat) ||
+    !Number.isFinite(destinationLng)
+  ) {
+    return 0;
   }
 
-  const fallbackMatch = normalized.match(/([\d.]+)/);
-  return fallbackMatch ? Math.round(Number.parseFloat(fallbackMatch[1]) || 0) : 0;
+  const earthRadiusKm = 6371;
+  const deltaLat = toRadians(destinationLat - originLat);
+  const deltaLng = toRadians(destinationLng - originLng);
+  const haversine =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(toRadians(originLat)) *
+      Math.cos(toRadians(destinationLat)) *
+      Math.sin(deltaLng / 2) *
+      Math.sin(deltaLng / 2);
+  const angle = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+
+  return earthRadiusKm * angle;
+}
+
+function getBackendTripMetrics(verifiedMap) {
+  const distanceKm = calculateBackendDistanceKm(
+    verifiedMap?.origin,
+    verifiedMap?.destination
+  );
+
+  if (distanceKm <= 0) {
+    return null;
+  }
+
+  const durationMinute = Math.ceil((distanceKm / 30) * 60);
+
+  return {
+    distanceKm,
+    durationMinute,
+    distanceText: formatDistanceKm(distanceKm),
+    durationText: formatDurationMinute(durationMinute),
+  };
 }
 
 function normalizeTripStatus(status) {
@@ -482,6 +545,7 @@ export default function SearchScreen() {
   const sharedLocationPickedRef = useRef("");
   const hasEditedFromInputRef = useRef(false);
   const [isVerifyingMap, setIsVerifyingMap] = useState(false);
+  const [isOpeningSchedulePicker, setIsOpeningSchedulePicker] = useState(false);
   const [isFetchingCurrentLocation, setIsFetchingCurrentLocation] = useState(false);
   const [verifiedTripMap, setVerifiedTripMap] = useState(null);
   const [selectedFromPlace, setSelectedFromPlace] = useState(null);
@@ -498,6 +562,7 @@ export default function SearchScreen() {
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState(getDefaultBookingSchedule);
   const [scheduledRideTime, setScheduledRideTime] = useState("");
+  const [scheduledRideAt, setScheduledRideAt] = useState("");
   const [sharedRides] = useState(rideGroups);
   const [pendingSharedRequests, setPendingSharedRequests] = useState([]);
   const [createSharedVisible, setCreateSharedVisible] = useState(false);
@@ -508,6 +573,7 @@ export default function SearchScreen() {
   const [sharedLocationLoading, setSharedLocationLoading] = useState(false);
   const [sharedLocationError, setSharedLocationError] = useState("");
   const [isBookingRide, setIsBookingRide] = useState(false);
+  const [isCancellingRide, setIsCancellingRide] = useState(false);
   const [activeBookedRide, setActiveBookedRide] = useState(null);
   const [acceptedTrip, setAcceptedTrip] = useState(null);
   const [savedAddresses, setSavedAddresses] = useState(initialSavedAddresses);
@@ -521,6 +587,7 @@ export default function SearchScreen() {
   const suggestedSharedRides = sharedRides.filter(
     (ride) => ride.participantCount > 1
   );
+  const backendTripMetrics = getBackendTripMetrics(verifiedTripMap);
   const trackedTripStatus = normalizeTripStatus(
     acceptedTrip?.status ?? activeBookedRide?.status
   );
@@ -535,10 +602,11 @@ export default function SearchScreen() {
     trackedTripStatus === "accepted" ||
     trackedTripStatus === "driverarrived";
   const isCompletedTrip = trackedTripStatus === "completed";
+  const completedDbFare = getTripEstimatedFare(acceptedTrip);
   const completedFare =
-    acceptedTrip?.pricing?.estimatedFare != null
-      ? formatCurrencyVnd(Number(acceptedTrip.pricing.estimatedFare))
-      : activeBookedRide?.estimatedFare ?? selectedRidePrice;
+    completedDbFare != null
+      ? formatCurrencyVnd(Number(completedDbFare))
+      : activeBookedRide?.estimatedFare ?? selectedRidePrice ?? "--";
   const completedAtText = formatTripDateTime(
     acceptedTrip?.completedAt ?? activeBookedRide?.completedAt
   );
@@ -620,11 +688,19 @@ export default function SearchScreen() {
           normalizeTripStatus(trip?.status) !== "pending";
 
         if (isActive && shouldUpdateTrip) {
+          const dbEstimatedFare = getTripEstimatedFare(trip);
+
           setAcceptedTrip(trip);
           setActiveBookedRide((current) => ({
             ...(current ?? {}),
             status: normalizeTripStatus(trip.status),
             statusLabel: getTripStatusView(trip.status, Boolean(trip.driverId)).label,
+            estimatedFare:
+              dbEstimatedFare != null
+                ? formatCurrencyVnd(Number(dbEstimatedFare))
+                : current?.estimatedFare,
+            tripDistance: getTripDistanceText(trip, current?.tripDistance),
+            tripDuration: getTripDurationText(trip, current?.tripDuration),
             driverId: trip.driverId,
             driverName: trip.driverName,
             driverPhone: trip.driverPhone,
@@ -725,8 +801,9 @@ export default function SearchScreen() {
       return undefined;
     }
 
-    const distanceKm = parseDistanceKm(verifiedTripMap.directions.distanceText);
-    const durationMinute = parseDurationMinute(verifiedTripMap.directions.durationText);
+    const tripMetrics = getBackendTripMetrics(verifiedTripMap);
+    const distanceKm = tripMetrics?.distanceKm ?? 0;
+    const durationMinute = tripMetrics?.durationMinute ?? 0;
 
     if (distanceKm <= 0 || durationMinute <= 0) {
       setRidePriceQuotes({});
@@ -789,6 +866,7 @@ export default function SearchScreen() {
     setMode("now");
     setBookingStep("form");
     setScheduledRideTime("");
+    setScheduledRideAt("");
   };
 
   const selectSharedRide = () => {
@@ -796,6 +874,7 @@ export default function SearchScreen() {
     setBookingStep("form");
     setAlertMessage("");
     setScheduledRideTime("");
+    setScheduledRideAt("");
   };
 
   const fromLabel = fromInput.trim() || "V\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i";
@@ -1219,6 +1298,7 @@ export default function SearchScreen() {
     setAlertMessage("");
     setAcceptedTrip(null);
 
+    const isScheduledRide = Boolean(scheduledRideAt);
     const createTripPayload = {
       pickupLatitude: verifiedTripMap.origin.location.lat,
       pickupLongitude: verifiedTripMap.origin.location.lng,
@@ -1227,15 +1307,26 @@ export default function SearchScreen() {
       destinationLongitude: verifiedTripMap.destination.location.lng,
       destinationAddress: verifiedToLabel,
       vehicleType: selectedRideOption.vehicleType,
-      tripType: 1,
+      tripType: isScheduledRide ? 2 : 1,
+      ...(isScheduledRide ? { scheduledAt: scheduledRideAt } : {}),
     };
 
     try {
-      const tripResponse = await createTrip(createTripPayload, session?.accessToken);
+      const response = await createTrip(createTripPayload, session?.accessToken);
+      const tripResponse = response?.trip ?? response;
+      const dbEstimatedFare = getTripEstimatedFare(tripResponse);
+      const fallbackTripDistance =
+        backendTripMetrics?.distanceText ?? verifiedTripMap.directions.distanceText;
+      const fallbackTripDuration =
+        backendTripMetrics?.durationText ?? verifiedTripMap.directions.durationText;
       const bookedTrip = {
         id: tripResponse.id || `trip-${Date.now()}`,
-        status: (tripResponse.status || "pending").toLowerCase(),
-        statusLabel: "\u0110ang t\u00ecm t\u00e0i x\u1ebf",
+        status: isScheduledRide
+          ? "scheduled"
+          : (tripResponse.status || "pending").toLowerCase(),
+        statusLabel: isScheduledRide
+          ? "Ch\u1edd t\u00e0i x\u1ebf"
+          : "\u0110ang t\u00ecm t\u00e0i x\u1ebf",
         icon: selectedRideOption.icon || "Xe",
         route: `${verifiedFromLabel} \u2192 ${verifiedToLabel}`,
         pickup: tripResponse.pickupAddress || verifiedFromLabel,
@@ -1243,17 +1334,11 @@ export default function SearchScreen() {
         vehicleName: selectedRideOption.name,
         vehicleType: String(selectedRideOption.vehicleType),
         estimatedFare:
-          tripResponse.pricing?.estimatedFare != null
-            ? formatCurrencyVnd(tripResponse.pricing.estimatedFare)
+          dbEstimatedFare != null
+            ? formatCurrencyVnd(Number(dbEstimatedFare))
             : selectedRidePrice,
-        tripDistance:
-          tripResponse.estimatedDistanceKm != null
-            ? `${tripResponse.estimatedDistanceKm} km`
-            : verifiedTripMap.directions.distanceText,
-        tripDuration:
-          tripResponse.estimatedDurationMinute != null
-            ? `${tripResponse.estimatedDurationMinute} ph\u00fat`
-            : verifiedTripMap.directions.durationText,
+        tripDistance: getTripDistanceText(tripResponse, fallbackTripDistance),
+        tripDuration: getTripDurationText(tripResponse, fallbackTripDuration),
         pickupLatitude: verifiedTripMap.origin.location.lat,
         pickupLongitude: verifiedTripMap.origin.location.lng,
         destinationLatitude: verifiedTripMap.destination.location.lat,
@@ -1264,6 +1349,8 @@ export default function SearchScreen() {
         duration: verifiedTripMap.driverDirections.durationText ?? "",
         distance: verifiedTripMap.driverDirections.distanceText ?? "",
         createdAt: tripResponse.createdAt || new Date().toISOString(),
+        scheduledAt: tripResponse.scheduledAt || scheduledRideAt || "",
+        scheduledRideTime,
       };
 
       try {
@@ -1272,9 +1359,14 @@ export default function SearchScreen() {
         // Neu luu cuc bo that bai thi van hien man tim tai xe.
       }
 
-      setActiveBookedRide(bookedTrip);
       setAcceptedTrip(null);
-      setBookingStep("findingDriver");
+      if (isScheduledRide) {
+        resetSingleRideBookingForm();
+        router.push("/trips");
+      } else {
+        setActiveBookedRide(bookedTrip);
+        setBookingStep("findingDriver");
+      }
     } catch (error) {
       if (error?.message === "An error occurred") {
         setAlertMessage("BE \u0111ang l\u1ed7i khi t\u1ea1o chuy\u1ebfn \u0111i. H\u00e3y ki\u1ec3m tra b\u1ea3ng gi\u00e1 active c\u1ee7a lo\u1ea1i xe \u0111ang ch\u1ecdn.");
@@ -1284,6 +1376,77 @@ export default function SearchScreen() {
     } finally {
       setIsBookingRide(false);
     }
+  };
+
+  const handleCancelBookedRide = async () => {
+    if (!canCancelTrackedTrip || isCancellingRide) {
+      return;
+    }
+
+    if (!activeBookedRide?.id || !session?.accessToken) {
+      setAlertMessage("Kh\u00f4ng t\u00ecm th\u1ea5y chuy\u1ebfn \u0111i \u0111\u1ec3 h\u1ee7y.");
+      return;
+    }
+
+    setIsCancellingRide(true);
+    setAlertMessage("");
+
+    try {
+      const cancelledTrip = await cancelTrip(
+        activeBookedRide.id,
+        { cancelReason: 4 },
+        session.accessToken
+      );
+
+      setAcceptedTrip(cancelledTrip);
+      const nextBookedRide = {
+        ...(activeBookedRide ?? {}),
+        status: normalizeTripStatus(cancelledTrip?.status ?? "cancelled"),
+        statusLabel: getTripStatusView("cancelled", false).label,
+        cancelledAt: cancelledTrip?.cancelledAt ?? new Date().toISOString(),
+      };
+
+      setActiveBookedRide(nextBookedRide);
+
+      try {
+        await persistBookedTrip(nextBookedRide);
+      } catch {
+        // Neu luu cuc bo that bai thi van hien trang thai huy tu BE.
+      }
+    } catch (error) {
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 h\u1ee7y chuy\u1ebfn \u0111i.");
+    } finally {
+      setIsCancellingRide(false);
+    }
+  };
+
+  const resetSingleRideBookingForm = () => {
+    setMode("now");
+    setBookingStep("form");
+    setFromInput("");
+    setToInput("");
+    setFocusedField("from");
+    setSelectedFromPlace(null);
+    setSelectedToPlace(null);
+    setVerifiedTripMap(null);
+    setRidePriceQuotes({});
+    setRidePriceError("");
+    setDriverNote("");
+    setScheduledRideTime("");
+    setScheduledRideAt("");
+    setActiveBookedRide(null);
+    setAcceptedTrip(null);
+    setAlertMessage("");
+    setAddressSuggestions({
+      from: [],
+      to: [],
+    });
+    setSuggestionError({
+      from: "",
+      to: "",
+    });
+    setLoadingSuggestionsFor("");
+    hasEditedFromInputRef.current = false;
   };
 
     const verifyBookingLocations = async () => {
@@ -1343,17 +1506,23 @@ export default function SearchScreen() {
     }
 
     setScheduledRideTime("");
+    setScheduledRideAt("");
     setBookingStep("confirm");
   };
 
   const openSchedulePicker = async () => {
-    const nextVerifiedTripMap = await verifyBookingLocations();
-
-    if (!nextVerifiedTripMap) {
+    if (isOpeningSchedulePicker) {
       return;
     }
 
-    setSchedulePickerVisible(true);
+    setIsOpeningSchedulePicker(true);
+    const nextVerifiedTripMap = await verifyBookingLocations();
+
+    if (nextVerifiedTripMap) {
+      setSchedulePickerVisible(true);
+    }
+
+    setIsOpeningSchedulePicker(false);
   };
 
     const selectAddressSuggestion = async (field, suggestion) => {
@@ -1391,22 +1560,7 @@ export default function SearchScreen() {
         return;
       }
 
-      setIsVerifyingMap(true);
-
-      try {
-        const nextVerifiedTripMap = await createVerifiedTripMap(
-          selectedFromPlace,
-          resolvedPlace
-        );
-
-        setVerifiedTripMap(nextVerifiedTripMap);
-        setBookingStep("confirm");
-      } catch (error) {
-        setVerifiedTripMap(null);
-        setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 x\u00e1c minh \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
-      } finally {
-        setIsVerifyingMap(false);
-      }
+      setFocusedField("");
     } catch (error) {
       setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
     }
@@ -1414,6 +1568,7 @@ export default function SearchScreen() {
 
   const confirmSchedulePicker = () => {
     setScheduledRideTime(scheduleDisplayText);
+    setScheduledRideAt(pickupDate.toISOString());
     setSchedulePickerVisible(false);
     setBookingStep("confirm");
   };
@@ -1539,22 +1694,7 @@ export default function SearchScreen() {
         return;
       }
 
-      setIsVerifyingMap(true);
-
-      try {
-        const nextVerifiedTripMap = await createVerifiedTripMap(
-          selectedFromPlace,
-          resolvedPlace
-        );
-
-        setVerifiedTripMap(nextVerifiedTripMap);
-        setBookingStep("confirm");
-      } catch (error) {
-        setVerifiedTripMap(null);
-        setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 x\u00e1c minh \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
-      } finally {
-        setIsVerifyingMap(false);
-      }
+      setFocusedField("");
     } catch (error) {
       setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 \u0111\u00e3 l\u01b0u t\u1eeb Geoapify.");
     }
@@ -1800,8 +1940,14 @@ export default function SearchScreen() {
                 </ThemedText>
               </View>
               <ThemedText type="small" style={styles.findingMeta}>
-                {(activeBookedRide?.tripDuration ?? verifiedTripMap?.directions.durationText ?? "--")} {"\u2022"}{" "}
-                {(activeBookedRide?.tripDistance ?? verifiedTripMap?.directions.distanceText ?? "--")}
+                {(activeBookedRide?.tripDuration ??
+                  backendTripMetrics?.durationText ??
+                  verifiedTripMap?.directions.durationText ??
+                  "--")} {"\u2022"}{" "}
+                {(activeBookedRide?.tripDistance ??
+                  backendTripMetrics?.distanceText ??
+                  verifiedTripMap?.directions.distanceText ??
+                  "--")}
               </ThemedText>
               <ThemedText type="smallBold" style={styles.findingStatusText}>
                 {tripStatusView.label}
@@ -1855,9 +2001,15 @@ export default function SearchScreen() {
                   style={[
                     styles.findingSecondaryButton,
                     canCancelTrackedTrip && styles.cancelRideButton,
+                    isCancellingRide && styles.bookButtonDisabled,
                   ]}
+                  disabled={isCancellingRide}
                   onPress={() => {
-                    if (!canCancelTrackedTrip) {
+                    if (canCancelTrackedTrip) {
+                      handleCancelBookedRide();
+                    } else if (trackedTripStatus === "cancelled") {
+                      resetSingleRideBookingForm();
+                    } else {
                       setBookingStep("rideOptions");
                     }
                   }}
@@ -1869,7 +2021,11 @@ export default function SearchScreen() {
                       canCancelTrackedTrip && styles.cancelRideButtonText,
                     ]}
                   >
-                    {canCancelTrackedTrip ? "H\u1ee7y chuy\u1ebfn" : "Quay l\u1ea1i"}
+                    {isCancellingRide
+                      ? "\u0110ang h\u1ee7y..."
+                      : canCancelTrackedTrip
+                        ? "H\u1ee7y chuy\u1ebfn"
+                        : "Quay l\u1ea1i"}
                   </ThemedText>
                 </Pressable>
               )}
@@ -1903,8 +2059,12 @@ export default function SearchScreen() {
                     {"Tuy\u1ebfn \u0111\u01b0\u1eddng \u0111\u00e3 x\u00e1c minh"}
                   </ThemedText>
                     <ThemedText type="small" style={styles.routeMapFallbackMeta}>
-                      {verifiedTripMap?.directions.durationText || "\u0110ang t\u00ednh"} {"\u2022"}{" "}
-                      {verifiedTripMap?.directions.distanceText || "--"}
+                      {backendTripMetrics?.durationText ||
+                        verifiedTripMap?.directions.durationText ||
+                        "\u0110ang t\u00ednh"} {"\u2022"}{" "}
+                      {backendTripMetrics?.distanceText ||
+                        verifiedTripMap?.directions.distanceText ||
+                        "--"}
                     </ThemedText>
                   </View>
                   <View style={styles.routeMapFallbackBody}>
@@ -1931,8 +2091,12 @@ export default function SearchScreen() {
                 </Pressable>
                 <View style={styles.routeInfoPill}>
                   <ThemedText type="smallBold" style={styles.routeInfoText}>
-                    {verifiedTripMap?.directions.durationText || "\u0110ang t\u00ednh"} {"\u2022"}{" "}
-                    {verifiedTripMap?.directions.distanceText || "--"}
+                    {backendTripMetrics?.durationText ||
+                      verifiedTripMap?.directions.durationText ||
+                      "\u0110ang t\u00ednh"} {"\u2022"}{" "}
+                    {backendTripMetrics?.distanceText ||
+                      verifiedTripMap?.directions.distanceText ||
+                      "--"}
                   </ThemedText>
                 </View>
               </View>
@@ -2112,58 +2276,63 @@ export default function SearchScreen() {
           </View>
         ) : mode !== "shared" ? (
           <>
-            <View
-              style={[
-                styles.inputWrap,
-                {
-                  backgroundColor: theme.backgroundElement,
-                },
-              ]}
-            >
-              <TextInput
-                ref={fromInputRef}
-                {...vietnameseTextInputProps}
-                placeholder={"\u0110i\u1ec3m \u0111\u00f3n (v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i)"}
-                placeholderTextColor={theme.textSecondary}
+            <View style={styles.fieldGroup}>
+              <ThemedText type="smallBold" style={styles.inputLabel}>
+                {"\u0110i\u1ec3m \u0111\u00f3n"}
+              </ThemedText>
+              <View
                 style={[
-                  styles.input,
+                  styles.inputWrap,
                   {
-                    color: theme.text,
+                    backgroundColor: theme.backgroundElement,
                   },
                 ]}
-                value={fromInput}
-                onChangeText={(value) => {
-                  hasEditedFromInputRef.current = true;
-                  setFromInput(value);
-                  setSelectedFromPlace(null);
-                  setSelectedToPlace(null);
-                  setVerifiedTripMap(null);
-                  if (value.trim().length < 2) {
-                    setAddressSuggestions((current) => ({
-                      ...current,
-                      from: [],
-                    }));
-                    setSuggestionError((current) => ({
-                      ...current,
-                      from: '',
-                    }));
-                  }
-                  if (alertMessage) {
-                    setAlertMessage('');
-                  }
-                }}
-                onFocus={() => setFocusedField('from')}
-              />
-              {Boolean(fromInput) && (
-                <Pressable
-                  style={styles.inputClearButton}
-                  onPress={() => clearAddressField("from")}
-                >
-                  <ThemedText type="smallBold" style={styles.inputClearText}>
-                    {"\u00d7"}
-                  </ThemedText>
-                </Pressable>
-              )}
+              >
+                <TextInput
+                  ref={fromInputRef}
+                  {...vietnameseTextInputProps}
+                  placeholder={"Nh\u1eadp \u0111i\u1ec3m xu\u1ea5t ph\u00e1t"}
+                  placeholderTextColor={theme.textSecondary}
+                  style={[
+                    styles.input,
+                    {
+                      color: fromInput ? PICKUP_BLUE : theme.text,
+                    },
+                  ]}
+                  value={fromInput}
+                  onChangeText={(value) => {
+                    hasEditedFromInputRef.current = true;
+                    setFromInput(value);
+                    setSelectedFromPlace(null);
+                    setSelectedToPlace(null);
+                    setVerifiedTripMap(null);
+                    if (value.trim().length < 2) {
+                      setAddressSuggestions((current) => ({
+                        ...current,
+                        from: [],
+                      }));
+                      setSuggestionError((current) => ({
+                        ...current,
+                        from: '',
+                      }));
+                    }
+                    if (alertMessage) {
+                      setAlertMessage('');
+                    }
+                  }}
+                  onFocus={() => setFocusedField('from')}
+                />
+                {Boolean(fromInput) && (
+                  <Pressable
+                    style={styles.inputClearButton}
+                    onPress={() => clearAddressField("from")}
+                  >
+                    <ThemedText type="smallBold" style={styles.inputClearText}>
+                      {"\u00d7"}
+                    </ThemedText>
+                  </Pressable>
+                )}
+              </View>
             </View>
             {focusedField === "from" && (
               <View style={styles.suggestionCard}>
@@ -2250,56 +2419,61 @@ export default function SearchScreen() {
                 )}
               </View>
             )}
-            <View
-              style={[
-                styles.inputWrap,
-                {
-                  backgroundColor: theme.backgroundElement,
-                },
-              ]}
-            >
-              <TextInput
-                ref={toInputRef}
-                {...vietnameseTextInputProps}
-                placeholder={"\u0110i\u1ec3m \u0111\u1ebfn"}
-                placeholderTextColor={theme.textSecondary}
+            <View style={styles.fieldGroup}>
+              <ThemedText type="smallBold" style={styles.inputLabel}>
+                {"\u0110i\u1ec3m \u0111\u1ebfn"}
+              </ThemedText>
+              <View
                 style={[
-                  styles.input,
+                  styles.inputWrap,
                   {
-                    color: theme.text,
+                    backgroundColor: theme.backgroundElement,
                   },
                 ]}
-                value={toInput}
-                onChangeText={(value) => {
-                  setToInput(value);
-                  setSelectedToPlace(null);
-                  setVerifiedTripMap(null);
-                  if (value.trim().length < 2) {
-                    setAddressSuggestions((current) => ({
-                      ...current,
-                      to: [],
-                    }));
-                    setSuggestionError((current) => ({
-                      ...current,
-                      to: '',
-                    }));
-                  }
-                  if (alertMessage) {
-                    setAlertMessage('');
-                  }
-                }}
-                onFocus={() => setFocusedField('to')}
-              />
-              {Boolean(toInput) && (
-                <Pressable
-                  style={styles.inputClearButton}
-                  onPress={() => clearAddressField("to")}
-                >
-                  <ThemedText type="smallBold" style={styles.inputClearText}>
-                    {"\u00d7"}
-                  </ThemedText>
-                </Pressable>
-              )}
+              >
+                <TextInput
+                  ref={toInputRef}
+                  {...vietnameseTextInputProps}
+                  placeholder={"B\u1ea1n mu\u1ed1n \u0111i \u0111\u00e2u?"}
+                  placeholderTextColor={theme.textSecondary}
+                  style={[
+                    styles.input,
+                    {
+                      color: toInput ? DESTINATION_GREEN : theme.text,
+                    },
+                  ]}
+                  value={toInput}
+                  onChangeText={(value) => {
+                    setToInput(value);
+                    setSelectedToPlace(null);
+                    setVerifiedTripMap(null);
+                    if (value.trim().length < 2) {
+                      setAddressSuggestions((current) => ({
+                        ...current,
+                        to: [],
+                      }));
+                      setSuggestionError((current) => ({
+                        ...current,
+                        to: '',
+                      }));
+                    }
+                    if (alertMessage) {
+                      setAlertMessage('');
+                    }
+                  }}
+                  onFocus={() => setFocusedField('to')}
+                />
+                {Boolean(toInput) && (
+                  <Pressable
+                    style={styles.inputClearButton}
+                    onPress={() => clearAddressField("to")}
+                  >
+                    <ThemedText type="smallBold" style={styles.inputClearText}>
+                      {"\u00d7"}
+                    </ThemedText>
+                  </Pressable>
+                )}
+              </View>
             </View>
             {focusedField === "to" &&
               (addressSuggestions.to.length > 0 ||
@@ -2418,12 +2592,15 @@ export default function SearchScreen() {
 
             <View style={styles.buttonRow}>
               <Pressable
-                style={[styles.secondaryButton, isVerifyingMap && styles.buttonDisabled]}
+                style={[
+                  styles.secondaryButton,
+                  isOpeningSchedulePicker && styles.buttonDisabled,
+                ]}
                 onPress={openSchedulePicker}
-                disabled={isVerifyingMap}
+                disabled={isOpeningSchedulePicker}
               >
                 <ThemedText type="smallBold" style={styles.secondaryButtonText}>
-                  {"H\u1eb9n l\u1ecbch"}
+                  {isOpeningSchedulePicker ? "\u0110ang m\u1edf..." : "H\u1eb9n l\u1ecbch"}
                 </ThemedText>
               </Pressable>
 
@@ -2433,7 +2610,7 @@ export default function SearchScreen() {
                 disabled={isVerifyingMap}
               >
                 <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                  {isVerifyingMap ? "\u0110ang x\u00e1c minh..." : "Ti\u1ebfp t\u1ee5c"}
+                  {"Ti\u1ebfp t\u1ee5c"}
                 </ThemedText>
               </Pressable>
             </View>
@@ -3342,6 +3519,13 @@ const styles = StyleSheet.create({
   },
   segmentTextActive: {
     color: "#FFFFFF",
+  },
+  fieldGroup: {
+    gap: 6,
+  },
+  inputLabel: {
+    color: "#1F2937",
+    paddingLeft: Spacing.one,
   },
   inputWrap: {
     minHeight: 54,
