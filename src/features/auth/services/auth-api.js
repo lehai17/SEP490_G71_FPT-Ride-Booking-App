@@ -14,6 +14,22 @@ export function login(payload) {
   });
 }
 
+export function refreshToken(refreshTokenValue) {
+  return apiRequest("/auth/refresh-token", {
+    method: "POST",
+    body: JSON.stringify({ refreshToken: refreshTokenValue }),
+  });
+}
+
+export function logout(accessToken) {
+  return apiRequest("/auth/logout", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+}
+
 export function sendVerifyEmailOtp(payload) {
   return apiRequest("/auth/verify-email/send", {
     method: "POST",

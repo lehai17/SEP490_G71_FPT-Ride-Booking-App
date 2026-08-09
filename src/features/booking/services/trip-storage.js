@@ -2,6 +2,10 @@ import * as SecureStore from "expo-secure-store";
 
 const BOOKED_TRIPS_STORAGE_KEY = "fpt-ride.booked-trips";
 
+function getField(source, camelKey, pascalKey) {
+  return source?.[camelKey] ?? source?.[pascalKey];
+}
+
 async function readBookedTrips() {
   const rawTrips = await SecureStore.getItemAsync(BOOKED_TRIPS_STORAGE_KEY);
 
@@ -44,6 +48,11 @@ export async function loadBookedTrips() {
   return readBookedTrips();
 }
 
+export async function removeBookedTrip(tripId) {
+  const currentTrips = await readBookedTrips();
+  await writeBookedTrips(currentTrips.filter((trip) => trip.id !== tripId));
+}
+
 export function toActiveTripSectionItem(trip) {
   const route =
     trip.route || `${trip.pickup || ""} \u2192 ${trip.destination || ""}`.trim();
@@ -65,7 +74,8 @@ export function toScheduledTripSectionItem(trip) {
   const route =
     trip.route || `${trip.pickup || ""} \u2192 ${trip.destination || ""}`.trim();
   const price = trip.price || trip.estimatedFare || "--";
-  const scheduledAt = trip.scheduledAt ? new Date(trip.scheduledAt) : null;
+  const scheduledAtValue = getField(trip, "scheduledAt", "ScheduledAt");
+  const scheduledAt = scheduledAtValue ? new Date(scheduledAtValue) : null;
   const scheduleText =
     scheduledAt && !Number.isNaN(scheduledAt.getTime())
       ? `${String(scheduledAt.getDate()).padStart(2, "0")}/${String(
@@ -74,7 +84,7 @@ export function toScheduledTripSectionItem(trip) {
           2,
           "0"
         )}:${String(scheduledAt.getMinutes()).padStart(2, "0")}`
-      : trip.scheduledRideTime || "\u0110\u00e3 h\u1eb9n l\u1ecbch";
+      : trip.scheduledRideTime || "";
 
   return {
     id: trip.id,
@@ -84,8 +94,11 @@ export function toScheduledTripSectionItem(trip) {
     actionPrimary: "S\u1eeda",
     actionSecondary: "H\u1ee7y",
     rating: null,
-    scheduledAt: trip.scheduledAt || "",
-    createdAt: trip.createdAt || "",
+    scheduledAt: scheduledAtValue || "",
+    scheduledPickupText: trip.scheduledPickupText || scheduleText,
+    status: getField(trip, "status", "Status") ?? "",
+    statusLabel: trip.statusLabel || "",
+    createdAt: getField(trip, "createdAt", "CreatedAt") || "",
     distanceText: trip.tripDistance || trip.distanceText || "",
     durationText: trip.tripDuration || trip.durationText || "",
     sortTimestamp:

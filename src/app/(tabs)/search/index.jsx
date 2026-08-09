@@ -25,15 +25,15 @@ import { useAuth } from "@/contexts/auth-context";
 import { rideGroups } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 import {
-  getGeoapifyDirections,
-  buildGeoapifyInteractiveMapHtml,
-  getGeoapifyPlaceDetails,
-  getGeoapifyPlaceSuggestions,
-  getGeoapifyPlaceMapUrl,
-  getGeoapifyStaticMapUrl,
-  reverseGeoapifyPlaceLocation,
-  isGeoapifyConfigured,
-} from "@/features/booking/services/geoapify-api";
+  getVietMapDirections as getMapDirections,
+  buildVietMapInteractiveMapHtml as buildMapInteractiveMapHtml,
+  getVietMapPlaceDetails as getMapPlaceDetails,
+  getVietMapPlaceSuggestions as getMapPlaceSuggestions,
+  getVietMapPlaceMapUrl as getMapPlaceMapUrl,
+  getVietMapStaticMapUrl as getMapStaticMapUrl,
+  reverseVietMapPlaceLocation as reverseMapPlaceLocation,
+  isVietMapConfigured as isMapConfigured,
+} from "@/features/booking/services/vietmap-api";
 import { estimateFare } from "@/features/booking/services/pricing-api";
 import {
   cancelTrip,
@@ -41,6 +41,13 @@ import {
   getTrip,
 } from "@/features/booking/services/trip-api";
 import { persistBookedTrip } from "@/features/booking/services/trip-storage";
+import {
+  cancelRideSharingRequest,
+  createRideSharingRequest,
+  getMyRideSharingGroup,
+  getMyRideSharingRequest,
+  getRideSharingRequest,
+} from "@/features/ride-sharing/services/ride-sharing-api";
 
 const BRAND = "#FF7A00";
 const MAP_BG = "#FFF3C9";
@@ -63,6 +70,40 @@ const vietnameseTextInputProps = {
   keyboardType: "default",
   disableFullscreenUI: true,
 };
+
+function formatDeviceReverseAddress(address) {
+  if (!address) {
+    return "";
+  }
+
+  return [
+    address.name,
+    address.street,
+    address.district,
+    address.city,
+    address.region,
+    address.country,
+  ]
+    .filter(Boolean)
+    .filter((part, index, parts) => parts.indexOf(part) === index)
+    .join(", ");
+}
+
+function formatCoordinateAddress(location) {
+  if (!location) {
+    return "";
+  }
+
+  const lat = Number(location.lat);
+  const lng = Number(location.lng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return "";
+  }
+
+  return `Tọa độ hiện tại: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+}
+
 const rideOptions = [
   {
     id: "bike",
@@ -163,6 +204,229 @@ function getTripDurationText(trip, fallbackText = "--") {
   return trip?.estimatedDurationMinute != null
     ? formatDurationMinute(trip.estimatedDurationMinute)
     : fallbackText;
+}
+
+function formatSharedSchedule(value) {
+  if (!value) {
+    return "Chưa có lịch đi";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Chưa có lịch đi";
+  }
+
+  return date.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function normalizeSharedStatusLabel(status) {
+  const normalizedStatus = String(status ?? "").replace(/\s+/g, "").toLowerCase();
+
+  if (normalizedStatus === "waiting") {
+    return "Đang chờ ghép nhóm";
+  }
+
+  if (normalizedStatus === "matched") {
+    return "Đã tìm thấy nhóm phù hợp";
+  }
+
+  if (normalizedStatus === "ingroup") {
+    return "Đã vào nhóm";
+  }
+
+  if (normalizedStatus === "driverassigned") {
+    return "Đã có tài xế";
+  }
+
+  if (normalizedStatus === "waitingdeparture") {
+    return "Chờ đến giờ khởi hành";
+  }
+
+  if (normalizedStatus === "driverdriving") {
+    return "Tài xế đang đến";
+  }
+
+  if (normalizedStatus === "passengerboarding") {
+    return "Đang đón khách";
+  }
+
+  if (normalizedStatus === "inprogress") {
+    return "Đang di chuyển";
+  }
+
+  if (normalizedStatus === "completed") {
+    return "Hoàn thành";
+  }
+
+  if (normalizedStatus === "cancelled") {
+    return "Đã hủy";
+  }
+
+  if (normalizedStatus === "nodriverfound") {
+    return "Chưa tìm thấy tài xế";
+  }
+
+  if (normalizedStatus === "expired") {
+    return "Đã hết hạn";
+  }
+
+  return status || "Pending";
+}
+
+function mapRideSharingRequestToCard(request, group = null) {
+  if (!request?.id) {
+    return null;
+  }
+
+  const pickup = request.pickupAddress || "Điểm đón";
+  const destination = request.destinationAddress || "Điểm đến";
+  const groupPassengerCount = group?.currentPassengers ?? 1;
+  const groupCapacity = group?.maxPassengers ?? 3;
+
+  return {
+    id: request.id,
+    requestId: request.id,
+    groupId: request.groupId ?? group?.id ?? "",
+    route: `${pickup} → ${destination}`,
+    vehicle: "Xe ghép",
+    price: formatCurrencyVnd(Number(request.finalFare ?? request.quotedFare)),
+    distance: formatDistanceKm(request.estimatedDistanceKm),
+    duration: formatDurationMinute(request.estimatedDurationMinutes),
+    seats: `${groupPassengerCount}/${groupCapacity} người`,
+    note: formatSharedSchedule(request.scheduledAt),
+    scheduleText: formatSharedSchedule(request.scheduledAt),
+    status: request.status,
+    statusLabel: normalizeSharedStatusLabel(request.status),
+    driver: group?.driverName || "Chưa có tài xế",
+    destination,
+    participantCount: groupPassengerCount,
+    capacity: groupCapacity,
+    perPersonPrice: formatCurrencyVnd(Number(request.finalFare ?? request.quotedFare)),
+    createdAt: request.createdAt,
+  };
+}
+
+void mapRideSharingRequestToCard;
+
+function formatSharedScheduleClean(value) {
+  if (!value) {
+    return "Ch\u01b0a c\u00f3 l\u1ecbch \u0111i";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Ch\u01b0a c\u00f3 l\u1ecbch \u0111i";
+  }
+
+  return date.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function normalizeSharedStatusLabelClean(status) {
+  const normalizedStatus = String(status ?? "").replace(/\s+/g, "").toLowerCase();
+  const labels = {
+    waiting: "\u0110ang ch\u1edd gh\u00e9p nh\u00f3m",
+    matched: "\u0110\u00e3 t\u00ecm th\u1ea5y nh\u00f3m ph\u00f9 h\u1ee3p",
+    ingroup: "\u0110\u00e3 v\u00e0o nh\u00f3m",
+    driverassigned: "\u0110\u00e3 c\u00f3 t\u00e0i x\u1ebf",
+    waitingdeparture: "Ch\u1edd \u0111\u1ebfn gi\u1edd kh\u1edfi h\u00e0nh",
+    driverdriving: "T\u00e0i x\u1ebf \u0111ang \u0111\u1ebfn",
+    passengerboarding: "\u0110ang \u0111\u00f3n kh\u00e1ch",
+    inprogress: "\u0110ang di chuy\u1ec3n",
+    completed: "Ho\u00e0n th\u00e0nh",
+    cancelled: "\u0110\u00e3 h\u1ee7y",
+    nodriverfound: "Ch\u01b0a t\u00ecm th\u1ea5y t\u00e0i x\u1ebf",
+    expired: "\u0110\u00e3 h\u1ebft h\u1ea1n",
+    readyforbroadcast: "S\u1eb5n s\u00e0ng t\u00ecm t\u00e0i x\u1ebf",
+    driveraccepted: "T\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn",
+  };
+
+  return labels[normalizedStatus] || status || "Pending";
+}
+
+function mapRideSharingRequestToCardClean(request, group = null) {
+  if (!request?.id) {
+    return null;
+  }
+
+  const pickup = request.pickupAddress || "\u0110i\u1ec3m \u0111\u00f3n";
+  const destination = request.destinationAddress || "\u0110i\u1ec3m \u0111\u1ebfn";
+  const groupPassengerCount = group?.currentPassengers ?? 1;
+  const groupCapacity = group?.maxPassengers ?? 3;
+  const fare = Number(request.finalFare ?? request.quotedFare);
+
+  return {
+    id: request.id,
+    requestId: request.id,
+    groupId: request.groupId ?? group?.id ?? "",
+    route: `${pickup} \u2192 ${destination}`,
+    vehicle: "Xe gh\u00e9p",
+    price: formatCurrencyVnd(fare),
+    distance: formatDistanceKm(request.estimatedDistanceKm),
+    duration: formatDurationMinute(request.estimatedDurationMinutes),
+    seats: `${groupPassengerCount}/${groupCapacity} ng\u01b0\u1eddi`,
+    note: formatSharedScheduleClean(request.scheduledAt),
+    scheduleText: formatSharedScheduleClean(request.scheduledAt),
+    status: request.status,
+    statusLabel: normalizeSharedStatusLabelClean(request.status),
+    driver: group?.driverName || "Ch\u01b0a c\u00f3 t\u00e0i x\u1ebf",
+    destination,
+    participantCount: groupPassengerCount,
+    capacity: groupCapacity,
+    perPersonPrice: formatCurrencyVnd(fare),
+    createdAt: request.createdAt,
+  };
+}
+
+function mapRideSharingGroupToCard(group) {
+  if (!group?.id) {
+    return null;
+  }
+
+  const members = Array.isArray(group.members) ? group.members : [];
+  const firstMember = members[0] ?? {};
+  const pickup = firstMember.pickupAddress || "\u0110i\u1ec3m \u0111\u00f3n";
+  const destination =
+    firstMember.destinationAddress ||
+    group.destinationAddress ||
+    "\u0110i\u1ec3m \u0111\u1ebfn";
+  const fare = Number(firstMember.finalFare ?? group.finalFare ?? 0);
+
+  return {
+    id: group.id,
+    requestId: firstMember.requestId || firstMember.rideSharingRequestId || "",
+    groupId: group.id,
+    route: `${pickup} \u2192 ${destination}`,
+    vehicle: "Nh\u00f3m xe gh\u00e9p",
+    price: formatCurrencyVnd(fare),
+    distance: formatDistanceKm(firstMember.estimatedDistanceKm),
+    duration: formatDurationMinute(firstMember.estimatedDurationMinutes),
+    seats: `${group.currentPassengers ?? members.length}/${group.maxPassengers ?? 3} ng\u01b0\u1eddi`,
+    note: formatSharedScheduleClean(group.scheduledDepartureTime),
+    scheduleText: formatSharedScheduleClean(group.scheduledDepartureTime),
+    status: group.status,
+    statusLabel: normalizeSharedStatusLabelClean(group.status),
+    driver: group.driverName || "Ch\u01b0a c\u00f3 t\u00e0i x\u1ebf",
+    destination,
+    participantCount: group.currentPassengers ?? members.length,
+    capacity: group.maxPassengers ?? 3,
+    perPersonPrice: formatCurrencyVnd(fare),
+    createdAt: group.createdAt,
+    canCancel: false,
+  };
 }
 
 function formatTripDateTime(value) {
@@ -450,6 +714,18 @@ function getSharedSlotDateTime(dateValue, slotTime) {
   return date;
 }
 
+function formatLocalApiDateTime(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return [
+    date.getFullYear(),
+    padSchedule(date.getMonth() + 1),
+    padSchedule(date.getDate()),
+  ].join("-") + `T${padSchedule(date.getHours())}:${padSchedule(date.getMinutes())}:00`;
+}
+
 function isSharedSlotAvailable(slot, dateValue) {
   if (!dateValue) {
     return true;
@@ -572,6 +848,10 @@ export default function SearchScreen() {
   const [sharedLocationSuggestions, setSharedLocationSuggestions] = useState([]);
   const [sharedLocationLoading, setSharedLocationLoading] = useState(false);
   const [sharedLocationError, setSharedLocationError] = useState("");
+  const [selectedSharedPlace, setSelectedSharedPlace] = useState(null);
+  const [isLoadingSharedState, setIsLoadingSharedState] = useState(false);
+  const [isCreatingSharedRequest, setIsCreatingSharedRequest] = useState(false);
+  const [cancellingSharedRequestId, setCancellingSharedRequestId] = useState("");
   const [isBookingRide, setIsBookingRide] = useState(false);
   const [isCancellingRide, setIsCancellingRide] = useState(false);
   const [activeBookedRide, setActiveBookedRide] = useState(null);
@@ -624,14 +904,14 @@ export default function SearchScreen() {
 
     let isActive = true;
     const timeoutId = setTimeout(async () => {
-      if (!isGeoapifyConfigured()) {
+      if (!isMapConfigured()) {
         return;
       }
 
       setLoadingSuggestionsFor(focusedField);
 
       try {
-        const suggestions = await getGeoapifyPlaceSuggestions(query);
+        const suggestions = await getMapPlaceSuggestions(query);
 
         if (isActive) {
           setAddressSuggestions((current) => ({
@@ -652,7 +932,7 @@ export default function SearchScreen() {
           setSuggestionError((current) => ({
             ...current,
             [focusedField]:
-              error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c g\u1ee3i \u00fd. Ki\u1ec3m tra API b\u1ea3n \u0111\u1ed3 trong Geoapify.",
+              error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c g\u1ee3i \u00fd. Ki\u1ec3m tra API b\u1ea3n \u0111\u1ed3 trong VietMap.",
           }));
         }
       } finally {
@@ -756,14 +1036,14 @@ export default function SearchScreen() {
 
     let isActive = true;
     const timeoutId = setTimeout(async () => {
-      if (!isGeoapifyConfigured()) {
+      if (!isMapConfigured()) {
         return;
       }
 
       setSharedLocationLoading(true);
 
       try {
-        const suggestions = await getGeoapifyPlaceSuggestions(query);
+        const suggestions = await getMapPlaceSuggestions(query);
 
         if (isActive) {
           setSharedLocationSuggestions(suggestions);
@@ -777,7 +1057,7 @@ export default function SearchScreen() {
         if (isActive) {
           setSharedLocationSuggestions([]);
           setSharedLocationError(
-            error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c g\u1ee3i \u00fd. Ki\u1ec3m tra API b\u1ea3n \u0111\u1ed3 trong Geoapify."
+            error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c g\u1ee3i \u00fd. Ki\u1ec3m tra API b\u1ea3n \u0111\u1ed3 trong VietMap."
           );
         }
       } finally {
@@ -792,6 +1072,50 @@ export default function SearchScreen() {
       clearTimeout(timeoutId);
     };
   }, [createSharedVisible, sharedForm.location]);
+
+  useEffect(() => {
+    if (mode !== "shared" || !session?.accessToken) {
+      setPendingSharedRequests([]);
+      return undefined;
+    }
+
+    let isActive = true;
+
+    const loadSharedState = async () => {
+      setIsLoadingSharedState(true);
+
+      try {
+        const [requestResult, groupResult] = await Promise.allSettled([
+          getMyRideSharingRequest(session.accessToken),
+          getMyRideSharingGroup(session.accessToken),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        const request =
+          requestResult.status === "fulfilled" ? requestResult.value : null;
+        const group = groupResult.status === "fulfilled" ? groupResult.value : null;
+        const mappedRequest = mapRideSharingRequestToCardClean(request, group);
+        const mappedGroup = mapRideSharingGroupToCard(group);
+
+        setPendingSharedRequests(
+          mappedRequest ? [mappedRequest] : mappedGroup ? [mappedGroup] : []
+        );
+      } finally {
+        if (isActive) {
+          setIsLoadingSharedState(false);
+        }
+      }
+    };
+
+    loadSharedState();
+
+    return () => {
+      isActive = false;
+    };
+  }, [mode, session?.accessToken]);
 
   useEffect(() => {
     if (bookingStep !== "rideOptions" || !verifiedTripMap) {
@@ -923,7 +1247,7 @@ export default function SearchScreen() {
   const arrivalDate = addScheduleMinutes(pickupDate, MOCK_TRIP_DURATION_MINUTES);
   const scheduleDisplayText = `${scheduleDraft.time} \u2022 ${scheduleDraft.dateDisplay} (${scheduleDraft.dateLabel})`;
   const pickupMapHtml = verifiedTripMap
-    ? buildGeoapifyInteractiveMapHtml({
+    ? buildMapInteractiveMapHtml({
         center: verifiedTripMap.origin.location,
         markers: [
           {
@@ -937,7 +1261,7 @@ export default function SearchScreen() {
       })
     : "";
   const routeMapHtml = verifiedTripMap
-    ? buildGeoapifyInteractiveMapHtml({
+    ? buildMapInteractiveMapHtml({
         center: verifiedTripMap.origin.location,
         markers: [
           {
@@ -1010,7 +1334,7 @@ export default function SearchScreen() {
 
   const resolvePlaceSuggestion = async (suggestion) => {
     if (!suggestion?.placeId && !suggestion?.location) {
-      throw new Error("Kh\u00f4ng t\u00ecm th\u1ea5y th\u00f4ng tin \u0111\u1ecba ch\u1ec9 t\u1eeb Geoapify.");
+      throw new Error("Kh\u00f4ng t\u00ecm th\u1ea5y th\u00f4ng tin \u0111\u1ecba ch\u1ec9 t\u1eeb VietMap.");
     }
 
     if (suggestion.location) {
@@ -1021,7 +1345,7 @@ export default function SearchScreen() {
       };
     }
 
-    const place = await getGeoapifyPlaceDetails(suggestion.placeId);
+    const place = await getMapPlaceDetails(suggestion.placeId);
 
     return {
       ...suggestion,
@@ -1033,7 +1357,7 @@ export default function SearchScreen() {
   };
 
   const resolveSavedAddress = async (label) => {
-    const suggestions = await getGeoapifyPlaceSuggestions(label);
+    const suggestions = await getMapPlaceSuggestions(label);
     const normalizedLabel = label.trim().toLowerCase();
     const matchedSuggestion =
       suggestions.find((suggestion) => {
@@ -1049,7 +1373,7 @@ export default function SearchScreen() {
       }) ?? suggestions[0];
 
     if (!matchedSuggestion) {
-      throw new Error(`Kh\u00f4ng t\u00ecm th\u1ea5y \u0111\u1ecba ch\u1ec9 "${label}" tr\u00ean Geoapify.`);
+      throw new Error(`Kh\u00f4ng t\u00ecm th\u1ea5y \u0111\u1ecba ch\u1ec9 "${label}" tr\u00ean VietMap.`);
     }
 
     return resolvePlaceSuggestion(matchedSuggestion);
@@ -1077,23 +1401,88 @@ export default function SearchScreen() {
       location,
     };
 
-    if (!isGeoapifyConfigured()) {
+    if (!isMapConfigured()) {
       return fallbackPlace;
     }
 
     try {
-      const reversedPlace = await reverseGeoapifyPlaceLocation(location);
+      const reversedPlace = await reverseMapPlaceLocation(location);
+      const reversedAddress =
+        reversedPlace.formattedAddress ||
+        reversedPlace.description ||
+        reversedPlace.mainText ||
+        "";
+
+      if (!reversedAddress.trim()) {
+        throw new Error("VietMap không trả về địa chỉ cho tọa độ hiện tại.");
+      }
 
       return {
         ...fallbackPlace,
         ...reversedPlace,
-        formattedAddress: reversedPlace.formattedAddress || fallbackPlace.formattedAddress,
-        description: reversedPlace.description || fallbackPlace.description,
-        mainText: reversedPlace.mainText || fallbackPlace.mainText,
+        formattedAddress: reversedAddress || fallbackPlace.formattedAddress,
+        description: reversedAddress || reversedPlace.description || fallbackPlace.description,
+        mainText: reversedPlace.mainText || reversedAddress || fallbackPlace.mainText,
         location: reversedPlace.location || location,
       };
     } catch {
-      return fallbackPlace;
+      try {
+        const [deviceAddress] = await Location.reverseGeocodeAsync({
+          latitude: location.lat,
+          longitude: location.lng,
+        });
+        const formattedAddress = formatDeviceReverseAddress(deviceAddress);
+
+        if (formattedAddress) {
+          return {
+            ...fallbackPlace,
+            formattedAddress,
+            description: formattedAddress,
+            mainText: formattedAddress,
+          };
+        }
+      } catch {
+        // Neu ca VietMap va he thong deu khong reverse duoc, dung fallback an toan.
+      }
+
+      try {
+        const nearbySuggestions = await getMapPlaceSuggestions(
+          `${location.lat}, ${location.lng}`
+        );
+        const nearbyPlace = nearbySuggestions.find(
+          (suggestion) =>
+            suggestion.formattedAddress ||
+            suggestion.description ||
+            suggestion.mainText
+        );
+        const nearbyAddress =
+          nearbyPlace?.formattedAddress ||
+          nearbyPlace?.description ||
+          nearbyPlace?.mainText ||
+          "";
+
+        if (nearbyAddress) {
+          return {
+            ...fallbackPlace,
+            ...nearbyPlace,
+            formattedAddress: nearbyAddress,
+            description: nearbyAddress,
+            mainText: nearbyPlace.mainText || nearbyAddress,
+            location: nearbyPlace.location || location,
+          };
+        }
+      } catch {
+        // Neu VietMap khong tim duoc dia chi gan toa do, hien toa do de user biet GPS dang o dau.
+      }
+
+      const coordinateAddress = formatCoordinateAddress(location);
+
+      return {
+        ...fallbackPlace,
+        formattedAddress: coordinateAddress || fallbackPlace.formattedAddress,
+        description: coordinateAddress || fallbackPlace.description,
+        mainText: coordinateAddress || fallbackPlace.mainText,
+      };
     }
   };
 
@@ -1162,7 +1551,7 @@ export default function SearchScreen() {
             mainText: formattedAddress,
             location,
           }
-        : await reverseGeoapifyPlaceLocation(location);
+        : await reverseMapPlaceLocation(location);
 
       syncAddressInputText("from", resolvedPlace.formattedAddress);
       setSelectedFromPlace(resolvedPlace);
@@ -1188,8 +1577,8 @@ export default function SearchScreen() {
   };
 
   const createVerifiedTripMap = async (origin, destination) => {
-    const directions = await getGeoapifyDirections(origin, destination);
-    const driverDirections = await getGeoapifyDirections(MOCK_DRIVER_POINT, origin);
+    const directions = await getMapDirections(origin, destination);
+    const driverDirections = await getMapDirections(MOCK_DRIVER_POINT, origin);
 
     return {
       origin,
@@ -1197,15 +1586,15 @@ export default function SearchScreen() {
       driverOrigin: MOCK_DRIVER_POINT,
       directions,
       driverDirections,
-      mapImageUrl: getGeoapifyStaticMapUrl({
+      mapImageUrl: getMapStaticMapUrl({
         origin,
         destination,
         routeGeometry: directions.routeGeometry,
       }),
-      pickupMapImageUrl: getGeoapifyPlaceMapUrl({
+      pickupMapImageUrl: getMapPlaceMapUrl({
         point: origin,
       }),
-      driverMapImageUrl: getGeoapifyStaticMapUrl({
+      driverMapImageUrl: getMapStaticMapUrl({
         origin: MOCK_DRIVER_POINT,
         destination: origin,
         routeGeometry: driverDirections.routeGeometry,
@@ -1467,13 +1856,13 @@ export default function SearchScreen() {
     }
 
     if (!selectedFromPlace) {
-      setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u00f3n t\u1eeb g\u1ee3i \u00fd Geoapify.");
+      setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u00f3n t\u1eeb g\u1ee3i \u00fd VietMap.");
       setFocusedField("from");
       return null;
     }
 
     if (!selectedToPlace) {
-      setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u1ebfn t\u1eeb g\u1ee3i \u00fd Geoapify.");
+      setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u1ebfn t\u1eeb g\u1ee3i \u00fd VietMap.");
       setFocusedField("to");
       return null;
     }
@@ -1491,7 +1880,7 @@ export default function SearchScreen() {
       return nextVerifiedTripMap;
     } catch (error) {
       setVerifiedTripMap(null);
-      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 x\u00e1c minh \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 x\u00e1c minh \u0111\u1ecba ch\u1ec9 tr\u00ean VietMap.");
       return null;
     } finally {
       setIsVerifyingMap(false);
@@ -1562,7 +1951,7 @@ export default function SearchScreen() {
 
       setFocusedField("");
     } catch (error) {
-      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 tr\u00ean Geoapify.");
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 tr\u00ean VietMap.");
     }
   };
 
@@ -1579,24 +1968,52 @@ export default function SearchScreen() {
 
     if (field === "location" && value.trim() !== sharedLocationPickedRef.current) {
       sharedLocationPickedRef.current = "";
+      setSelectedSharedPlace(null);
     }
   };
 
   const clearSharedLocation = () => {
     sharedLocationPickedRef.current = "";
+    setSelectedSharedPlace(null);
     updateSharedForm("location", "");
     setSharedLocationSuggestions([]);
     setSharedLocationError("");
   };
 
-  const selectSharedLocationSuggestion = (suggestion) => {
+  const selectSharedLocationSuggestion = async (suggestion) => {
     const formattedAddress =
       suggestion.formattedAddress || suggestion.description || suggestion.mainText || "";
 
-    sharedLocationPickedRef.current = formattedAddress.trim();
-    updateSharedForm("location", formattedAddress);
-    setSharedLocationSuggestions([]);
-    setSharedLocationError("");
+    setSharedLocationLoading(true);
+
+    try {
+      const resolvedPlace = suggestion.location
+        ? suggestion
+        : await getMapPlaceDetails(suggestion.refId || suggestion.placeId);
+
+      const resolvedAddress =
+        resolvedPlace.formattedAddress ||
+        resolvedPlace.description ||
+        resolvedPlace.mainText ||
+        formattedAddress;
+
+      sharedLocationPickedRef.current = resolvedAddress.trim();
+      setSelectedSharedPlace({
+        ...resolvedPlace,
+        formattedAddress: resolvedAddress,
+      });
+      setSharedForm((current) => ({ ...current, location: resolvedAddress }));
+      setSharedLocationSuggestions([]);
+      setSharedLocationError("");
+      setSharedFormError("");
+    } catch (error) {
+      setSelectedSharedPlace(null);
+      setSharedLocationError(
+        error.message || "Không thể lấy tọa độ địa chỉ từ VietMap."
+      );
+    } finally {
+      setSharedLocationLoading(false);
+    }
   };
 
   const closeCreateSharedModal = () => {
@@ -1604,13 +2021,18 @@ export default function SearchScreen() {
     setOpenSharedDropdown("");
     setSharedFormError("");
     sharedLocationPickedRef.current = "";
+    setSelectedSharedPlace(null);
     setSharedLocationSuggestions([]);
     setSharedLocationLoading(false);
     setSharedLocationError("");
   };
 
-  const createSharedRide = () => {
+  const createSharedRide = async () => {
     if (!requireLogin()) {
+      return;
+    }
+
+    if (isCreatingSharedRequest) {
       return;
     }
 
@@ -1634,37 +2056,100 @@ export default function SearchScreen() {
       return;
     }
 
-    const selectedVehicle = sharedVehicleOptions[sharedForm.vehicleIndex];
-    const route = isSharedTripToFpt
-      ? `${sharedForm.location.trim()} \u2192 \u0110\u1ea1i h\u1ecdc FPT`
-      : `\u0110\u1ea1i h\u1ecdc FPT \u2192 ${sharedForm.location.trim()}`;
-    const scheduleText = `${selectedSharedSlot.label} (${selectedSharedSlot.time}) \u2022 ${selectedSharedDate.display}`;
+    if (!selectedSharedPlace?.location) {
+      setSharedFormError(`Vui lòng chọn ${sharedLocationLabel.toLowerCase()} từ gợi ý VietMap`);
+      return;
+    }
 
-    setPendingSharedRequests((current) => [
-      {
-        id: `shared-created-${Date.now()}`,
-        route,
-        vehicle: selectedVehicle.vehicle,
-        price: selectedVehicle.price,
-        distance: "18 km",
-        seats: `1/${selectedVehicle.capacity} th\u00e0nh vi\u00ean`,
-        note: scheduleText,
-        scheduleText,
-        date: selectedSharedDate.value,
-        slotId: selectedSharedSlot.id,
-        status: "Pending",
-        statusLabel: "\u0110ang ch\u1edd gh\u00e9p nh\u00f3m",
-        driver: "Ch\u01b0a c\u00f3 t\u00e0i x\u1ebf",
-        destination: route,
-        participantCount: 1,
-        capacity: selectedVehicle.capacity,
-        perPersonPrice: "15.000\u0111/ng\u01b0\u1eddi",
-        createdAt: new Date().toISOString(),
-      },
-      ...current,
-    ]);
-    setSharedForm(defaultSharedForm);
-    closeCreateSharedModal();
+    const fptPlace = MOCK_DRIVER_POINT;
+    const pickupPlace = isSharedTripToFpt ? selectedSharedPlace : fptPlace;
+    const destinationPlace = isSharedTripToFpt ? fptPlace : selectedSharedPlace;
+    const routeMetrics = getBackendTripMetrics({
+      origin: pickupPlace,
+      destination: destinationPlace,
+    });
+    const scheduledAt = getSharedSlotDateTime(
+      selectedSharedDate.value,
+      selectedSharedSlot.time
+    );
+    const scheduledAtText = formatLocalApiDateTime(scheduledAt);
+    const slotNumber = Number(selectedSharedSlot.id.replace("slot-", ""));
+
+    if (!routeMetrics || !scheduledAtText || !Number.isFinite(slotNumber)) {
+      setSharedFormError("Không thể tạo dữ liệu yêu cầu xe ghép. Vui lòng chọn lại địa chỉ và slot.");
+      return;
+    }
+
+    setIsCreatingSharedRequest(true);
+    setSharedFormError("");
+
+    try {
+      const createdRequest = await createRideSharingRequest(
+        {
+          pickupLatitude: pickupPlace.location.lat,
+          pickupLongitude: pickupPlace.location.lng,
+          pickupAddress: pickupPlace.formattedAddress,
+          destinationLatitude: destinationPlace.location.lat,
+          destinationLongitude: destinationPlace.location.lng,
+          destinationAddress: destinationPlace.formattedAddress,
+          direction: isSharedTripToFpt ? 1 : 2,
+          estimatedDistanceKm: routeMetrics.distanceKm,
+          estimatedDurationMinutes: routeMetrics.durationMinute,
+          tripType: 2,
+          scheduledAt: scheduledAtText,
+          scheduledSlot: slotNumber,
+        },
+        session.accessToken
+      );
+      let latestRequest = createdRequest;
+
+      if (createdRequest?.id) {
+        try {
+          latestRequest = await getRideSharingRequest(
+            createdRequest.id,
+            session.accessToken
+          );
+        } catch {
+          latestRequest = createdRequest;
+        }
+      }
+
+      const mappedRequest = mapRideSharingRequestToCardClean(latestRequest);
+
+      setPendingSharedRequests(mappedRequest ? [mappedRequest] : []);
+      setSharedForm(defaultSharedForm);
+      closeCreateSharedModal();
+    } catch (error) {
+      setSharedFormError(
+        error.message || "Không thể tạo yêu cầu xe ghép từ BE."
+      );
+    } finally {
+      setIsCreatingSharedRequest(false);
+    }
+  };
+
+  const handleCancelSharedRequest = async (requestId) => {
+    if (!requestId || !session?.accessToken || cancellingSharedRequestId) {
+      return;
+    }
+
+    setCancellingSharedRequestId(requestId);
+    setSharedFormError("");
+
+    try {
+      await cancelRideSharingRequest(
+        requestId,
+        { cancelReason: 4 },
+        session.accessToken
+      );
+      setPendingSharedRequests((current) =>
+        current.filter((request) => request.requestId !== requestId)
+      );
+    } catch (error) {
+      setAlertMessage(error.message || "Không thể hủy yêu cầu xe ghép.");
+    } finally {
+      setCancellingSharedRequestId("");
+    }
   };
   const fillAddressToFocusedField = async (address) => {
     if (!address?.label) {
@@ -1696,7 +2181,7 @@ export default function SearchScreen() {
 
       setFocusedField("");
     } catch (error) {
-      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 \u0111\u00e3 l\u01b0u t\u1eeb Geoapify.");
+      setAlertMessage(error.message || "Kh\u00f4ng th\u1ec3 l\u1ea5y \u0111\u1ecba ch\u1ec9 \u0111\u00e3 l\u01b0u t\u1eeb VietMap.");
     }
   };
 
@@ -2081,14 +2566,6 @@ export default function SearchScreen() {
                 </View>
               )}
               <View style={styles.routeMapTopBar}>
-                <Pressable
-                  style={styles.routeBackButton}
-                  onPress={() => setBookingStep("confirm")}
-                >
-                  <ThemedText type="default" style={styles.routeBackIcon}>
-                    {"\u2190"}
-                  </ThemedText>
-                </Pressable>
                 <View style={styles.routeInfoPill}>
                   <ThemedText type="smallBold" style={styles.routeInfoText}>
                     {backendTripMetrics?.durationText ||
@@ -2195,28 +2672,6 @@ export default function SearchScreen() {
                   </ThemedText>
                 </>
               )}
-              <View style={styles.pickupMapTopBar}>
-                <Pressable
-                  style={styles.pickupBackButton}
-                  onPress={() => setBookingStep("form")}
-                >
-                  <ThemedText type="default" style={styles.pickupBackIcon}>
-                    {"\u2190"}
-                  </ThemedText>
-                </Pressable>
-                <View style={styles.pickupSearchPill}>
-                  <ThemedText type="default" style={styles.pickupSearchIcon}>
-                    {""}
-                  </ThemedText>
-                  <ThemedText
-                    type="smallBold"
-                    style={styles.pickupSearchText}
-                    numberOfLines={1}
-                  >
-                    {"T\u00ecm ki\u1ebfm"}
-                  </ThemedText>
-                </View>
-              </View>
             </View>
 
             <View style={styles.pickupConfirmSheet}>
@@ -2414,7 +2869,7 @@ export default function SearchScreen() {
                   loadingSuggestionsFor === "from" ||
                   suggestionError.from) && (
                   <ThemedText type="small" style={styles.suggestionAttribution}>
-                    Geoapify
+                    VietMap
                   </ThemedText>
                 )}
               </View>
@@ -2520,7 +2975,7 @@ export default function SearchScreen() {
                     ))
                   )}
                   <ThemedText type="small" style={styles.suggestionAttribution}>
-                    Geoapify
+                    VietMap
                   </ThemedText>
                 </View>
               )}
@@ -2631,7 +3086,7 @@ export default function SearchScreen() {
                       </ThemedText>
                       <View style={styles.pendingBadge}>
                         <ThemedText type="smallBold" style={styles.pendingBadgeText}>
-                          {"Pending"}
+                          {request.statusLabel}
                         </ThemedText>
                       </View>
                     </View>
@@ -2650,8 +3105,56 @@ export default function SearchScreen() {
                       {"Nh\u00f3m: "}{request.participantCount}/{request.capacity}
                       {" ng\u01b0\u1eddi \u2022 "}{request.statusLabel}
                     </ThemedText>
+                    <ThemedText type="small" style={styles.pendingSharedMeta}>
+                      {"Quãng đường: "}{request.distance}{" \u2022 "}{request.duration}
+                    </ThemedText>
+                    <View style={styles.pendingSharedFooter}>
+                      <ThemedText type="smallBold" style={styles.pendingSharedPrice}>
+                        {request.price}
+                      </ThemedText>
+                      {Boolean(request.groupId) && (
+                        <Pressable
+                          style={styles.pendingSharedDetailButton}
+                          onPress={() =>
+                            router.push(`/search/shared-ride/${request.groupId}`)
+                          }
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.pendingSharedDetailText}
+                          >
+                            {"Xem nh\u00f3m"}
+                          </ThemedText>
+                        </Pressable>
+                      )}
+                      <Pressable
+                        style={[
+                          styles.pendingSharedCancelButton,
+                          !request.requestId && styles.hidden,
+                          cancellingSharedRequestId === request.requestId &&
+                            styles.buttonDisabled,
+                        ]}
+                        onPress={() => handleCancelSharedRequest(request.requestId)}
+                        disabled={cancellingSharedRequestId === request.requestId}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.pendingSharedCancelText}
+                        >
+                          {cancellingSharedRequestId === request.requestId
+                            ? "Đang hủy..."
+                            : "Hủy yêu cầu"}
+                        </ThemedText>
+                      </Pressable>
+                    </View>
                   </View>
                 ))}
+              </View>
+            ) : isLoadingSharedState ? (
+              <View style={styles.pendingSharedSection}>
+                <ThemedText type="small" style={styles.pendingSharedMeta}>
+                  {"Đang tải yêu cầu xe ghép của bạn..."}
+                </ThemedText>
               </View>
             ) : null}
 
@@ -3269,7 +3772,7 @@ export default function SearchScreen() {
                       ))
                     )}
                     <ThemedText type="small" style={styles.suggestionAttribution}>
-                      Geoapify
+                      VietMap
                     </ThemedText>
                   </View>
                 )}
@@ -3408,11 +3911,15 @@ export default function SearchScreen() {
               )}
 
               <Pressable
-                style={styles.createSubmitButton}
+                style={[
+                  styles.createSubmitButton,
+                  isCreatingSharedRequest && styles.buttonDisabled,
+                ]}
                 onPress={createSharedRide}
+                disabled={isCreatingSharedRequest}
               >
                 <ThemedText type="smallBold" style={styles.createSubmitText}>
-                    {"T\u1ea1o y\u00eau c\u1ea7u"}
+                    {isCreatingSharedRequest ? "Đang tạo..." : "Tạo yêu cầu"}
                   </ThemedText>
               </Pressable>
             </ScrollView>
@@ -4963,6 +5470,9 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.65,
   },
+  hidden: {
+    display: "none",
+  },
   sharedSection: {
     gap: Spacing.three,
     marginTop: Spacing.one,
@@ -5014,6 +5524,39 @@ const styles = StyleSheet.create({
   },
   pendingSharedMeta: {
     color: "#6B7280",
+  },
+  pendingSharedFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  pendingSharedPrice: {
+    color: BRAND,
+    fontSize: 18,
+  },
+  pendingSharedCancelButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FFB47A",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+  },
+  pendingSharedCancelText: {
+    color: BRAND,
+  },
+  pendingSharedDetailButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+  },
+  pendingSharedDetailText: {
+    color: BRAND,
   },
   sharedHeader: {
     flexDirection: "row",

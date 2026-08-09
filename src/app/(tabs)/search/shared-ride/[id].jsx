@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -21,11 +21,36 @@ import {
 } from "@/constants/theme";
 import { getRideGroupById } from "@/constants/ride-data";
 import { useAuth } from "@/contexts/auth-context";
+import {
+  getRideSharingGroup,
+  joinRideSharingGroup,
+} from "@/features/ride-sharing/services/ride-sharing-api";
 import { useTheme } from "@/hooks/use-theme";
 
 const BRAND = "#FF7A00";
 const CARD_BORDER = "#ECECEC";
 const MUTED = "#70757E";
+
+function getRideDestinationLabel(ride) {
+  const route = ride?.route ?? "";
+  const [, to = "\u0110\u1ea1i h\u1ecdc FPT"] = route.split(/\s*(?:\u2192|->)\s*/);
+
+  return to.includes("FPT") ? to : "\u0110\u1ea1i h\u1ecdc FPT";
+}
+
+function getJoinButtonLabel(isJoiningGroup, pendingRequest) {
+  if (isJoiningGroup) {
+    return "\u0110ang tham gia...";
+  }
+
+  if (pendingRequest) {
+    return pendingRequest.status === "joined"
+      ? "\u0110\u00e3 tham gia nh\u00f3m"
+      : "\u0110ang ch\u1edd duy\u1ec7t";
+  }
+
+  return "G\u1eedi y\u00eau c\u1ea7u tham gia";
+}
 
 function getDefaultJoinDestination(ride) {
   const route = ride?.route ?? "";
@@ -35,22 +60,150 @@ function getDefaultJoinDestination(ride) {
   return isToFpt ? to : "Đại học FPT";
 }
 
+function formatCurrencyVnd(value) {
+  const numberValue = Number(value ?? 0);
+
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    return "--";
+  }
+
+  return `${Math.round(numberValue).toLocaleString("vi-VN")}\u0111`;
+}
+
+function formatGroupDateTime(value) {
+  if (!value) {
+    return "Ch\u01b0a c\u00f3 th\u1eddi gian";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Ch\u01b0a c\u00f3 th\u1eddi gian";
+  }
+
+  return date.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function normalizeGroupStatusLabel(status) {
+  const normalized = String(status ?? "").toLowerCase();
+
+  if (normalized === "readyforbroadcast") {
+    return "S\u1eb5n s\u00e0ng t\u00ecm t\u00e0i x\u1ebf";
+  }
+
+  if (normalized === "driveraccepted") {
+    return "T\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn";
+  }
+
+  if (normalized === "waitingdeparture") {
+    return "\u0110ang ch\u1edd xu\u1ea5t ph\u00e1t";
+  }
+
+  if (normalized === "completed") {
+    return "Ho\u00e0n th\u00e0nh";
+  }
+
+  if (normalized === "cancelled") {
+    return "\u0110\u00e3 h\u1ee7y";
+  }
+
+  return status || "\u0110ang ch\u1edd gh\u00e9p";
+}
+
+function mapApiGroupToRide(group) {
+  if (!group?.id) {
+    return null;
+  }
+
+  const members = Array.isArray(group.members) ? group.members : [];
+  const firstMember = members[0];
+  const finalFare = firstMember?.finalFare ?? 0;
+
+  return {
+    id: group.id,
+    route: `Nh\u00f3m xe gh\u00e9p \u2022 ${formatGroupDateTime(group.scheduledDepartureTime)}`,
+    vehicle: "Xe gh\u00e9p",
+    price: formatCurrencyVnd(finalFare),
+    perPersonPrice: formatCurrencyVnd(finalFare),
+    status: normalizeGroupStatusLabel(group.status),
+    driver: group.driverName || "Ch\u01b0a c\u00f3 t\u00e0i x\u1ebf",
+    destination: `Kh\u1edfi h\u00e0nh: ${formatGroupDateTime(group.scheduledDepartureTime)}`,
+    participantCount: group.currentPassengers ?? members.length ?? 0,
+    capacity: group.maxPassengers ?? 3,
+    note: group.isLocked
+      ? "Nh\u00f3m \u0111\u00e3 kh\u00f3a"
+      : "Nh\u00f3m c\u00f2n c\u00f3 th\u1ec3 tham gia",
+    members,
+  };
+}
+
 export default function SharedRideDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, session } = useAuth();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const rideId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const ride = getRideGroupById(rideId);
+  const mockRide = getRideGroupById(rideId);
+  const [apiRide, setApiRide] = useState(null);
+  const [isLoadingRide, setIsLoadingRide] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const ride = apiRide ?? mockRide;
   const [joinModalVisible, setJoinModalVisible] = useState(false);
   const [pickupConfirmVisible, setPickupConfirmVisible] = useState(false);
   const [pickupPoint, setPickupPoint] = useState("");
   const [joinNote, setJoinNote] = useState("");
   const [joinError, setJoinError] = useState("");
+  const [isJoiningGroup, setIsJoiningGroup] = useState(false);
   const [joinDraft, setJoinDraft] = useState(null);
   const [pendingRequest, setPendingRequest] = useState(null);
-  const defaultDestination = getDefaultJoinDestination(ride);
+  const defaultDestination = getRideDestinationLabel(ride);
+  const joinButtonLabel = getJoinButtonLabel(isJoiningGroup, pendingRequest);
+  void getDefaultJoinDestination;
+  void joinButtonLabel;
+
+  useEffect(() => {
+    if (!rideId || mockRide || !session?.accessToken) {
+      return undefined;
+    }
+
+    let isActive = true;
+
+    const loadGroup = async () => {
+      setIsLoadingRide(true);
+      setLoadError("");
+
+      try {
+        const group = await getRideSharingGroup(rideId, session.accessToken);
+
+        if (isActive) {
+          setApiRide(mapApiGroupToRide(group));
+        }
+      } catch (error) {
+        if (isActive) {
+          setLoadError(
+            error.message || "Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c nh\u00f3m xe gh\u00e9p."
+          );
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingRide(false);
+        }
+      }
+    };
+
+    loadGroup();
+
+    return () => {
+      isActive = false;
+    };
+  }, [mockRide, rideId, session?.accessToken]);
 
   function requireLogin() {
     if (isAuthenticated) {
@@ -86,7 +239,7 @@ export default function SharedRideDetailScreen() {
     setJoinError("");
   }
 
-  function confirmPickupPoint() {
+  async function confirmPickupPoint() {
     if (!requireLogin()) {
       return;
     }
@@ -95,11 +248,31 @@ export default function SharedRideDetailScreen() {
       return;
     }
 
-    setPendingRequest({
-      ...joinDraft,
-      status: "pending",
-    });
-    setPickupConfirmVisible(false);
+    if (mockRide) {
+      setPendingRequest({
+        ...joinDraft,
+        status: "pending",
+      });
+      setPickupConfirmVisible(false);
+      return;
+    }
+
+    setIsJoiningGroup(true);
+    setJoinError("");
+
+    try {
+      const joinedGroup = await joinRideSharingGroup(rideId, session.accessToken);
+      setApiRide(mapApiGroupToRide(joinedGroup));
+      setPendingRequest({
+        ...joinDraft,
+        status: "joined",
+      });
+      setPickupConfirmVisible(false);
+    } catch (error) {
+      setJoinError(error.message || "Kh\u00f4ng th\u1ec3 tham gia nh\u00f3m xe gh\u00e9p.");
+    } finally {
+      setIsJoiningGroup(false);
+    }
   }
 
   return (
@@ -127,7 +300,34 @@ export default function SharedRideDetailScreen() {
             </ThemedText>
           </View>
 
-          {ride ? (
+          {isLoadingRide ? (
+            <ThemedView
+              style={[styles.detailCard, { backgroundColor: theme.backgroundElement }]}
+            >
+              <ThemedText type="default" style={styles.headerTitle}>
+                {"\u0110ang t\u1ea3i nh\u00f3m xe gh\u00e9p..."}
+              </ThemedText>
+            </ThemedView>
+          ) : loadError ? (
+            <ThemedView
+              style={[styles.detailCard, { backgroundColor: theme.backgroundElement }]}
+            >
+              <ThemedText type="default" style={styles.headerTitle}>
+                {"Không tải được nhóm xe ghép"}
+              </ThemedText>
+              <ThemedText type="small" style={styles.errorText}>
+                {loadError}
+              </ThemedText>
+              <Pressable
+                style={[styles.secondaryButton, styles.notFoundButton]}
+                onPress={() => router.back()}
+              >
+                <ThemedText type="default" style={styles.secondaryButtonText}>
+                  {"Quay lại"}
+                </ThemedText>
+              </Pressable>
+            </ThemedView>
+          ) : ride ? (
             <>
               <ThemedView
                 style={[styles.detailCard, { backgroundColor: theme.backgroundElement }]}
@@ -162,6 +362,23 @@ export default function SharedRideDetailScreen() {
                   <ThemedText type="small" style={styles.noteText}>
                     {`"${ride.note}"`}
                   </ThemedText>
+                  {Array.isArray(ride.members) && ride.members.length > 0 && (
+                    <View style={styles.memberList}>
+                      <ThemedText type="smallBold" style={styles.memberTitle}>
+                        {"Th\u00e0nh vi\u00ean trong nh\u00f3m"}
+                      </ThemedText>
+                      {ride.members.map((member) => (
+                        <ThemedText
+                          key={`${member.passengerId}-${member.joinedAt ?? ""}`}
+                          type="small"
+                          style={styles.metaText}
+                        >
+                          {member.passengerName || "H\u00e0nh kh\u00e1ch"}{" \u2022 "}
+                          {formatCurrencyVnd(member.finalFare)}
+                        </ThemedText>
+                      ))}
+                    </View>
+                  )}
                 </View>
               </ThemedView>
 
@@ -194,10 +411,10 @@ export default function SharedRideDetailScreen() {
               <Pressable
                 style={[
                   styles.primaryButton,
-                  pendingRequest && styles.pendingButton,
+                  (pendingRequest || isJoiningGroup) && styles.pendingButton,
                 ]}
                 onPress={() => {
-                  if (!pendingRequest) {
+                  if (!pendingRequest && !isJoiningGroup) {
                     if (requireLogin()) {
                       setJoinModalVisible(true);
                     }
@@ -394,7 +611,17 @@ export default function SharedRideDetailScreen() {
               </ThemedText>
             </ThemedView>
 
-            <Pressable style={styles.primaryButton} onPress={confirmPickupPoint}>
+            {Boolean(joinError) && (
+              <ThemedText type="smallBold" style={styles.errorText}>
+                {joinError}
+              </ThemedText>
+            )}
+
+            <Pressable
+              style={[styles.primaryButton, isJoiningGroup && styles.pendingButton]}
+              onPress={confirmPickupPoint}
+              disabled={isJoiningGroup}
+            >
               <ThemedText type="default" style={styles.primaryButtonText}>
                 Xác nhận điểm đón
               </ThemedText>
@@ -539,6 +766,13 @@ const styles = StyleSheet.create({
   noteText: {
     color: MUTED,
     fontStyle: "italic",
+  },
+  memberList: {
+    gap: 4,
+    paddingTop: Spacing.one,
+  },
+  memberTitle: {
+    color: "#111827",
   },
   primaryButton: {
     minHeight: 56,
