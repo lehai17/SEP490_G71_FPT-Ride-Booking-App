@@ -25,10 +25,12 @@ import { tripSections } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 import {
   loadBookedTrips,
+  removeBookedTrip,
   toActiveTripSectionItem,
   toScheduledTripSectionItem,
 } from "@/features/booking/services/trip-storage";
 import {
+  cancelTrip,
   getDriverTrips,
   getPassengerTrips,
 } from "@/features/booking/services/trip-api";
@@ -38,6 +40,7 @@ const BRAND = "#FF7A00";
 const BORDER = "#E9E9E9";
 const MUTED = "#6B7280";
 const HISTORY_PAGE_SIZE = 3;
+const PASSENGER_CANCEL_REASON_OTHER = 5;
 
 const tabs = [
   { key: "scheduled", label: "Đã đặt trước" },
@@ -229,9 +232,15 @@ function getScheduledTripView(item) {
   return {
     destination,
     pickup,
-    time,
+    time:
+      !isSchedulePlaceholder(item.scheduledPickupText) && item.scheduledPickupText
+        ? item.scheduledPickupText
+        : !isSchedulePlaceholder(time)
+          ? time
+          : "",
     price,
     vehicle,
+    statusLabel: item.statusLabel || getScheduledStatusLabel(item.status),
   };
 }
 
@@ -250,9 +259,13 @@ function isScheduledTrip(trip) {
 function getTripFare(trip) {
   return (
     trip?.pricing?.estimatedFare ??
+    trip?.Pricing?.EstimatedFare ??
     trip?.estimatedFare ??
+    trip?.EstimatedFare ??
     trip?.fareAmount ??
+    trip?.FareAmount ??
     trip?.fare ??
+    trip?.Fare ??
     null
   );
 }
@@ -292,23 +305,104 @@ function formatDurationMinute(value) {
   return `${Math.max(1, Math.round(numberValue))} ph\u00fat`;
 }
 
+function getTripField(source, camelKey, pascalKey) {
+  return source?.[camelKey] ?? source?.[pascalKey];
+}
+
+function normalizeTripStatus(status) {
+  const rawStatus = String(status ?? "").trim().toLowerCase();
+
+  if (!rawStatus) {
+    return "";
+  }
+
+  const statusByNumber = {
+    1: "pending",
+    2: "pendingdriverassignment",
+    3: "accepted",
+    4: "driverarrived",
+    5: "inprogress",
+    6: "completed",
+    7: "cancelled",
+    8: "nodriverfound",
+  };
+
+  const normalizedStatus = statusByNumber[rawStatus] ?? rawStatus.replace(/\s+/g, "");
+
+  if (normalizedStatus === "scheduled") {
+    return "pendingdriverassignment";
+  }
+
+  return normalizedStatus;
+}
+
+function getScheduledStatusLabel(status) {
+  switch (normalizeTripStatus(status)) {
+    case "pending":
+      return "Đang tìm tài xế";
+    case "pendingdriverassignment":
+      return "Chờ phân tài xế";
+    case "accepted":
+      return "Tài xế đã nhận";
+    case "driverarrived":
+      return "Tài xế đã đến";
+    case "inprogress":
+      return "Đang di chuyển";
+    case "completed":
+      return "Hoàn thành";
+    case "cancelled":
+      return "Đã hủy";
+    case "nodriverfound":
+      return "Không tìm thấy tài xế";
+    default:
+      return "Chờ tài xế";
+  }
+}
+
+function formatScheduledPickupText(value) {
+  const scheduledDate = value ? new Date(value) : null;
+
+  if (!scheduledDate || Number.isNaN(scheduledDate.getTime())) {
+    return "";
+  }
+
+  const time = `${pad(scheduledDate.getHours())}:${pad(
+    scheduledDate.getMinutes()
+  )}`;
+  const date = `${pad(scheduledDate.getDate())}/${pad(
+    scheduledDate.getMonth() + 1
+  )}/${scheduledDate.getFullYear()}`;
+
+  return `Giờ đón: ${time} • ${date}`;
+}
+
+function isSchedulePlaceholder(value) {
+  return String(value ?? "").trim() === "\u0110\u00e3 h\u1eb9n l\u1ecbch";
+}
+
 function mapTripToScheduledItem(trip) {
+  const scheduledAt = getTripField(trip, "scheduledAt", "ScheduledAt");
+  const status = getTripField(trip, "status", "Status");
+  const vehicleType = getTripField(trip, "vehicleType", "VehicleType");
+
   return toScheduledTripSectionItem({
-    id: trip.id,
+    id: getTripField(trip, "id", "Id"),
     icon:
-      String(trip.vehicleType ?? "").toLowerCase().includes("bike") ||
-      String(trip.vehicleType ?? "") === "1"
+      String(vehicleType ?? "").toLowerCase().includes("bike") ||
+      String(vehicleType ?? "") === "1"
         ? "\ud83d\udef5"
         : "\ud83d\ude97",
-    route: `${trip.pickupAddress || "\u0110i\u1ec3m \u0111\u00f3n"} \u2192 ${
-      trip.destinationAddress || "\u0110i\u1ec3m \u0111\u1ebfn"
+    route: `${getTripField(trip, "pickupAddress", "PickupAddress") || "\u0110i\u1ec3m \u0111\u00f3n"} \u2192 ${
+      getTripField(trip, "destinationAddress", "DestinationAddress") || "\u0110i\u1ec3m \u0111\u1ebfn"
     }`,
-    pickup: trip.pickupAddress,
-    destination: trip.destinationAddress,
+    pickup: getTripField(trip, "pickupAddress", "PickupAddress"),
+    destination: getTripField(trip, "destinationAddress", "DestinationAddress"),
     estimatedFare: formatCurrencyVnd(getTripFare(trip)),
-    scheduledAt: trip.scheduledAt,
-    distanceText: formatDistanceKm(trip.estimatedDistanceKm),
-    durationText: formatDurationMinute(trip.estimatedDurationMinute),
+    scheduledAt,
+    scheduledPickupText: formatScheduledPickupText(scheduledAt),
+    status,
+    distanceText: formatDistanceKm(getTripField(trip, "estimatedDistanceKm", "EstimatedDistanceKm")),
+    durationText: formatDurationMinute(getTripField(trip, "estimatedDurationMinute", "EstimatedDurationMinute")),
   });
 }
 
@@ -333,6 +427,7 @@ export default function TripsScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [isCancellingTrip, setIsCancellingTrip] = useState(false);
   const [chatModalVisible, setChatModalVisible] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [ratingDraft, setRatingDraft] = useState(5);
@@ -436,13 +531,38 @@ export default function TripsScreen() {
           return;
         }
 
-        setTripsBySection((current) => ({
-          ...current,
-          scheduled: Array.isArray(trips)
-            ? trips.filter(isScheduledTrip).map(mapTripToScheduledItem)
-            : current.scheduled,
-          history: Array.isArray(trips) ? trips.map(mapTripToHistoryItem) : [],
-        }));
+        setTripsBySection((current) => {
+          const localScheduledById = new Map(
+            (current.scheduled ?? []).map((trip) => [trip.id, trip])
+          );
+          const scheduled = Array.isArray(trips)
+            ? trips.filter(isScheduledTrip).map((trip) => {
+                const item = mapTripToScheduledItem(trip);
+                const localItem = localScheduledById.get(item.id);
+
+                const localScheduleText = localItem?.meta?.split(/\s*[·•]\s*/)?.[0] || "";
+
+                return {
+                  ...item,
+                  scheduledAt: item.scheduledAt || localItem?.scheduledAt || "",
+                  scheduledPickupText:
+                    (!isSchedulePlaceholder(item.scheduledPickupText) &&
+                      item.scheduledPickupText) ||
+                    (!isSchedulePlaceholder(localItem?.scheduledPickupText) &&
+                      localItem?.scheduledPickupText) ||
+                    (!isSchedulePlaceholder(localScheduleText) &&
+                      localScheduleText) ||
+                    "",
+                };
+              })
+            : current.scheduled;
+
+          return {
+            ...current,
+            scheduled,
+            history: Array.isArray(trips) ? trips.map(mapTripToHistoryItem) : [],
+          };
+        });
         setHistoryPage(1);
       } catch {
         if (isMounted) {
@@ -628,8 +748,13 @@ export default function TripsScreen() {
     setFormError("");
   }
 
-  function handleCancelTrip() {
+  async function handleCancelTrip() {
     if (!requireLogin()) {
+      return;
+    }
+
+    if (!selectedTrip?.id || !session?.accessToken) {
+      setFormError("Kh\u00f4ng t\u00ecm th\u1ea5y chuy\u1ebfn c\u1ea7n h\u1ee7y");
       return;
     }
 
@@ -638,16 +763,35 @@ export default function TripsScreen() {
       return;
     }
 
-    setTripsBySection((current) => ({
-      ...current,
-      [selectedTab]: current[selectedTab].filter(
-        (trip) => trip.id !== selectedTrip?.id
-      ),
-    }));
-    setCancelModalVisible(false);
-    setSelectedTrip(null);
-    setCancelReason("");
-    setFormError("");
+    setIsCancellingTrip(true);
+
+    try {
+      await cancelTrip(
+        selectedTrip.id,
+        { cancelReason: PASSENGER_CANCEL_REASON_OTHER },
+        session.accessToken
+      );
+      await removeBookedTrip(selectedTrip.id);
+
+      setTripsBySection((current) => ({
+        ...current,
+        [selectedTab]: current[selectedTab].filter(
+          (trip) => trip.id !== selectedTrip.id
+        ),
+      }));
+      setHistoryRefreshKey((current) => current + 1);
+      setCancelModalVisible(false);
+      setSelectedTrip(null);
+      setCancelReason("");
+      setFormError("");
+    } catch (error) {
+      setFormError(
+        error.message ||
+          "Kh\u00f4ng th\u1ec3 h\u1ee7y chuy\u1ebfn. Vui l\u00f2ng th\u1eed l\u1ea1i."
+      );
+    } finally {
+      setIsCancellingTrip(false);
+    }
   }
 
   function handleSubmitRating() {
@@ -974,10 +1118,29 @@ export default function TripsScreen() {
                 </View>
               )}
             </View>
+          ) : selectedTab === "scheduled" && items.length === 0 ? (
+            <View
+              style={[
+                styles.emptyActiveCard,
+                { backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <ThemedText type="default" style={styles.emptyActiveTitle}>
+                Chưa có chuyến đặt trước
+              </ThemedText>
+              <ThemedText type="small" style={styles.emptyActiveText}>
+                Các chuyến hẹn lịch của bạn sẽ hiển thị tại đây.
+              </ThemedText>
+            </View>
           ) : selectedTab === "scheduled" ? (
             <View style={styles.scheduledCards}>
               {items.map((item) => {
                 const trip = getScheduledTripView(item);
+                const canEditScheduledTrip = ![
+                  "inprogress",
+                  "completed",
+                  "cancelled",
+                ].includes(normalizeTripStatus(item.status));
 
                 return (
                   <View
@@ -999,12 +1162,20 @@ export default function TripsScreen() {
                           {trip.time}
                         </ThemedText>
                       </View>
-                      <View style={styles.scheduledStatusBadge}>
+                      <View style={styles.hiddenScheduleMeta}>
                         <ThemedText
                           type="smallBold"
                           style={styles.scheduledStatusText}
                         >
                           Chờ tài xế
+                        </ThemedText>
+                      </View>
+                      <View style={styles.scheduledStatusBadge}>
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.scheduledStatusText}
+                        >
+                          {trip.statusLabel}
                         </ThemedText>
                       </View>
                     </View>
@@ -1043,7 +1214,10 @@ export default function TripsScreen() {
                       </ThemedText>
                       <View style={styles.scheduledActionColumn}>
                         <Pressable
-                          style={styles.scheduledEditButton}
+                          style={[
+                            styles.scheduledEditButton,
+                            !canEditScheduledTrip && styles.hiddenScheduleMeta,
+                          ]}
                           onPress={() => handlePrimaryAction(item)}
                         >
                           <ThemedText
@@ -1748,10 +1922,16 @@ export default function TripsScreen() {
             <ThemedText type="default" style={styles.scheduleResultTitle}>
               Xe đón bạn lúc {selectedScheduleText}
             </ThemedText>
-            <ThemedText type="default" style={styles.scheduleArrivalText}>
+            <ThemedText
+              type="default"
+              style={[styles.scheduleArrivalText, styles.hiddenScheduleMeta]}
+            >
               Đến nơi lúc {pad(selectedArrivalDate.getHours())}:{pad(selectedArrivalDate.getMinutes())}
             </ThemedText>
-            <ThemedText type="small" style={styles.scheduleHint}>
+            <ThemedText
+              type="small"
+              style={[styles.scheduleHint, styles.hiddenScheduleMeta]}
+            >
               di chuyển khoảng {MOCK_TRIP_DURATION_MINUTES} phút
             </ThemedText>
           </View>
@@ -1814,11 +1994,19 @@ export default function TripsScreen() {
             <View style={styles.modalButtonRow}>
               <Pressable
                 style={[styles.modalSecondaryButton, { backgroundColor: theme.background }]}
+                disabled={isCancellingTrip}
                 onPress={() => setCancelModalVisible(false)}
               >
                 <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
-              <Pressable style={styles.modalDangerButton} onPress={handleCancelTrip}>
+              <Pressable
+                style={[
+                  styles.modalDangerButton,
+                  isCancellingTrip && styles.modalButtonDisabled,
+                ]}
+                disabled={isCancellingTrip}
+                onPress={handleCancelTrip}
+              >
                 <ThemedText type="smallBold" style={styles.modalPrimaryButtonText}>
                   Xác nhận hủy
                 </ThemedText>
@@ -2632,6 +2820,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "800",
   },
+  hiddenScheduleMeta: {
+    display: "none",
+  },
   scheduleConfirmButton: {
     minHeight: 60,
     borderRadius: 18,
@@ -2675,6 +2866,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#EF4444",
     alignItems: "center",
     justifyContent: "center",
+  },
+  modalButtonDisabled: {
+    opacity: 0.65,
   },
   modalPrimaryButtonText: {
     color: "#FFFFFF",

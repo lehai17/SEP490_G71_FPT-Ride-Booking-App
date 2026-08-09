@@ -10,6 +10,7 @@ const SESSION_STORAGE_KEY = "fpt-ride.auth.session";
 function buildSession(loginResponse, profileResponse) {
   return {
     accessToken: loginResponse.accessToken,
+    refreshToken: loginResponse.refreshToken ?? null,
     expiresAt: loginResponse.expiresAt,
     userId: loginResponse.userId,
     fullName: profileResponse?.fullName ?? loginResponse.fullName,
@@ -55,7 +56,10 @@ export function AuthProvider({ children }) {
 
         const parsedSession = JSON.parse(storedSession);
 
-        if (!parsedSession?.accessToken || !parsedSession?.userId) {
+        if (
+          (!parsedSession?.accessToken && !parsedSession?.refreshToken) ||
+          !parsedSession?.userId
+        ) {
           await clearPersistedSession();
 
           if (isMounted) {
@@ -69,15 +73,29 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        setSession(parsedSession);
+        let sessionToRestore = parsedSession;
         setRememberSession(true);
+
+        if (parsedSession.refreshToken) {
+          try {
+            const refreshedAuth = await authApi.refreshToken(
+              parsedSession.refreshToken
+            );
+
+            sessionToRestore = buildSession(refreshedAuth, parsedSession);
+          } catch {
+            sessionToRestore = parsedSession;
+          }
+        }
+
+        setSession(sessionToRestore);
 
         try {
           const profile = await authApi.getProfile(
-            parsedSession.userId,
-            parsedSession.accessToken
+            sessionToRestore.userId,
+            sessionToRestore.accessToken
           );
-          const refreshedSession = buildSession(parsedSession, profile);
+          const refreshedSession = buildSession(sessionToRestore, profile);
 
           if (isMounted) {
             setSession(refreshedSession);
@@ -253,9 +271,22 @@ export function AuthProvider({ children }) {
     }
   }
 
-  function logout() {
+  async function logout() {
+    const accessToken = session?.accessToken;
+
     setSession(null);
+    setRememberSession(false);
     void clearPersistedSession();
+
+    if (!accessToken) {
+      return;
+    }
+
+    try {
+      await authApi.logout(accessToken);
+    } catch {
+      // Local logout must still succeed even if the server session is already expired.
+    }
   }
 
   async function changePassword(payload) {
