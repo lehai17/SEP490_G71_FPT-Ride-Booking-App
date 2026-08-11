@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -344,6 +344,7 @@ function normalizeSharedStatusLabelClean(status) {
     driverassigned: "\u0110\u00e3 c\u00f3 t\u00e0i x\u1ebf",
     waitingdeparture: "Ch\u1edd \u0111\u1ebfn gi\u1edd kh\u1edfi h\u00e0nh",
     driverdriving: "T\u00e0i x\u1ebf \u0111ang \u0111\u1ebfn",
+    driverdrivingtopickup: "T\u00e0i x\u1ebf \u0111ang \u0111\u1ebfn",
     passengerboarding: "\u0110ang \u0111\u00f3n kh\u00e1ch",
     inprogress: "\u0110ang di chuy\u1ec3n",
     completed: "Ho\u00e0n th\u00e0nh",
@@ -352,6 +353,7 @@ function normalizeSharedStatusLabelClean(status) {
     expired: "\u0110\u00e3 h\u1ebft h\u1ea1n",
     readyforbroadcast: "S\u1eb5n s\u00e0ng t\u00ecm t\u00e0i x\u1ebf",
     driveraccepted: "T\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn",
+    waitingmatching: "\u0110ang ch\u1edd gh\u00e9p nh\u00f3m",
   };
 
   return labels[normalizedStatus] || status || "Pending";
@@ -367,6 +369,7 @@ function mapRideSharingRequestToCardClean(request, group = null) {
   const groupPassengerCount = group?.currentPassengers ?? 1;
   const groupCapacity = group?.maxPassengers ?? 3;
   const fare = Number(request.finalFare ?? request.quotedFare);
+  const displayStatus = group?.status ?? request.status;
 
   return {
     id: request.id,
@@ -380,8 +383,8 @@ function mapRideSharingRequestToCardClean(request, group = null) {
     seats: `${groupPassengerCount}/${groupCapacity} ng\u01b0\u1eddi`,
     note: formatSharedScheduleClean(request.scheduledAt),
     scheduleText: formatSharedScheduleClean(request.scheduledAt),
-    status: request.status,
-    statusLabel: normalizeSharedStatusLabelClean(request.status),
+    status: displayStatus,
+    statusLabel: normalizeSharedStatusLabelClean(displayStatus),
     driver: group?.driverName || "Ch\u01b0a c\u00f3 t\u00e0i x\u1ebf",
     destination,
     participantCount: groupPassengerCount,
@@ -427,6 +430,18 @@ function mapRideSharingGroupToCard(group) {
     createdAt: group.createdAt,
     canCancel: false,
   };
+}
+
+function isSharedRideActive(status) {
+  const normalizedStatus = String(status ?? "").replace(/\s+/g, "").toLowerCase();
+  const inactiveStatuses = new Set([
+    "cancelled",
+    "completed",
+    "expired",
+    "nodriverfound",
+  ]);
+
+  return !inactiveStatuses.has(normalizedStatus);
 }
 
 function formatTripDateTime(value) {
@@ -890,6 +905,40 @@ export default function SearchScreen() {
   const completedAtText = formatTripDateTime(
     acceptedTrip?.completedAt ?? activeBookedRide?.completedAt
   );
+  const refreshSharedState = useCallback(
+    async ({ showLoading = false } = {}) => {
+      if (mode !== "shared" || !session?.accessToken) {
+        setPendingSharedRequests([]);
+        return;
+      }
+
+      if (showLoading) {
+        setIsLoadingSharedState(true);
+      }
+
+      try {
+        const [requestResult, groupResult] = await Promise.allSettled([
+          getMyRideSharingRequest(session.accessToken),
+          getMyRideSharingGroup(session.accessToken),
+        ]);
+
+        const request =
+          requestResult.status === "fulfilled" ? requestResult.value : null;
+        const group = groupResult.status === "fulfilled" ? groupResult.value : null;
+        const mappedRequest = mapRideSharingRequestToCardClean(request, group);
+        const mappedGroup = mapRideSharingGroupToCard(group);
+
+        setPendingSharedRequests(
+          mappedRequest ? [mappedRequest] : mappedGroup ? [mappedGroup] : []
+        );
+      } finally {
+        if (showLoading) {
+          setIsLoadingSharedState(false);
+        }
+      }
+    },
+    [mode, session?.accessToken]
+  );
 
   useEffect(() => {
     if (mode === "shared" || bookingStep !== "form") {
@@ -1081,41 +1130,22 @@ export default function SearchScreen() {
 
     let isActive = true;
 
-    const loadSharedState = async () => {
-      setIsLoadingSharedState(true);
-
-      try {
-        const [requestResult, groupResult] = await Promise.allSettled([
-          getMyRideSharingRequest(session.accessToken),
-          getMyRideSharingGroup(session.accessToken),
-        ]);
-
-        if (!isActive) {
-          return;
-        }
-
-        const request =
-          requestResult.status === "fulfilled" ? requestResult.value : null;
-        const group = groupResult.status === "fulfilled" ? groupResult.value : null;
-        const mappedRequest = mapRideSharingRequestToCardClean(request, group);
-        const mappedGroup = mapRideSharingGroupToCard(group);
-
-        setPendingSharedRequests(
-          mappedRequest ? [mappedRequest] : mappedGroup ? [mappedGroup] : []
-        );
-      } finally {
-        if (isActive) {
-          setIsLoadingSharedState(false);
-        }
+    const refreshIfActive = async (options) => {
+      if (isActive) {
+        await refreshSharedState(options);
       }
     };
 
-    loadSharedState();
+    refreshIfActive({ showLoading: true });
+    const intervalId = setInterval(() => {
+      refreshIfActive({ showLoading: false });
+    }, 5000);
 
     return () => {
       isActive = false;
+      clearInterval(intervalId);
     };
-  }, [mode, session?.accessToken]);
+  }, [mode, refreshSharedState, session?.accessToken]);
 
   useEffect(() => {
     if (bookingStep !== "rideOptions" || !verifiedTripMap) {
@@ -1683,6 +1713,62 @@ export default function SearchScreen() {
       return;
     }
 
+    if (!selectedRideOption) {
+      setAlertMessage("Vui l\u00f2ng ch\u1ecdn lo\u1ea1i xe.");
+      return;
+    }
+
+    if (
+      !verifiedTripMap.origin?.location ||
+      !verifiedTripMap.destination?.location
+    ) {
+      setAlertMessage("Kh\u00f4ng t\u00ecm th\u1ea5y t\u1ecda \u0111\u1ed9 \u0111i\u1ec3m \u0111\u00f3n ho\u1eb7c \u0111i\u1ec3m \u0111\u1ebfn. Vui l\u00f2ng ch\u1ecdn l\u1ea1i \u0111\u1ecba ch\u1ec9.");
+      return;
+    }
+
+    if (!verifiedTripMap.directions) {
+      setAlertMessage("Kh\u00f4ng th\u1ec3 t\u00ednh tuy\u1ebfn \u0111\u01b0\u1eddng cho chuy\u1ebfn \u0111i. Vui l\u00f2ng th\u1eed l\u1ea1i.");
+      return;
+    }
+
+    const validatedTripMetrics = getBackendTripMetrics(verifiedTripMap);
+
+    if (
+      !validatedTripMetrics ||
+      validatedTripMetrics.distanceKm <= 0 ||
+      validatedTripMetrics.durationMinute <= 0
+    ) {
+      setAlertMessage("Kh\u00f4ng th\u1ec3 t\u00ednh qu\u00e3ng \u0111\u01b0\u1eddng ho\u1eb7c th\u1eddi gian di chuy\u1ec3n. Vui l\u00f2ng ch\u1ecdn l\u1ea1i l\u1ed9 tr\u00ecnh.");
+      return;
+    }
+
+    if (isLoadingRidePrices) {
+      setAlertMessage("Gi\u00e1 c\u01b0\u1edbc \u0111ang \u0111\u01b0\u1ee3c t\u00ednh. Vui l\u00f2ng \u0111\u1ee3i trong gi\u00e2y l\u00e1t.");
+      return;
+    }
+
+    if (ridePriceError) {
+      setAlertMessage(ridePriceError);
+      return;
+    }
+
+    if (!selectedRidePrice || selectedRidePrice === "--") {
+      setAlertMessage("Ch\u01b0a c\u00f3 gi\u00e1 c\u01b0\u1edbc cho lo\u1ea1i xe \u0111ang ch\u1ecdn. Vui l\u00f2ng ch\u1ecdn lo\u1ea1i xe kh\u00e1c ho\u1eb7c th\u1eed l\u1ea1i.");
+      return;
+    }
+
+    if (scheduledRideAt) {
+      const scheduledDate = new Date(scheduledRideAt);
+
+      if (
+        Number.isNaN(scheduledDate.getTime()) ||
+        !isScheduleInRange(scheduledDate)
+      ) {
+        setAlertMessage("Th\u1eddi gian h\u1eb9n l\u1ecbch kh\u00f4ng h\u1ee3p l\u1ec7. Vui l\u00f2ng ch\u1ecdn l\u1ea1i.");
+        return;
+      }
+    }
+
     setIsBookingRide(true);
     setAlertMessage("");
     setAcceptedTrip(null);
@@ -1844,13 +1930,13 @@ export default function SearchScreen() {
     }
 
     if (!fromInput.trim()) {
-      setAlertMessage("Vui l\u00f2ng nh\u1eadp \u0111i\u1ec3m \u0111\u00f3n");
+      setAlertMessage("Vui l\u00f2ng nh\u1eadp \u0111i\u1ec3m \u0111\u00f3n.");
       setFocusedField("from");
       return null;
     }
 
     if (!toInput.trim()) {
-      setAlertMessage("Vui l\u00f2ng nh\u1eadp \u0111i\u1ec3m \u0111\u1ebfn");
+      setAlertMessage("Vui l\u00f2ng nh\u1eadp \u0111i\u1ec3m \u0111\u1ebfn.");
       setFocusedField("to");
       return null;
     }
@@ -1863,6 +1949,17 @@ export default function SearchScreen() {
 
     if (!selectedToPlace) {
       setAlertMessage("Vui l\u00f2ng ch\u1ecdn \u0111i\u1ec3m \u0111\u1ebfn t\u1eeb g\u1ee3i \u00fd VietMap.");
+      setFocusedField("to");
+      return null;
+    }
+
+    const distanceBetweenPlaces = calculateBackendDistanceKm(
+      selectedFromPlace,
+      selectedToPlace
+    );
+
+    if (Number.isFinite(distanceBetweenPlaces) && distanceBetweenPlaces < 0.1) {
+      setAlertMessage("\u0110i\u1ec3m \u0111\u00f3n v\u00e0 \u0111i\u1ec3m \u0111\u1ebfn qu\u00e1 g\u1ea7n nhau. Vui l\u00f2ng ch\u1ecdn l\u1ed9 tr\u00ecnh kh\u00e1c.");
       setFocusedField("to");
       return null;
     }
@@ -1956,6 +2053,27 @@ export default function SearchScreen() {
   };
 
   const confirmSchedulePicker = () => {
+    if (!verifiedTripMap) {
+      setAlertMessage("Vui l\u00f2ng x\u00e1c nh\u1eadn \u0111i\u1ec3m \u0111\u00f3n v\u00e0 \u0111i\u1ec3m \u0111\u1ebfn tr\u01b0\u1edbc khi h\u1eb9n l\u1ecbch.");
+      setSchedulePickerVisible(false);
+      return;
+    }
+
+    if (!scheduleDraft.date) {
+      setAlertMessage("Vui l\u00f2ng ch\u1ecdn ng\u00e0y h\u1eb9n l\u1ecbch.");
+      return;
+    }
+
+    if (!scheduleDraft.hour || !scheduleDraft.minute) {
+      setAlertMessage("Vui l\u00f2ng ch\u1ecdn gi\u1edd h\u1eb9n l\u1ecbch.");
+      return;
+    }
+
+    if (!isScheduleInRange(pickupDate)) {
+      setAlertMessage("Th\u1eddi gian h\u1eb9n l\u1ecbch kh\u00f4ng h\u1ee3p l\u1ec7. Vui l\u00f2ng ch\u1ecdn th\u1eddi gian kh\u00e1c.");
+      return;
+    }
+
     setScheduledRideTime(scheduleDisplayText);
     setScheduledRideAt(pickupDate.toISOString());
     setSchedulePickerVisible(false);
@@ -2036,23 +2154,50 @@ export default function SearchScreen() {
       return;
     }
 
+    const hasActiveSharedRide = pendingSharedRequests.some((request) =>
+      isSharedRideActive(request.status)
+    );
+
+    if (hasActiveSharedRide) {
+      setSharedFormError(
+        "B\u1ea1n \u0111ang c\u00f3 y\u00eau c\u1ea7u xe gh\u00e9p \u0111ang ho\u1ea1t \u0111\u1ed9ng. Vui l\u00f2ng h\u1ee7y y\u00eau c\u1ea7u hi\u1ec7n t\u1ea1i tr\u01b0\u1edbc khi t\u1ea1o m\u1edbi."
+      );
+      return;
+    }
+
     if (!sharedForm.tripType) {
-      setSharedFormError("Vui l\u00f2ng ch\u1ecdn lo\u1ea1i chuy\u1ebfn");
+      setSharedFormError("Vui l\u00f2ng ch\u1ecdn lo\u1ea1i chuy\u1ebfn.");
       return;
     }
 
     if (!sharedForm.location.trim()) {
-      setSharedFormError(`Vui l\u00f2ng nh\u1eadp ${sharedLocationLabel.toLowerCase()}`);
+      setSharedFormError(
+        `Vui l\u00f2ng nh\u1eadp ${sharedLocationLabel.toLowerCase()}.`
+      );
       return;
     }
 
-    if (!selectedSharedSlot) {
-      setSharedFormError("Vui l\u00f2ng ch\u1ecdn slot \u0111i");
+    if (!selectedSharedPlace?.location) {
+      setSharedFormError(
+        `Vui l\u00f2ng ch\u1ecdn ${sharedLocationLabel.toLowerCase()} t\u1eeb g\u1ee3i \u00fd VietMap.`
+      );
       return;
     }
 
     if (!selectedSharedDate) {
-      setSharedFormError("Vui l\u00f2ng ch\u1ecdn ng\u00e0y \u0111i");
+      setSharedFormError("Vui l\u00f2ng ch\u1ecdn ng\u00e0y \u0111i.");
+      return;
+    }
+
+    if (!sharedForm.slotId) {
+      setSharedFormError("Vui l\u00f2ng ch\u1ecdn slot \u0111i.");
+      return;
+    }
+
+    if (!selectedSharedSlot) {
+      setSharedFormError(
+        "Slot n\u00e0y \u0111\u00e3 qu\u00e1 g\u1ea7n th\u1eddi gian hi\u1ec7n t\u1ea1i. Vui l\u00f2ng ch\u1ecdn slot kh\u00e1c."
+      );
       return;
     }
 
@@ -2074,6 +2219,20 @@ export default function SearchScreen() {
     );
     const scheduledAtText = formatLocalApiDateTime(scheduledAt);
     const slotNumber = Number(selectedSharedSlot.id.replace("slot-", ""));
+
+    if (!routeMetrics) {
+      setSharedFormError(
+        "Kh\u00f4ng th\u1ec3 t\u00ednh tuy\u1ebfn \u0111\u01b0\u1eddng xe gh\u00e9p. Vui l\u00f2ng ch\u1ecdn l\u1ea1i \u0111\u1ecba ch\u1ec9."
+      );
+      return;
+    }
+
+    if (!scheduledAtText || !Number.isFinite(slotNumber)) {
+      setSharedFormError(
+        "Kh\u00f4ng th\u1ec3 t\u1ea1o th\u1eddi gian xe gh\u00e9p. Vui l\u00f2ng ch\u1ecdn l\u1ea1i ng\u00e0y \u0111i v\u00e0 slot."
+      );
+      return;
+    }
 
     if (!routeMetrics || !scheduledAtText || !Number.isFinite(slotNumber)) {
       setSharedFormError("Không thể tạo dữ liệu yêu cầu xe ghép. Vui lòng chọn lại địa chỉ và slot.");
@@ -2114,9 +2273,18 @@ export default function SearchScreen() {
         }
       }
 
-      const mappedRequest = mapRideSharingRequestToCardClean(latestRequest);
+      const latestGroup = await getMyRideSharingGroup(session.accessToken).catch(
+        () => null
+      );
+      const mappedRequest = mapRideSharingRequestToCardClean(
+        latestRequest,
+        latestGroup
+      );
+      const mappedGroup = mapRideSharingGroupToCard(latestGroup);
 
-      setPendingSharedRequests(mappedRequest ? [mappedRequest] : []);
+      setPendingSharedRequests(
+        mappedRequest ? [mappedRequest] : mappedGroup ? [mappedGroup] : []
+      );
       setSharedForm(defaultSharedForm);
       closeCreateSharedModal();
     } catch (error) {
@@ -2142,9 +2310,7 @@ export default function SearchScreen() {
         { cancelReason: 4 },
         session.accessToken
       );
-      setPendingSharedRequests((current) =>
-        current.filter((request) => request.requestId !== requestId)
-      );
+      await refreshSharedState({ showLoading: true });
     } catch (error) {
       setAlertMessage(error.message || "Không thể hủy yêu cầu xe ghép.");
     } finally {
