@@ -91,29 +91,22 @@ function formatGroupDateTime(value) {
 }
 
 function normalizeGroupStatusLabel(status) {
-  const normalized = String(status ?? "").toLowerCase();
+  const normalized = String(status ?? "").replace(/\s+/g, "").toLowerCase();
+  const labels = {
+    waitingmatching: "\u0110ang ch\u1edd gh\u00e9p nh\u00f3m",
+    waitingdeparture: "\u0110ang ch\u1edd xu\u1ea5t ph\u00e1t",
+    readyforbroadcast: "S\u1eb5n s\u00e0ng t\u00ecm t\u00e0i x\u1ebf",
+    driveraccepted: "T\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn",
+    driverdriving: "T\u00e0i x\u1ebf \u0111ang \u0111\u1ebfn",
+    driverdrivingtopickup: "T\u00e0i x\u1ebf \u0111ang \u0111\u1ebfn",
+    passengerboarding: "\u0110ang \u0111\u00f3n kh\u00e1ch",
+    inprogress: "\u0110ang di chuy\u1ec3n",
+    completed: "Ho\u00e0n th\u00e0nh",
+    cancelled: "\u0110\u00e3 h\u1ee7y",
+    nodriverfound: "Ch\u01b0a t\u00ecm th\u1ea5y t\u00e0i x\u1ebf",
+  };
 
-  if (normalized === "readyforbroadcast") {
-    return "S\u1eb5n s\u00e0ng t\u00ecm t\u00e0i x\u1ebf";
-  }
-
-  if (normalized === "driveraccepted") {
-    return "T\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn";
-  }
-
-  if (normalized === "waitingdeparture") {
-    return "\u0110ang ch\u1edd xu\u1ea5t ph\u00e1t";
-  }
-
-  if (normalized === "completed") {
-    return "Ho\u00e0n th\u00e0nh";
-  }
-
-  if (normalized === "cancelled") {
-    return "\u0110\u00e3 h\u1ee7y";
-  }
-
-  return status || "\u0110ang ch\u1edd gh\u00e9p";
+  return labels[normalized] || status || "\u0110ang ch\u1edd gh\u00e9p";
 }
 
 function mapApiGroupToRide(group) {
@@ -175,8 +168,10 @@ export default function SharedRideDetailScreen() {
 
     let isActive = true;
 
-    const loadGroup = async () => {
-      setIsLoadingRide(true);
+    const loadGroup = async ({ showLoading = false } = {}) => {
+      if (showLoading) {
+        setIsLoadingRide(true);
+      }
       setLoadError("");
 
       try {
@@ -192,16 +187,20 @@ export default function SharedRideDetailScreen() {
           );
         }
       } finally {
-        if (isActive) {
+        if (isActive && showLoading) {
           setIsLoadingRide(false);
         }
       }
     };
 
-    loadGroup();
+    loadGroup({ showLoading: true });
+    const intervalId = setInterval(() => {
+      loadGroup();
+    }, 5000);
 
     return () => {
       isActive = false;
+      clearInterval(intervalId);
     };
   }, [mockRide, rideId, session?.accessToken]);
 
