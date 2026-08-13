@@ -159,6 +159,25 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function refreshSession() {
+    const currentSession = session;
+
+    if (!currentSession?.refreshToken) {
+      throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+    }
+
+    const refreshedAuth = await authApi.refreshToken(currentSession.refreshToken);
+    const nextSession = buildSession(refreshedAuth, currentSession);
+
+    setSession(nextSession);
+
+    if (rememberSession) {
+      await persistSession(nextSession);
+    }
+
+    return nextSession;
+  }
+
   async function login(credentials, options = {}) {
     const shouldRemember = Boolean(options.rememberSession);
 
@@ -317,6 +336,7 @@ export function AuthProvider({ children }) {
     forgotPassword,
     resetPasswordWithOtp,
     changePassword,
+    refreshSession,
     refreshProfile,
     saveProfile,
     logout,

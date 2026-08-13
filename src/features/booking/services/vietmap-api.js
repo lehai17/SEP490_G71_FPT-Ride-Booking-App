@@ -236,6 +236,35 @@ function estimateRideDurationSeconds(distanceKm) {
   return (distanceKm / XANH_STYLE_AVERAGE_SPEED_KMH) * 3600;
 }
 
+function getCurrentUtcIsoString() {
+  return new Date().toISOString();
+}
+
+function summarizeCongestion(route) {
+  const annotations = route?.annotations ?? {};
+  const congestionSegments = Array.isArray(annotations?.congestion)
+    ? annotations.congestion
+    : [];
+  const heavyDistanceSegments = Array.isArray(annotations?.congestion_distance)
+    ? annotations.congestion_distance
+    : [];
+  const segmentCounts = congestionSegments.reduce((accumulator, level) => {
+    const key = String(level || "unknown").toLowerCase();
+    accumulator[key] = (accumulator[key] ?? 0) + 1;
+    return accumulator;
+  }, {});
+  const heavyDistanceMeters = heavyDistanceSegments.reduce((total, value) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? total + numericValue : total;
+  }, 0);
+
+  return {
+    segmentCounts,
+    heavyDistanceMeters,
+    heavyDistanceText: formatDistance(heavyDistanceMeters),
+  };
+}
+
 function decodePolyline(encoded) {
   if (!encoded || typeof encoded !== "string") {
     return [];
@@ -294,6 +323,8 @@ function createApproximateRoute(origin, destination) {
   const distanceMeters = distanceKm * 1000;
 
   return {
+    distanceMeters,
+    durationSeconds: estimateRideDurationSeconds(distanceKm),
     distanceText: formatDistance(distanceMeters),
     durationText: formatDuration(estimateRideDurationSeconds(distanceKm)),
     routeGeometry: {
@@ -327,11 +358,18 @@ function mapVietMapRoute(payload, origin, destination) {
   const distanceMeters = Number(route.distance ?? route.summary?.lengthInMeters);
   const rawTime = Number(route.time ?? route.duration ?? route.summary?.travelTimeInSeconds);
   const durationSeconds = rawTime > 10000 ? rawTime / 1000 : rawTime;
+  const effectiveDurationSeconds =
+    durationSeconds || estimateRideDurationSeconds(distanceMeters / 1000);
   const coordinates = normalizeRouteCoordinates(route);
+  const congestionSummary = summarizeCongestion(route);
 
   return {
+    distanceMeters,
+    durationSeconds: effectiveDurationSeconds,
     distanceText: formatDistance(distanceMeters),
-    durationText: formatDuration(durationSeconds || estimateRideDurationSeconds(distanceMeters / 1000)),
+    durationText: formatDuration(effectiveDurationSeconds),
+    congestionSummary,
+    source: "vietmap-route-v3",
     routeGeometry: {
       type: "Feature",
       properties: {
@@ -474,20 +512,40 @@ export async function reverseVietMapPlaceLocation(location) {
 export async function getVietMapDirections(origin, destination) {
   try {
     const params = new URLSearchParams({
-      "api-version": "1.1",
       apikey: VIETMAP_API_KEY,
       vehicle: "car",
-      locale: "vi",
       points_encoded: "false",
+      locale: "vi",
+      time: getCurrentUtcIsoString(),
+      annotations: "congestion,congestion_distance",
     });
     params.append("point", `${origin.location.lat},${origin.location.lng}`);
     params.append("point", `${destination.location.lat},${destination.location.lng}`);
 
-    const response = await fetch(`${VIETMAP_BASE_URL}/route?${params.toString()}`);
+    const response = await fetch(`${VIETMAP_BASE_URL}/route/v3?${params.toString()}`);
     const payload = await response.json();
 
     if (!response.ok) {
-      return createApproximateRoute(origin, destination);
+      const fallbackParams = new URLSearchParams({
+        "api-version": "1.1",
+        apikey: VIETMAP_API_KEY,
+        vehicle: "car",
+        locale: "vi",
+        points_encoded: "false",
+      });
+      fallbackParams.append("point", `${origin.location.lat},${origin.location.lng}`);
+      fallbackParams.append("point", `${destination.location.lat},${destination.location.lng}`);
+
+      const fallbackResponse = await fetch(
+        `${VIETMAP_BASE_URL}/route?${fallbackParams.toString()}`
+      );
+      const fallbackPayload = await fallbackResponse.json();
+
+      if (!fallbackResponse.ok) {
+        return createApproximateRoute(origin, destination);
+      }
+
+      return mapVietMapRoute(fallbackPayload, origin, destination);
     }
 
     return mapVietMapRoute(payload, origin, destination);

@@ -60,6 +60,129 @@ const EMPTY_CHANGE_PASSWORD_FORM = {
   confirmPassword: "",
 };
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOGIN_MESSAGES = {
+  emailRequired: "Vui l\u00f2ng nh\u1eadp email.",
+  emailInvalid: "Email ch\u01b0a \u0111\u00fang \u0111\u1ecbnh d\u1ea1ng.",
+  passwordRequired: "Vui l\u00f2ng nh\u1eadp m\u1eadt kh\u1ea9u.",
+  passwordTooShort:
+    "M\u1eadt kh\u1ea9u ph\u1ea3i c\u00f3 \u00edt nh\u1ea5t 6 k\u00fd t\u1ef1.",
+  invalidCredentials:
+    "Email ho\u1eb7c m\u1eadt kh\u1ea9u kh\u00f4ng \u0111\u00fang, ho\u1eb7c t\u00e0i kho\u1ea3n ch\u01b0a x\u00e1c minh email.",
+  loginFailed:
+    "\u0110\u0103ng nh\u1eadp kh\u00f4ng th\u00e0nh c\u00f4ng. Vui l\u00f2ng th\u1eed l\u1ea1i.",
+};
+const REGISTER_MESSAGES = {
+  fullNameRequired: "Vui l\u00f2ng nh\u1eadp h\u1ecd v\u00e0 t\u00ean.",
+  emailRequired: "Vui l\u00f2ng nh\u1eadp email.",
+  emailInvalid: "Email ch\u01b0a \u0111\u00fang \u0111\u1ecbnh d\u1ea1ng.",
+  passwordRequired: "Vui l\u00f2ng nh\u1eadp m\u1eadt kh\u1ea9u.",
+  passwordTooShort:
+    "M\u1eadt kh\u1ea9u ph\u1ea3i c\u00f3 \u00edt nh\u1ea5t 6 k\u00fd t\u1ef1.",
+  confirmPasswordRequired:
+    "Vui l\u00f2ng nh\u1eadp l\u1ea1i m\u1eadt kh\u1ea9u.",
+  passwordMismatch:
+    "M\u1eadt kh\u1ea9u nh\u1eadp l\u1ea1i kh\u00f4ng kh\u1edbp.",
+  emailExists:
+    "Email n\u00e0y \u0111\u00e3 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng. Vui l\u00f2ng d\u00f9ng email kh\u00e1c.",
+  registerFailed:
+    "\u0110\u0103ng k\u00fd kh\u00f4ng th\u00e0nh c\u00f4ng. Vui l\u00f2ng ki\u1ec3m tra th\u00f4ng tin v\u00e0 th\u1eed l\u1ea1i.",
+};
+
+function validateLoginForm(form) {
+  const email = form.email.trim();
+  const password = form.password.trim();
+
+  if (!email) {
+    return LOGIN_MESSAGES.emailRequired;
+  }
+
+  if (!EMAIL_PATTERN.test(email)) {
+    return LOGIN_MESSAGES.emailInvalid;
+  }
+
+  if (!password) {
+    return LOGIN_MESSAGES.passwordRequired;
+  }
+
+  if (password.length < 6) {
+    return LOGIN_MESSAGES.passwordTooShort;
+  }
+
+  return "";
+}
+
+function getLoginErrorMessage(error) {
+  const message = String(error?.message || "");
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    error?.status === 401 ||
+    normalizedMessage.includes("invalid email or password") ||
+    normalizedMessage.includes("email not verified")
+  ) {
+    return LOGIN_MESSAGES.invalidCredentials;
+  }
+
+  return message || LOGIN_MESSAGES.loginFailed;
+}
+
+function validateRegisterForm(form) {
+  const fullName = form.fullName.trim();
+  const email = form.email.trim();
+  const password = form.password.trim();
+  const confirmPassword = form.confirmPassword.trim();
+
+  if (!fullName) {
+    return REGISTER_MESSAGES.fullNameRequired;
+  }
+
+  if (!email) {
+    return REGISTER_MESSAGES.emailRequired;
+  }
+
+  if (!EMAIL_PATTERN.test(email)) {
+    return REGISTER_MESSAGES.emailInvalid;
+  }
+
+  if (!password) {
+    return REGISTER_MESSAGES.passwordRequired;
+  }
+
+  if (password.length < 6) {
+    return REGISTER_MESSAGES.passwordTooShort;
+  }
+
+  if (!confirmPassword) {
+    return REGISTER_MESSAGES.confirmPasswordRequired;
+  }
+
+  if (password !== confirmPassword) {
+    return REGISTER_MESSAGES.passwordMismatch;
+  }
+
+  return "";
+}
+
+function getRegisterErrorMessage(error) {
+  const message = String(error?.message || "");
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("already") ||
+    normalizedMessage.includes("duplicate") ||
+    normalizedMessage.includes("\u0111\u00e3 t\u1ed3n t\u1ea1i")
+  ) {
+    return REGISTER_MESSAGES.emailExists;
+  }
+
+  if (error?.status === 400 || normalizedMessage.includes("/auth/register")) {
+    return REGISTER_MESSAGES.registerFailed;
+  }
+
+  return message || REGISTER_MESSAGES.registerFailed;
+}
+
 function getDisplayRole(role) {
   return role === "Customer" ? "Khách hàng" : role;
 }
@@ -241,6 +364,13 @@ export default function ProfileScreen() {
     setErrorMessage("");
     setSuccessMessage("");
 
+    const validationError = validateLoginForm(loginForm);
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
     const normalizedLoginForm = {
       email: loginForm.email.trim(),
       password: loginForm.password.trim(),
@@ -252,7 +382,7 @@ export default function ProfileScreen() {
       setShowLoginPassword(false);
       setSuccessMessage("Đăng nhập thành công.");
     } catch (error) {
-      const nextMessage = error.message ?? "Đăng nhập thất bại.";
+      const nextMessage = getLoginErrorMessage(error);
       const normalizedMessage = String(nextMessage).toLowerCase();
       const isAmbiguousLoginError =
         normalizedMessage.includes("invalid email or password") &&
@@ -284,11 +414,25 @@ export default function ProfileScreen() {
     setErrorMessage("");
     setSuccessMessage("");
 
+    const validationError = validateRegisterForm(registerForm);
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    const normalizedRegisterForm = {
+      fullName: registerForm.fullName.trim(),
+      email: registerForm.email.trim(),
+      password: registerForm.password.trim(),
+      confirmPassword: registerForm.confirmPassword.trim(),
+    };
+
     try {
-      await register(registerForm, { rememberSession: rememberMe });
+      await register(normalizedRegisterForm, { rememberSession: rememberMe });
       openVerificationStep({
-        email: registerForm.email,
-        password: registerForm.password,
+        email: normalizedRegisterForm.email,
+        password: normalizedRegisterForm.password,
       });
       setRegisterForm(EMPTY_REGISTER_FORM);
       setShowRegisterPassword(false);
@@ -297,7 +441,7 @@ export default function ProfileScreen() {
         "Đăng ký thành công. Vui lòng nhập mã OTP đã gửi về email để xác minh tài khoản."
       );
     } catch (error) {
-      setErrorMessage(error.message);
+      setErrorMessage(getRegisterErrorMessage(error));
     }
   }
 

@@ -50,9 +50,36 @@ export function getRideSharingGroup(groupId, accessToken) {
   });
 }
 
-export function joinRideSharingGroup(groupId, accessToken) {
+export function getAvailableRideSharingGroups(direction, accessToken) {
+  const searchParams = new URLSearchParams();
+
+  if (direction != null && direction !== "") {
+    searchParams.set("direction", String(direction));
+  }
+
+  const queryString = searchParams.toString();
+  const path = queryString
+    ? `/ride-sharing/groups/available?${queryString}`
+    : "/ride-sharing/groups/available";
+
+  return apiRequest(path, {
+    method: "GET",
+    headers: getAuthHeaders(accessToken),
+  });
+}
+
+export function joinRideSharingGroup(groupId, payload, accessToken) {
   return apiRequest(`/ride-sharing/groups/${groupId}/join`, {
     method: "POST",
     headers: getAuthHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function leaveRideSharingGroup(groupId, payload, accessToken) {
+  return apiRequest(`/ride-sharing/groups/${groupId}/leave`, {
+    method: "POST",
+    headers: getAuthHeaders(accessToken),
+    body: JSON.stringify(payload),
   });
 }
