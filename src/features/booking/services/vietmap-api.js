@@ -324,7 +324,9 @@ function createApproximateRoute(origin, destination) {
 
   return {
     distanceMeters,
+    distanceKm,
     durationSeconds: estimateRideDurationSeconds(distanceKm),
+    durationMinute: Math.max(1, Math.round(estimateRideDurationSeconds(distanceKm) / 60)),
     distanceText: formatDistance(distanceMeters),
     durationText: formatDuration(estimateRideDurationSeconds(distanceKm)),
     routeGeometry: {
@@ -365,7 +367,9 @@ function mapVietMapRoute(payload, origin, destination) {
 
   return {
     distanceMeters,
+    distanceKm: distanceMeters / 1000,
     durationSeconds: effectiveDurationSeconds,
+    durationMinute: Math.max(1, Math.round(effectiveDurationSeconds / 60)),
     distanceText: formatDistance(distanceMeters),
     durationText: formatDuration(effectiveDurationSeconds),
     congestionSummary,

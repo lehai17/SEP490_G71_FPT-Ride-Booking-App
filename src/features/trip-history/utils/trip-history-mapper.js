@@ -5,7 +5,7 @@ function formatCurrencyVnd(value) {
     return "--";
   }
 
-  return `${Math.round(numberValue).toLocaleString("vi-VN")}\u0111`;
+  return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
 }
 
 function formatTripDate(value) {
@@ -25,6 +25,21 @@ function formatTripDate(value) {
   });
 }
 
+function formatDistanceKm(value) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return "";
+  }
+
+  const roundedValue =
+    numberValue >= 10
+      ? Math.round(numberValue)
+      : Math.round(numberValue * 10) / 10;
+
+  return `${roundedValue.toLocaleString("vi-VN")} km`;
+}
+
 function getTripTime(value) {
   const date = new Date(value ?? "");
 
@@ -34,11 +49,31 @@ function getTripTime(value) {
 function getTripFare(trip) {
   return (
     trip?.pricing?.estimatedFare ??
+    trip?.Pricing?.EstimatedFare ??
+    trip?.tripPricing?.estimatedFare ??
+    trip?.TripPricing?.EstimatedFare ??
     trip?.estimatedFare ??
+    trip?.EstimatedFare ??
     trip?.fareAmount ??
+    trip?.FareAmount ??
     trip?.fare ??
+    trip?.Fare ??
     null
   );
+}
+
+function getTripDistance(trip) {
+  return (
+    trip?.estimatedDistanceKm ??
+    trip?.EstimatedDistanceKm ??
+    trip?.distanceKm ??
+    trip?.DistanceKm ??
+    null
+  );
+}
+
+function getLocalDistanceText(trip) {
+  return trip?.tripDistance ?? trip?.distanceText ?? "";
 }
 
 function isTripOlderThanThreeDays(value) {
@@ -62,29 +97,38 @@ function getTripIcon(vehicleType) {
   const normalizedType = String(vehicleType ?? "").toLowerCase();
 
   if (normalizedType.includes("bike") || normalizedType === "1") {
-    return "\ud83d\udef5";
+    return "\uD83D\uDEF5";
   }
 
-  return "\ud83d\ude97";
+  return "\uD83D\uDE97";
 }
 
 export function mapTripToHistoryItem(trip, localTrip = null) {
   const date =
     trip?.completedAt ?? trip?.cancelledAt ?? trip?.acceptedAt ?? trip?.createdAt;
   const fare = getTripFare(localTrip) ?? getTripFare(trip);
+  const distanceText =
+    formatDistanceKm(getTripDistance(trip)) ||
+    formatDistanceKm(getTripDistance(localTrip)) ||
+    getLocalDistanceText(localTrip);
   const actionPrimary = isTripOlderThanThreeDays(date)
     ? "Chi tiết"
     : "Đánh giá";
+  const metaParts = [
+    formatTripDate(date),
+    distanceText,
+    formatCurrencyVnd(fare),
+  ].filter((item) => item && item !== "--");
 
   return {
     id: trip.id,
     icon: getTripIcon(trip.vehicleType),
-    route: `${trip.pickupAddress || "\u0110i\u1ec3m \u0111\u00f3n"} \u2192 ${
-      trip.destinationAddress || "\u0110i\u1ec3m \u0111\u1ebfn"
+    route: `${trip.pickupAddress || "Điểm đón"} → ${
+      trip.destinationAddress || "Điểm đến"
     }`,
-    meta: `${formatTripDate(date)} \u00b7 ${formatCurrencyVnd(fare)}`,
+    meta: metaParts.join(" · "),
     actionPrimary,
-    actionSecondary: "B\u00e1o c\u00e1o",
+    actionSecondary: "Báo cáo",
     rating: null,
     sortTimestamp: getTripTime(date),
   };

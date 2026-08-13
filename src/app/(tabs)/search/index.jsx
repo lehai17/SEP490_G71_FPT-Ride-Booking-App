@@ -39,7 +39,10 @@ import {
   createTrip,
   getTrip,
 } from "@/features/booking/services/trip-api";
-import { persistBookedTrip } from "@/features/booking/services/trip-storage";
+import {
+  loadBookedTrips,
+  persistBookedTrip,
+} from "@/features/booking/services/trip-storage";
 import {
   cancelRideSharingRequest,
   createRideSharingRequest,
@@ -50,6 +53,10 @@ import {
   getRideSharingRequest,
   leaveRideSharingGroup,
 } from "@/features/ride-sharing/services/ride-sharing-api";
+import {
+  loadStoredRideSharingCards,
+  persistRideSharingCards,
+} from "@/features/ride-sharing/services/ride-sharing-storage";
 
 const BRAND = "#FF7A00";
 const MAP_BG = "#FFF3C9";
@@ -222,6 +229,42 @@ function getTripDurationText(trip, fallbackText = "--") {
   return trip?.estimatedDurationMinute != null
     ? formatDurationMinute(trip.estimatedDurationMinute)
     : fallbackText;
+}
+
+function mergeBookedRideWithTrip(bookedRide, trip) {
+  const dbEstimatedFare = getTripEstimatedFare(trip);
+  const hasDriver = Boolean(trip?.driverId);
+
+  return {
+    ...(bookedRide ?? {}),
+    id: trip?.id ?? bookedRide?.id,
+    status: normalizeTripStatus(trip?.status ?? bookedRide?.status),
+    statusLabel: getTripStatusView(trip?.status ?? bookedRide?.status, hasDriver).label,
+    estimatedFare:
+      bookedRide?.estimatedFare ??
+      (dbEstimatedFare != null ? formatCurrencyVnd(Number(dbEstimatedFare)) : null),
+    tripDistance: getTripDistanceText(trip, bookedRide?.tripDistance),
+    tripDuration: getTripDurationText(trip, bookedRide?.tripDuration),
+    pickup: trip?.pickupAddress ?? bookedRide?.pickup,
+    destination: trip?.destinationAddress ?? bookedRide?.destination,
+    route:
+      bookedRide?.route ??
+      `${trip?.pickupAddress ?? ""} → ${trip?.destinationAddress ?? ""}`.trim(),
+    vehicleType: String(trip?.vehicleType ?? bookedRide?.vehicleType ?? ""),
+    driverId: trip?.driverId ?? bookedRide?.driverId,
+    driverName: trip?.driverName ?? bookedRide?.driverName,
+    driverPhone: trip?.driverPhone ?? bookedRide?.driverPhone,
+    driverLicensePlate:
+      trip?.driverLicensePlate ?? bookedRide?.driverLicensePlate,
+    driverVehicleInfo:
+      trip?.driverVehicleInfo ?? bookedRide?.driverVehicleInfo,
+    acceptedAt: trip?.acceptedAt ?? bookedRide?.acceptedAt,
+    driverArrivedAt: trip?.driverArrivedAt ?? bookedRide?.driverArrivedAt,
+    pickedUpAt: trip?.pickedUpAt ?? bookedRide?.pickedUpAt,
+    completedAt: trip?.completedAt ?? bookedRide?.completedAt,
+    cancelledAt: trip?.cancelledAt ?? bookedRide?.cancelledAt,
+    createdAt: trip?.createdAt ?? bookedRide?.createdAt,
+  };
 }
 
 function formatSharedSchedule(value) {
@@ -430,18 +473,29 @@ function mapRideSharingRequestToCardClean(request, group = null) {
 
   const pickup = request.pickupAddress || "Điểm đón";
   const destination = request.destinationAddress || "Điểm đến";
-  const groupPassengerCount = group?.currentPassengers ?? 1;
-  const groupCapacity = group?.maxPassengers ?? 3;
-  const fare = Number(request.finalFare ?? request.quotedFare);
   const requestStatus = normalizeRideSharingRequestStatus(request.status);
-  const groupStatus =
+  const rawGroupStatus =
     group?.status != null ? normalizeRideSharingGroupStatus(group.status) : "";
+  const shouldIgnoreGroup =
+    requestStatus &&
+    isSharedRideActive(requestStatus) &&
+    isSharedGroupTerminal(rawGroupStatus);
+  const effectiveGroup = shouldIgnoreGroup ? null : group;
+  const groupPassengerCount = effectiveGroup?.currentPassengers ?? 1;
+  const groupCapacity = effectiveGroup?.maxPassengers ?? 3;
+  const fare = Number(
+    shouldIgnoreGroup
+      ? request.quotedFare ?? request.finalFare
+      : request.finalFare ?? request.quotedFare
+  );
+  const groupStatus = shouldIgnoreGroup ? "" : rawGroupStatus;
   const displayStatus = requestStatus;
 
   return {
     id: request.id,
     requestId: request.id,
-    groupId: request.groupId ?? group?.id ?? "",
+    passengerId: request.passengerId ?? "",
+    groupId: shouldIgnoreGroup ? "" : request.groupId ?? effectiveGroup?.id ?? "",
     route: `${pickup} → ${destination}`,
     vehicle: "Xe ghép",
     price: formatCurrencyVnd(fare),
@@ -454,7 +508,7 @@ function mapRideSharingRequestToCardClean(request, group = null) {
     requestStatus,
     groupStatus,
     statusLabel: normalizeSharedStatusLabelClean(displayStatus),
-    driver: group?.driverName || "Chưa có tài xế",
+    driver: effectiveGroup?.driverName || "Chưa có tài xế",
     destination,
     participantCount: groupPassengerCount,
     capacity: groupCapacity,
@@ -481,6 +535,7 @@ function mapRideSharingGroupToCard(group) {
   return {
     id: group.id,
     requestId: firstMember.requestId || firstMember.rideSharingRequestId || "",
+    passengerId: firstMember.passengerId || firstMember.userId || "",
     groupId: group.id,
     route: `${pickup} → ${destination}`,
     vehicle: "Nhóm xe ghép",
@@ -628,6 +683,18 @@ function areSameBookingPlaces(origin, destination) {
 }
 
 function getBackendTripMetrics(verifiedMap) {
+  const routeDistanceKm = Number(verifiedMap?.directions?.distanceKm);
+  const routeDurationMinute = Number(verifiedMap?.directions?.durationMinute);
+
+  if (routeDistanceKm > 0 && routeDurationMinute > 0) {
+    return {
+      distanceKm: routeDistanceKm,
+      durationMinute: Math.max(1, Math.round(routeDurationMinute)),
+      distanceText: formatDistanceKm(routeDistanceKm),
+      durationText: formatDurationMinute(routeDurationMinute),
+    };
+  }
+
   const routeDistanceMeters = Number(verifiedMap?.directions?.distanceMeters);
   const routeDurationSeconds = Number(verifiedMap?.directions?.durationSeconds);
 
@@ -643,23 +710,7 @@ function getBackendTripMetrics(verifiedMap) {
     };
   }
 
-  const distanceKm = calculateBackendDistanceKm(
-    verifiedMap?.origin,
-    verifiedMap?.destination
-  );
-
-  if (distanceKm <= 0) {
-    return null;
-  }
-
-  const durationMinute = Math.ceil((distanceKm / 30) * 60);
-
-  return {
-    distanceKm,
-    durationMinute,
-    distanceText: formatDistanceKm(distanceKm),
-    durationText: formatDurationMinute(durationMinute),
-  };
+  return null;
 }
 
 function normalizeTripStatus(status) {
@@ -695,6 +746,19 @@ function getSharedRequestEffectiveStatus(request) {
     return "";
   }
 
+  const normalizedRequestStatus = normalizeRideSharingRequestStatus(
+    request.requestStatus ?? request.status
+  );
+
+  if (
+    normalizedRequestStatus === "completed" ||
+    normalizedRequestStatus === "cancelled" ||
+    normalizedRequestStatus === "expired" ||
+    normalizedRequestStatus === "nodriverfound"
+  ) {
+    return normalizedRequestStatus;
+  }
+
   if (request.groupStatus) {
     const normalizedGroupStatus = normalizeRideSharingGroupStatus(
       request.groupStatus
@@ -722,7 +786,93 @@ function getSharedRequestEffectiveStatus(request) {
     }
   }
 
-  return normalizeRideSharingRequestStatus(request.requestStatus ?? request.status);
+  return normalizedRequestStatus;
+}
+
+function getSharedRequestCardKey(card) {
+  return String(card?.requestId || card?.groupId || card?.id || "");
+}
+
+function isRideSharingCardOwnedByUser(card, userId) {
+  const normalizedUserId = String(userId ?? "").trim().toLowerCase();
+
+  if (!normalizedUserId) {
+    return false;
+  }
+
+  const passengerId = String(card?.passengerId ?? "").trim().toLowerCase();
+
+  return !passengerId || passengerId === normalizedUserId;
+}
+
+function mergeSharedRequestCards(primaryCards, secondaryCards) {
+  const mergedCards = [];
+  const seenKeys = new Set();
+
+  [...(primaryCards ?? []), ...(secondaryCards ?? [])].forEach((card) => {
+    const key = getSharedRequestCardKey(card);
+
+    if (!key || seenKeys.has(key)) {
+      return;
+    }
+
+    seenKeys.add(key);
+    mergedCards.push(card);
+  });
+
+  return mergedCards;
+}
+
+async function refreshStoredRideSharingCard(card, accessToken) {
+  if (!card || !accessToken) {
+    return card;
+  }
+
+  try {
+    if (card.requestId) {
+      const request = await getRideSharingRequest(card.requestId, accessToken);
+      let group = null;
+
+      if (request?.groupId) {
+        try {
+          group = await getRideSharingGroup(request.groupId, accessToken);
+        } catch {
+          group = null;
+        }
+      }
+
+      return mapRideSharingRequestToCardClean(request, group) ?? card;
+    }
+
+    if (card.groupId) {
+      const group = await getRideSharingGroup(card.groupId, accessToken);
+      return mapRideSharingGroupToCard(group) ?? card;
+    }
+  } catch {
+    return card;
+  }
+
+  return card;
+}
+
+async function refreshStoredRideSharingCards(cards, accessToken) {
+  const storedCards = (cards ?? []).filter(Boolean).slice(0, 50);
+
+  if (storedCards.length === 0 || !accessToken) {
+    return storedCards;
+  }
+
+  const refreshedCards = await Promise.allSettled(
+    storedCards.map((card) => refreshStoredRideSharingCard(card, accessToken))
+  );
+
+  return refreshedCards
+    .map((result, index) =>
+      result.status === "fulfilled" && result.value
+        ? result.value
+        : storedCards[index]
+    )
+    .filter(Boolean);
 }
 
 function getRideSharingCreateErrorMessage(error) {
@@ -1181,10 +1331,12 @@ export default function SearchScreen() {
   const deferredFrom = useDeferredValue(fromInput);
   const deferredTo = useDeferredValue(toInput);
   const suggestedSharedRides = availableSharedGroups;
-  const filteredSharedRequests = pendingSharedRequests.filter((request) => {
-    const effectiveStatus = getSharedRequestEffectiveStatus(request);
-    return getSharedRequestFilterKey(effectiveStatus) === sharedRequestFilter;
-  });
+  const filteredSharedRequests = pendingSharedRequests
+    .filter((request) => isRideSharingCardOwnedByUser(request, session?.userId))
+    .filter((request) => {
+      const effectiveStatus = getSharedRequestEffectiveStatus(request);
+      return getSharedRequestFilterKey(effectiveStatus) === sharedRequestFilter;
+    });
   const selectedSharedRequestFilterLabel =
     sharedRequestFilterOptions.find((option) => option.id === sharedRequestFilter)
       ?.label ?? "Đã đặt";
@@ -1228,11 +1380,17 @@ export default function SearchScreen() {
           sharedDirectionByTripType[sharedForm.tripType] ??
           sharedDirectionByTripType[sharedTripTypes[0]];
 
-        const [requestResult, groupResult, availableGroupsResult] =
+        const [
+          requestResult,
+          groupResult,
+          availableGroupsResult,
+          storedCardsResult,
+        ] =
           await Promise.allSettled([
           getMyRideSharingRequest(session.accessToken),
           getMyRideSharingGroup(session.accessToken),
           getAvailableRideSharingGroups(direction, session.accessToken),
+          loadStoredRideSharingCards(session.userId),
         ]);
 
         const request =
@@ -1242,6 +1400,16 @@ export default function SearchScreen() {
           availableGroupsResult.status === "fulfilled"
             ? availableGroupsResult.value
             : [];
+        const storedCards =
+          storedCardsResult.status === "fulfilled"
+            ? storedCardsResult.value.filter((card) =>
+                isRideSharingCardOwnedByUser(card, session.userId)
+              )
+            : [];
+        const refreshedStoredCards = await refreshStoredRideSharingCards(
+          storedCards,
+          session.accessToken
+        );
         const availableGroupDetails = await Promise.allSettled(
           availableGroups.map((item) =>
             getRideSharingGroup(item.id, session.accessToken)
@@ -1266,9 +1434,25 @@ export default function SearchScreen() {
               String(item.groupId ?? "").toLowerCase() !== currentGroupId
           );
 
-        setPendingSharedRequests(
-          mappedRequest ? [mappedRequest] : mappedGroup ? [mappedGroup] : []
+        const currentCards = mappedRequest
+          ? [mappedRequest]
+          : mappedGroup
+            ? [mappedGroup]
+            : [];
+        const mergedCards = mergeSharedRequestCards(
+          currentCards,
+          refreshedStoredCards
         );
+
+        setPendingSharedRequests(mergedCards);
+
+        if (currentCards.length > 0 || refreshedStoredCards.length > 0) {
+          persistRideSharingCards(
+            mergeSharedRequestCards(currentCards, refreshedStoredCards),
+            session.userId
+          ).catch(() => {});
+        }
+
         setAvailableSharedGroups(mappedAvailableGroups);
       } finally {
         if (showLoading) {
@@ -1276,7 +1460,7 @@ export default function SearchScreen() {
         }
       }
     },
-    [mode, session?.accessToken, sharedForm.tripType]
+    [mode, session?.accessToken, session?.userId, sharedForm.tripType]
   );
 
   useEffect(() => {
@@ -1359,32 +1543,19 @@ export default function SearchScreen() {
           normalizeTripStatus(trip?.status) !== "pending";
 
         if (isActive && shouldUpdateTrip) {
-          const dbEstimatedFare = getTripEstimatedFare(trip);
-
           setAcceptedTrip(trip);
-          setActiveBookedRide((current) => ({
-            ...(current ?? {}),
-            status: normalizeTripStatus(trip.status),
-            statusLabel: getTripStatusView(trip.status, Boolean(trip.driverId)).label,
-            estimatedFare:
-              current?.estimatedFare ??
-              (dbEstimatedFare != null
-                ? formatCurrencyVnd(Number(dbEstimatedFare))
-                : null),
-            tripDistance:
-              current?.tripDistance ??
-              fallbackTrackedTripDistanceText ??
-              getTripDistanceText(trip, current?.tripDistance),
-            tripDuration:
-              current?.tripDuration ??
-              fallbackTrackedTripDurationText ??
-              getTripDurationText(trip, current?.tripDuration),
-            driverId: trip.driverId,
-            driverName: trip.driverName,
-            driverPhone: trip.driverPhone,
-            driverLicensePlate: trip.driverLicensePlate,
-            driverVehicleInfo: trip.driverVehicleInfo,
-          }));
+          setActiveBookedRide((current) =>
+            mergeBookedRideWithTrip(
+              {
+                ...(current ?? {}),
+                tripDistance:
+                  current?.tripDistance ?? fallbackTrackedTripDistanceText,
+                tripDuration:
+                  current?.tripDuration ?? fallbackTrackedTripDurationText,
+              },
+              trip
+            )
+          );
         }
       } catch {
         // Bo qua loi tam thoi trong luc BE/driver chua cap nhat trang thai.
@@ -1406,6 +1577,59 @@ export default function SearchScreen() {
     fallbackTrackedTripDurationText,
     session?.accessToken,
   ]);
+
+  useEffect(() => {
+    if (mode === "shared" || !session?.accessToken || activeBookedRide?.id) {
+      return undefined;
+    }
+
+    let isActive = true;
+
+    const restoreActiveTrip = async () => {
+      try {
+        const bookedTrips = await loadBookedTrips();
+        const candidateTrips = bookedTrips
+          .filter((trip) => trip?.id && !trip?.scheduledAt)
+          .filter((trip) => !isTerminalTripStatus(trip.status))
+          .sort(
+            (first, second) =>
+              new Date(second.createdAt ?? 0).getTime() -
+              new Date(first.createdAt ?? 0).getTime()
+          );
+
+        for (const bookedTrip of candidateTrips) {
+          try {
+            const trip = await getTrip(bookedTrip.id, session.accessToken);
+            const normalizedStatus = normalizeTripStatus(
+              trip?.status ?? bookedTrip.status
+            );
+
+            if (!isActive) {
+              return;
+            }
+
+            if (!isTerminalTripStatus(normalizedStatus)) {
+              setAcceptedTrip(trip ?? null);
+              setActiveBookedRide(mergeBookedRideWithTrip(bookedTrip, trip));
+              setBookingStep("findingDriver");
+              setMode("now");
+              return;
+            }
+          } catch {
+            // Bo qua record local khong con tim thay tren BE, thu record tiep theo.
+          }
+        }
+      } catch {
+        // Khong chan nguoi dung dat xe moi neu local storage tam thoi loi.
+      }
+    };
+
+    restoreActiveTrip();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeBookedRide?.id, mode, session?.accessToken]);
 
   useEffect(() => {
     if (!sharedForm.slotId || !sharedForm.date) {
@@ -2151,6 +2375,11 @@ export default function SearchScreen() {
     setAcceptedTrip(null);
 
     const isScheduledRide = Boolean(scheduledRideAt);
+    const requestDistanceKm = Number(validatedTripMetrics.distanceKm);
+    const requestDurationMinute = Math.max(
+      1,
+      Math.round(Number(validatedTripMetrics.durationMinute))
+    );
     const createTripPayload = {
       pickupLatitude: verifiedTripMap.origin.location.lat,
       pickupLongitude: verifiedTripMap.origin.location.lng,
@@ -2158,13 +2387,27 @@ export default function SearchScreen() {
       destinationLatitude: verifiedTripMap.destination.location.lat,
       destinationLongitude: verifiedTripMap.destination.location.lng,
       destinationAddress: verifiedToLabel,
+      estimatedDistanceKm: requestDistanceKm,
+      estimatedDurationMinute: requestDurationMinute,
       vehicleType: selectedRideOption.vehicleType,
       tripType: isScheduledRide ? 2 : 1,
       ...(isScheduledRide ? { scheduledAt: scheduledRideAt } : {}),
     };
 
     try {
-      const response = await createTrip(createTripPayload, session?.accessToken);
+      let response;
+
+      try {
+        response = await createTrip(createTripPayload, session?.accessToken);
+      } catch (error) {
+        if (error?.status !== 401) {
+          throw error;
+        }
+
+        const nextSession = await refreshSession();
+        response = await createTrip(createTripPayload, nextSession.accessToken);
+      }
+
       const tripResponse = response?.trip ?? response;
       const confirmedTripDistance =
         validatedTripMetrics?.distanceText ??
@@ -2675,20 +2918,6 @@ export default function SearchScreen() {
         );
         logRideSharingCreateDebug("latest active group", latestGroup);
 
-        if (latestActiveRequest.groupId && isSharedGroupTerminal(latestGroup?.status)) {
-          logRideSharingCreateDebug("cleanup stale terminal group request", {
-            requestId: latestActiveRequest.id,
-            requestStatus: latestActiveRequest.status,
-            groupId: latestActiveRequest.groupId,
-            groupStatus: latestGroup?.status,
-          });
-          await cancelRideSharingRequest(
-            latestActiveRequest.id,
-            { cancelReason: 4 },
-            session.accessToken
-          );
-          setPendingSharedRequests([]);
-        } else {
         const mappedRequest = mapRideSharingRequestToCardClean(
           latestActiveRequest,
           latestGroup
@@ -2702,7 +2931,6 @@ export default function SearchScreen() {
           "Bạn đang có yêu cầu xe ghép đang hoạt động. Vui lòng hủy yêu cầu hiện tại trước khi tạo mới."
         );
         return;
-        }
       }
 
       const requestPayload = {
@@ -2750,10 +2978,20 @@ export default function SearchScreen() {
         latestGroup
       );
       const mappedGroup = mapRideSharingGroupToCard(latestGroup);
+      const currentCards = mappedRequest
+        ? [mappedRequest]
+        : mappedGroup
+          ? [mappedGroup]
+          : [];
 
-      setPendingSharedRequests(
-        mappedRequest ? [mappedRequest] : mappedGroup ? [mappedGroup] : []
+      setPendingSharedRequests((current) =>
+        mergeSharedRequestCards(currentCards, current)
       );
+
+      if (currentCards.length > 0) {
+        persistRideSharingCards(currentCards, session.userId).catch(() => {});
+      }
+
       setSharedForm(defaultSharedForm);
       closeCreateSharedModal();
     } catch (error) {
@@ -2789,19 +3027,48 @@ export default function SearchScreen() {
         (request) => request.requestId === requestId
       );
 
+      let cancelledRequest = null;
+
       if (requestToCancel?.groupId) {
         await leaveRideSharingGroup(
           requestToCancel.groupId,
           { cancelReason: 4 },
           session.accessToken
         );
+
+        try {
+          cancelledRequest = await getRideSharingRequest(
+            requestId,
+            session.accessToken
+          );
+        } catch {
+          cancelledRequest = {
+            ...requestToCancel,
+            id: requestId,
+            status: "Cancelled",
+            groupId: "",
+          };
+        }
+      } else {
+        cancelledRequest = await cancelRideSharingRequest(
+          requestId,
+          { cancelReason: 4 },
+          session.accessToken
+        );
       }
 
-      await cancelRideSharingRequest(
-        requestId,
-        { cancelReason: 4 },
-        session.accessToken
+      const cancelledCard = mapRideSharingRequestToCardClean(
+        cancelledRequest,
+        null
       );
+
+      if (cancelledCard) {
+        setPendingSharedRequests((current) =>
+          mergeSharedRequestCards([cancelledCard], current)
+        );
+        persistRideSharingCards([cancelledCard], session.userId).catch(() => {});
+      }
+
       await refreshSharedState({ showLoading: true });
     } catch (error) {
       setAlertMessage(error.message || "Không thể hủy yêu cầu xe ghép.");
@@ -2948,7 +3215,7 @@ export default function SearchScreen() {
           <Pressable
             onPress={() => {
               if (bookingStep === "findingDriver") {
-                setBookingStep("rideOptions");
+                router.back();
                 return;
               }
 

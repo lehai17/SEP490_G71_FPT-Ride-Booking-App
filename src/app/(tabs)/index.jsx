@@ -13,6 +13,10 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { getPassengerTrips } from "@/features/booking/services/trip-api";
 import { loadBookedTrips } from "@/features/booking/services/trip-storage";
+import {
+  getAvailableRideSharingGroups,
+  getRideSharingGroup,
+} from "@/features/ride-sharing/services/ride-sharing-api";
 import { useTheme } from "@/hooks/use-theme";
 
 const BRAND = "#FF7A00";
@@ -61,10 +65,40 @@ function isScheduledTrip(trip) {
   );
 }
 
+function isImmediateTrip(trip) {
+  return !isScheduledTrip(trip);
+}
+
 function isTerminalStatus(status) {
   return ["completed", "cancelled", "nodriverfound"].includes(
     normalizeTripStatus(status)
   );
+}
+
+function normalizeRideSharingGroupStatus(status) {
+  const rawStatus = String(status ?? "").trim().toLowerCase();
+
+  const statusByNumber = {
+    1: "forming",
+    2: "readyforbroadcast",
+    3: "broadcasting",
+    4: "driveraccepted",
+    5: "driverarrived",
+    6: "inprogress",
+    7: "completed",
+    8: "cancelled",
+    9: "expired",
+  };
+
+  return statusByNumber[rawStatus] ?? rawStatus.replace(/\s+/g, "");
+}
+
+function isAvailableRideSharingGroup(group) {
+  const status = normalizeRideSharingGroupStatus(
+    getTripField(group, "status", "Status")
+  );
+
+  return !["completed", "cancelled", "expired", "nodriverfound"].includes(status);
 }
 
 function formatCurrencyVnd(value) {
@@ -195,6 +229,43 @@ function mapTripToScheduledCard(trip) {
   };
 }
 
+function mapRideSharingGroupToHomeCard(group) {
+  const members = Array.isArray(group?.members) ? group.members : [];
+  const firstMember = members[0] ?? {};
+  const groupId = getTripField(group, "id", "Id");
+  const price =
+    firstMember.finalFare ??
+    firstMember.FinalFare ??
+    group?.finalFare ??
+    group?.FinalFare ??
+    0;
+  const pickup =
+    firstMember.pickupAddress ??
+    firstMember.PickupAddress ??
+    group?.pickupAddress ??
+    group?.PickupAddress ??
+    "Điểm đón";
+  const destination =
+    firstMember.destinationAddress ??
+    firstMember.DestinationAddress ??
+    group?.destinationAddress ??
+    group?.DestinationAddress ??
+    "Điểm đến";
+  const currentPassengers =
+    group?.currentPassengers ?? group?.CurrentPassengers ?? members.length;
+  const maxPassengers = group?.maxPassengers ?? group?.MaxPassengers ?? 3;
+
+  return {
+    id: groupId,
+    vehicle: "Xe ghép",
+    price: formatCurrencyVnd(price),
+    route: `${pickup} → ${destination}`,
+    driver: group?.driverName || group?.DriverName || "Chưa có tài xế",
+    seats: `${currentPassengers}/${maxPassengers} người`,
+    note: "Nhóm còn có thể tham gia",
+  };
+}
+
 function EmptyState({ title, description }) {
   return (
     <ThemedView style={styles.emptyCard}>
@@ -216,17 +287,18 @@ export default function HomeScreen() {
   const [selectedMode, setSelectedMode] = useState("now");
   const [visibleRecentTrips, setVisibleRecentTrips] = useState([]);
   const [visibleScheduledTrips, setVisibleScheduledTrips] = useState([]);
+  const [visibleRideGroups, setVisibleRideGroups] = useState([]);
   const accessToken = session?.accessToken;
 
   const displayName = session?.fullName ?? "Bạn";
   const displayInitial = displayName.charAt(0)?.toUpperCase() ?? "B";
   const displayRole = getDisplayRole(session?.role) ?? "Khách";
-  const visibleRideGroups = [];
 
   const loadHomeTrips = useCallback(async () => {
     if (!accessToken) {
       setVisibleRecentTrips([]);
       setVisibleScheduledTrips([]);
+      setVisibleRideGroups([]);
       return;
     }
 
@@ -251,6 +323,7 @@ export default function HomeScreen() {
 
       const recentTrips = dedupedTrips
         .filter((trip) =>
+          isImmediateTrip(trip) &&
           isTerminalStatus(getTripField(trip, "status", "Status"))
         )
         .sort((first, second) => getTripSortTime(second) - getTripSortTime(first))
@@ -282,9 +355,36 @@ export default function HomeScreen() {
 
       setVisibleRecentTrips(recentTrips);
       setVisibleScheduledTrips(scheduledTrips);
+
+      const availableGroups = await getAvailableRideSharingGroups(
+        "",
+        accessToken
+      ).catch(() => []);
+      const detailedGroups = await Promise.allSettled(
+        (Array.isArray(availableGroups) ? availableGroups : [])
+          .slice(0, 6)
+          .map((group) =>
+            getRideSharingGroup(getTripField(group, "id", "Id"), accessToken)
+          )
+      );
+      const groups = (Array.isArray(availableGroups) ? availableGroups : [])
+        .map((group, index) =>
+          detailedGroups[index]?.status === "fulfilled"
+            ? detailedGroups[index].value
+            : group
+        )
+        .filter(
+          (group) =>
+            getTripField(group, "id", "Id") && isAvailableRideSharingGroup(group)
+        )
+        .slice(0, 3)
+        .map(mapRideSharingGroupToHomeCard);
+
+      setVisibleRideGroups(groups);
     } catch {
       setVisibleRecentTrips([]);
       setVisibleScheduledTrips([]);
+      setVisibleRideGroups([]);
     }
   }, [accessToken]);
 
