@@ -41,6 +41,23 @@ function getTripFare(trip) {
   );
 }
 
+function isTripOlderThanThreeDays(value) {
+  if (!value) {
+    return false;
+  }
+
+  const tripDate = new Date(value);
+
+  if (Number.isNaN(tripDate.getTime())) {
+    return false;
+  }
+
+  const diffMs = Date.now() - tripDate.getTime();
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+
+  return diffMs > threeDaysMs;
+}
+
 function getTripIcon(vehicleType) {
   const normalizedType = String(vehicleType ?? "").toLowerCase();
 
@@ -51,11 +68,13 @@ function getTripIcon(vehicleType) {
   return "\ud83d\ude97";
 }
 
-export function mapTripToHistoryItem(trip) {
-  const status = String(trip?.status ?? "").toLowerCase();
+export function mapTripToHistoryItem(trip, localTrip = null) {
   const date =
     trip?.completedAt ?? trip?.cancelledAt ?? trip?.acceptedAt ?? trip?.createdAt;
-  const fare = getTripFare(trip);
+  const fare = getTripFare(localTrip) ?? getTripFare(trip);
+  const actionPrimary = isTripOlderThanThreeDays(date)
+    ? "Chi tiết"
+    : "Đánh giá";
 
   return {
     id: trip.id,
@@ -64,8 +83,7 @@ export function mapTripToHistoryItem(trip) {
       trip.destinationAddress || "\u0110i\u1ec3m \u0111\u1ebfn"
     }`,
     meta: `${formatTripDate(date)} \u00b7 ${formatCurrencyVnd(fare)}`,
-    actionPrimary:
-      status === "completed" ? "\u0110\u00e1nh gi\u00e1" : "Chi ti\u1ebft",
+    actionPrimary,
     actionSecondary: "B\u00e1o c\u00e1o",
     rating: null,
     sortTimestamp: getTripTime(date),
