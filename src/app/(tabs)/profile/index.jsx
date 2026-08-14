@@ -62,31 +62,31 @@ const EMPTY_CHANGE_PASSWORD_FORM = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOGIN_MESSAGES = {
-  emailRequired: "Vui l\u00f2ng nh\u1eadp email.",
-  emailInvalid: "Email ch\u01b0a \u0111\u00fang \u0111\u1ecbnh d\u1ea1ng.",
-  passwordRequired: "Vui l\u00f2ng nh\u1eadp m\u1eadt kh\u1ea9u.",
+  emailRequired: "Vui lòng nhập email.",
+  emailInvalid: "Email chưa đúng định dạng.",
+  passwordRequired: "Vui lòng nhập mật khẩu.",
   passwordTooShort:
-    "M\u1eadt kh\u1ea9u ph\u1ea3i c\u00f3 \u00edt nh\u1ea5t 6 k\u00fd t\u1ef1.",
+    "Mật khẩu phải có ít nhất 6 ký tự.",
   invalidCredentials:
-    "Email ho\u1eb7c m\u1eadt kh\u1ea9u kh\u00f4ng \u0111\u00fang, ho\u1eb7c t\u00e0i kho\u1ea3n ch\u01b0a x\u00e1c minh email.",
+    "Email hoặc mật khẩu không đúng, hoặc tài khoản chưa xác minh email.",
   loginFailed:
-    "\u0110\u0103ng nh\u1eadp kh\u00f4ng th\u00e0nh c\u00f4ng. Vui l\u00f2ng th\u1eed l\u1ea1i.",
+    "Đăng nhập không thành công. Vui lòng thử lại.",
 };
 const REGISTER_MESSAGES = {
-  fullNameRequired: "Vui l\u00f2ng nh\u1eadp h\u1ecd v\u00e0 t\u00ean.",
-  emailRequired: "Vui l\u00f2ng nh\u1eadp email.",
-  emailInvalid: "Email ch\u01b0a \u0111\u00fang \u0111\u1ecbnh d\u1ea1ng.",
-  passwordRequired: "Vui l\u00f2ng nh\u1eadp m\u1eadt kh\u1ea9u.",
+  fullNameRequired: "Vui lòng nhập họ và tên.",
+  emailRequired: "Vui lòng nhập email.",
+  emailInvalid: "Email chưa đúng định dạng.",
+  passwordRequired: "Vui lòng nhập mật khẩu.",
   passwordTooShort:
-    "M\u1eadt kh\u1ea9u ph\u1ea3i c\u00f3 \u00edt nh\u1ea5t 6 k\u00fd t\u1ef1.",
+    "Mật khẩu phải có ít nhất 6 ký tự.",
   confirmPasswordRequired:
-    "Vui l\u00f2ng nh\u1eadp l\u1ea1i m\u1eadt kh\u1ea9u.",
+    "Vui lòng nhập lại mật khẩu.",
   passwordMismatch:
-    "M\u1eadt kh\u1ea9u nh\u1eadp l\u1ea1i kh\u00f4ng kh\u1edbp.",
+    "Mật khẩu nhập lại không khớp.",
   emailExists:
-    "Email n\u00e0y \u0111\u00e3 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng. Vui l\u00f2ng d\u00f9ng email kh\u00e1c.",
+    "Email này đã được sử dụng. Vui lòng dùng email khác.",
   registerFailed:
-    "\u0110\u0103ng k\u00fd kh\u00f4ng th\u00e0nh c\u00f4ng. Vui l\u00f2ng ki\u1ec3m tra th\u00f4ng tin v\u00e0 th\u1eed l\u1ea1i.",
+    "Đăng ký không thành công. Vui lòng kiểm tra thông tin và thử lại.",
 };
 
 function validateLoginForm(form) {
@@ -171,7 +171,7 @@ function getRegisterErrorMessage(error) {
   if (
     normalizedMessage.includes("already") ||
     normalizedMessage.includes("duplicate") ||
-    normalizedMessage.includes("\u0111\u00e3 t\u1ed3n t\u1ea1i")
+    normalizedMessage.includes("đã tồn tại")
   ) {
     return REGISTER_MESSAGES.emailExists;
   }
@@ -396,7 +396,7 @@ export default function ProfileScreen() {
           password: normalizedLoginForm.password,
         });
         setErrorMessage(
-          "T\u00e0i kho\u1ea3n ch\u01b0a x\u00e1c minh email. B\u1ea5m G\u1eedi l\u1ea1i OTP r\u1ed3i nh\u1eadp m\u00e3 \u0111\u1ec3 ho\u00e0n t\u1ea5t x\u00e1c minh."
+          "Tài khoản chưa xác minh email. Bấm Gửi lại OTP rồi nhập mã để hoàn tất xác minh."
         );
         return;
       }

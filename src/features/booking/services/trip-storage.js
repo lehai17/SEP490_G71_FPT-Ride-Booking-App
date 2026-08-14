@@ -55,24 +55,24 @@ export async function removeBookedTrip(tripId) {
 
 export function toActiveTripSectionItem(trip) {
   const route =
-    trip.route || `${trip.pickup || ""} \u2192 ${trip.destination || ""}`.trim();
+    trip.route || `${trip.pickup || ""} → ${trip.destination || ""}`.trim();
   const price = trip.price || trip.estimatedFare || "--";
-  const meta = trip.statusLabel || `\u0110ang t\u00ecm t\u00e0i x\u1ebf \u00b7 ${price}`;
+  const meta = trip.statusLabel || `Đang tìm tài xế · ${price}`;
 
   return {
     id: trip.id,
-    icon: trip.icon || "\ud83d\ude97",
+    icon: trip.icon || "🚗",
     route,
     meta,
-    actionPrimary: "Li\u00ean h\u1ec7",
-    actionSecondary: "H\u1ee7y",
+    actionPrimary: "Liên hệ",
+    actionSecondary: "Hủy",
     rating: null,
   };
 }
 
 export function toScheduledTripSectionItem(trip) {
   const route =
-    trip.route || `${trip.pickup || ""} \u2192 ${trip.destination || ""}`.trim();
+    trip.route || `${trip.pickup || ""} → ${trip.destination || ""}`.trim();
   const price = trip.price || trip.estimatedFare || "--";
   const scheduledAtValue = getField(trip, "scheduledAt", "ScheduledAt");
   const scheduledAt = scheduledAtValue ? new Date(scheduledAtValue) : null;
@@ -88,11 +88,11 @@ export function toScheduledTripSectionItem(trip) {
 
   return {
     id: trip.id,
-    icon: trip.icon || "\ud83d\ude97",
+    icon: trip.icon || "🚗",
     route,
-    meta: `${scheduleText} \u00b7 ${price}`,
-    actionPrimary: "S\u1eeda",
-    actionSecondary: "H\u1ee7y",
+    meta: `${scheduleText} · ${price}`,
+    actionPrimary: "Sửa",
+    actionSecondary: "Hủy",
     rating: null,
     scheduledAt: scheduledAtValue || "",
     scheduledPickupText: trip.scheduledPickupText || scheduleText,

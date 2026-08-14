@@ -219,13 +219,13 @@ function formatDuration(seconds) {
   const totalMinutes = Math.max(1, Math.round(durationSeconds / 60));
 
   if (totalMinutes < 60) {
-    return `${totalMinutes} ph\u00fat`;
+    return `${totalMinutes} phút`;
   }
 
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 
-  return minutes === 0 ? `${hours} gi\u1edd` : `${hours} gi\u1edd ${minutes} ph\u00fat`;
+  return minutes === 0 ? `${hours} giờ` : `${hours} giờ ${minutes} phút`;
 }
 
 function estimateRideDurationSeconds(distanceKm) {

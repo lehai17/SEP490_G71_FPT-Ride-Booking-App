@@ -97,10 +97,10 @@ function getTripIcon(vehicleType) {
   const normalizedType = String(vehicleType ?? "").toLowerCase();
 
   if (normalizedType.includes("bike") || normalizedType === "1") {
-    return "\uD83D\uDEF5";
+    return "🛵";
   }
 
-  return "\uD83D\uDE97";
+  return "🚗";
 }
 
 export function mapTripToHistoryItem(trip, localTrip = null) {
