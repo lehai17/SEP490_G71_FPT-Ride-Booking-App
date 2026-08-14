@@ -83,3 +83,19 @@ export function leaveRideSharingGroup(groupId, payload, accessToken) {
     body: JSON.stringify(payload),
   });
 }
+
+export function pickupRideSharingPassenger(groupId, payload, accessToken) {
+  return apiRequest(`/ride-sharing/groups/${groupId}/pickup`, {
+    method: "POST",
+    headers: getAuthHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function dropoffRideSharingPassenger(groupId, payload, accessToken) {
+  return apiRequest(`/ride-sharing/groups/${groupId}/dropoff`, {
+    method: "POST",
+    headers: getAuthHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
+}
