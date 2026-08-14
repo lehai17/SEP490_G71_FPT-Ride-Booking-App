@@ -330,28 +330,8 @@ export default function HomeScreen() {
         .slice(0, 3)
         .map(mapTripToRecentCard);
 
-      const scheduledTrips = dedupedTrips
-        .filter(
-          (trip) =>
-            isScheduledTrip(trip) &&
-            !isTerminalStatus(getTripField(trip, "status", "Status"))
-        )
-        .sort((first, second) => {
-          const firstTime = new Date(
-            getTripField(first, "scheduledAt", "ScheduledAt") ??
-              getTripField(first, "createdAt", "CreatedAt") ??
-              0
-          ).getTime();
-          const secondTime = new Date(
-            getTripField(second, "scheduledAt", "ScheduledAt") ??
-              getTripField(second, "createdAt", "CreatedAt") ??
-              0
-          ).getTime();
-
-          return firstTime - secondTime;
-        })
-        .slice(0, 3)
-        .map(mapTripToScheduledCard);
+      // Tam thoi an du lieu chuyen dat truoc o trang chu cho den khi co API thong ke rieng.
+      const scheduledTrips = [];
 
       setVisibleRecentTrips(recentTrips);
       setVisibleScheduledTrips(scheduledTrips);
@@ -614,7 +594,7 @@ export default function HomeScreen() {
             title="Chưa có chuyến đặt trước"
             description={
               isAuthenticated
-                ? "Những chuyến bạn đặt trước sẽ được cập nhật tại đây."
+                ? "Mục này sẽ được cập nhật sau khi có API thống kê chuyến đặt trước."
                 : "Đăng nhập hoặc đăng ký để đặt và quản lý chuyến đi."
             }
           />

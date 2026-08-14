@@ -56,6 +56,7 @@ import {
 import {
   loadStoredRideSharingCards,
   persistRideSharingCards,
+  replaceRideSharingCards,
 } from "@/features/ride-sharing/services/ride-sharing-storage";
 
 const BRAND = "#FF7A00";
@@ -517,7 +518,42 @@ function mapRideSharingRequestToCardClean(request, group = null) {
   };
 }
 
-function mapRideSharingGroupToCard(group) {
+function calculateAverageGroupFare(members, fallbackFare = 0) {
+  const normalizedFares = (Array.isArray(members) ? members : [])
+    .map((member) => Number(member?.finalFare ?? 0))
+    .filter((fare) => Number.isFinite(fare) && fare > 0);
+
+  if (normalizedFares.length > 0) {
+    const totalFare = normalizedFares.reduce((sum, fare) => sum + fare, 0);
+    return totalFare / normalizedFares.length;
+  }
+
+  const safeFallbackFare = Number(fallbackFare);
+  return Number.isFinite(safeFallbackFare) && safeFallbackFare > 0
+    ? safeFallbackFare
+    : 0;
+}
+
+function calculateProjectedJoinFare(members, currentPassengers, fallbackFare = 0) {
+  const memberCount = Array.isArray(members) ? members.length : 0;
+  const currentCount = Math.max(
+    Number(currentPassengers) || 0,
+    memberCount
+  );
+  const averageCurrentFare = calculateAverageGroupFare(members, fallbackFare);
+
+  if (!Number.isFinite(averageCurrentFare) || averageCurrentFare <= 0) {
+    return 0;
+  }
+
+  if (currentCount <= 0) {
+    return averageCurrentFare;
+  }
+
+  return (averageCurrentFare * currentCount) / (currentCount + 1);
+}
+
+function mapRideSharingGroupToCard(group, { previewJoinFare = false } = {}) {
   if (!group?.id) {
     return null;
   }
@@ -529,7 +565,14 @@ function mapRideSharingGroupToCard(group) {
     firstMember.destinationAddress ||
     group.destinationAddress ||
     "Điểm đến";
-  const fare = Number(firstMember.finalFare ?? group.finalFare ?? 0);
+  const baseFare = calculateAverageGroupFare(members, group.finalFare);
+  const fare = previewJoinFare
+    ? calculateProjectedJoinFare(
+        members,
+        group.currentPassengers ?? members.length,
+        group.finalFare
+      )
+    : baseFare;
   const groupStatus = normalizeRideSharingGroupStatus(group.status);
 
   return {
@@ -553,6 +596,7 @@ function mapRideSharingGroupToCard(group) {
     participantCount: group.currentPassengers ?? members.length,
     capacity: group.maxPassengers ?? 3,
     perPersonPrice: formatCurrencyVnd(fare),
+    priceLabel: previewJoinFare ? "Giá khi tham gia" : "Giá mỗi người",
     createdAt: group.createdAt,
     canCancel: false,
   };
@@ -823,6 +867,33 @@ function mergeSharedRequestCards(primaryCards, secondaryCards) {
   return mergedCards;
 }
 
+function removeSharedRequestCards(cards, requestId, groupId = "") {
+  const normalizedRequestId = String(requestId ?? "").trim().toLowerCase();
+  const normalizedGroupId = String(groupId ?? "").trim().toLowerCase();
+
+  return (cards ?? []).filter((card) => {
+    const cardRequestId = String(card?.requestId ?? "").trim().toLowerCase();
+    const cardGroupId = String(card?.groupId ?? "").trim().toLowerCase();
+    const cardId = String(card?.id ?? "").trim().toLowerCase();
+
+    if (
+      normalizedRequestId &&
+      (cardRequestId === normalizedRequestId || cardId === normalizedRequestId)
+    ) {
+      return false;
+    }
+
+    if (
+      normalizedGroupId &&
+      (cardGroupId === normalizedGroupId || cardId === normalizedGroupId)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 async function refreshStoredRideSharingCard(card, accessToken) {
   if (!card || !accessToken) {
     return card;
@@ -836,19 +907,27 @@ async function refreshStoredRideSharingCard(card, accessToken) {
       if (request?.groupId) {
         try {
           group = await getRideSharingGroup(request.groupId, accessToken);
-        } catch {
-          group = null;
+        } catch (error) {
+          if (error?.status === 404) {
+            group = null;
+          } else {
+            group = null;
+          }
         }
       }
 
-      return mapRideSharingRequestToCardClean(request, group) ?? card;
+      return mapRideSharingRequestToCardClean(request, group) ?? null;
     }
 
     if (card.groupId) {
       const group = await getRideSharingGroup(card.groupId, accessToken);
-      return mapRideSharingGroupToCard(group) ?? card;
+      return mapRideSharingGroupToCard(group) ?? null;
     }
-  } catch {
+  } catch (error) {
+    if (error?.status === 404) {
+      return null;
+    }
+
     return card;
   }
 
@@ -868,9 +947,7 @@ async function refreshStoredRideSharingCards(cards, accessToken) {
 
   return refreshedCards
     .map((result, index) =>
-      result.status === "fulfilled" && result.value
-        ? result.value
-        : storedCards[index]
+      result.status === "fulfilled" ? result.value : storedCards[index]
     )
     .filter(Boolean);
 }
@@ -1406,10 +1483,9 @@ export default function SearchScreen() {
                 isRideSharingCardOwnedByUser(card, session.userId)
               )
             : [];
-        const refreshedStoredCards = await refreshStoredRideSharingCards(
-          storedCards,
-          session.accessToken
-        );
+        const refreshedStoredCards = (
+          await refreshStoredRideSharingCards(storedCards, session.accessToken)
+        ).filter((card) => isRideSharingCardOwnedByUser(card, session.userId));
         const availableGroupDetails = await Promise.allSettled(
           availableGroups.map((item) =>
             getRideSharingGroup(item.id, session.accessToken)
@@ -1423,7 +1499,9 @@ export default function SearchScreen() {
             const detailedGroup = availableGroupDetails[index];
 
             if (detailedGroup?.status === "fulfilled" && detailedGroup.value?.id) {
-              return mapRideSharingGroupToCard(detailedGroup.value);
+              return mapRideSharingGroupToCard(detailedGroup.value, {
+                previewJoinFare: true,
+              });
             }
 
             return mapAvailableRideSharingGroupToCard(item);
@@ -2850,9 +2928,18 @@ export default function SearchScreen() {
     const fptPlace = FPT_HOLA_PLACE;
     const pickupPlace = isSharedTripToFpt ? selectedSharedPlace : fptPlace;
     const destinationPlace = isSharedTripToFpt ? fptPlace : selectedSharedPlace;
+    let sharedDirections = null;
+
+    try {
+      sharedDirections = await getMapDirections(pickupPlace, destinationPlace);
+    } catch {
+      sharedDirections = null;
+    }
+
     const routeMetrics = getBackendTripMetrics({
       origin: pickupPlace,
       destination: destinationPlace,
+      directions: sharedDirections,
     });
     const scheduledAt = isScheduledSharedRide
       ? getSharedSlotDateTime(selectedSharedDate.value, selectedSharedSlot.time)
@@ -3058,18 +3145,32 @@ export default function SearchScreen() {
       }
 
       const cancelledCard = mapRideSharingRequestToCardClean(
-        cancelledRequest,
+        {
+          ...(cancelledRequest ?? requestToCancel ?? {}),
+          id: requestId,
+          requestId,
+          status: "cancelled",
+          groupId: "",
+        },
         null
       );
 
       if (cancelledCard) {
-        setPendingSharedRequests((current) =>
-          mergeSharedRequestCards([cancelledCard], current)
-        );
-        persistRideSharingCards([cancelledCard], session.userId).catch(() => {});
+        setPendingSharedRequests((current) => {
+          const remainingRequests = removeSharedRequestCards(
+            current,
+            requestId,
+            requestToCancel?.groupId
+          );
+          const nextRequests = mergeSharedRequestCards(
+            [{ ...cancelledCard, status: "cancelled", requestStatus: "cancelled" }],
+            remainingRequests
+          );
+          replaceRideSharingCards(nextRequests, session.userId).catch(() => {});
+          return nextRequests;
+        });
+        setSharedRequestFilter("cancelled");
       }
-
-      await refreshSharedState({ showLoading: true });
     } catch (error) {
       setAlertMessage(error.message || "Không thể hủy yêu cầu xe ghép.");
     } finally {
@@ -3714,91 +3815,56 @@ export default function SearchScreen() {
                 )}
               </View>
             </View>
-            {focusedField === "from" && (
-              <View style={styles.suggestionCard}>
-                <Pressable
-                  style={styles.currentLocationSuggestion}
-                  onPress={useCurrentLocationAsPickup}
-                  disabled={isFetchingCurrentLocation}
-                >
-                  <View style={styles.suggestionIcon}>
-                    <ThemedText type="smallBold" style={styles.suggestionIconText}>
-                      {"●"}
+            {focusedField === "from" &&
+              (addressSuggestions.from.length > 0 ||
+                loadingSuggestionsFor === "from" ||
+                suggestionError.from) && (
+                <View style={styles.suggestionCard}>
+                  {loadingSuggestionsFor === "from" ? (
+                    <ThemedText type="small" style={styles.suggestionLoading}>
+                      {"Đang tải gợi ý..."}
                     </ThemedText>
-                  </View>
-                  <View style={styles.suggestionContent}>
-                    <ThemedText
-                      type="smallBold"
-                      style={styles.suggestionMainText}
-                      numberOfLines={1}
-                    >
-                      {"Sử dụng vị trí hiện tại"}
+                  ) : suggestionError.from ? (
+                    <ThemedText type="small" style={styles.suggestionError}>
+                      {suggestionError.from}
                     </ThemedText>
-                    <ThemedText
-                      type="small"
-                      style={styles.suggestionSecondaryText}
-                      numberOfLines={2}
-                    >
-                      {isFetchingCurrentLocation
-                        ? "Đang lấy vị trí..."
-                        : "Bấm để lấy địa chỉ GPS vào ô điểm đón."}
-                    </ThemedText>
-                  </View>
-                </Pressable>
+                  ) : (
+                    addressSuggestions.from.map((suggestion) => (
+                      <Pressable
+                        key={suggestion.placeId}
+                        style={styles.suggestionItem}
+                        onPress={() => selectAddressSuggestion("from", suggestion)}
+                      >
+                        <View style={styles.suggestionIcon}>
+                          <ThemedText type="smallBold" style={styles.suggestionIconText}>
+                            {"•"}
+                          </ThemedText>
+                        </View>
+                        <View style={styles.suggestionContent}>
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.suggestionMainText}
+                            numberOfLines={1}
+                          >
+                            {suggestion.mainText}
+                          </ThemedText>
+                          <ThemedText
+                            type="small"
+                            style={styles.suggestionSecondaryText}
+                            numberOfLines={2}
+                          >
+                            {suggestion.secondaryText || suggestion.description}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    ))
+                  )}
 
-                {(addressSuggestions.from.length > 0 ||
-                  loadingSuggestionsFor === "from" ||
-                  suggestionError.from) && <View style={styles.suggestionDivider} />}
-
-                {loadingSuggestionsFor === "from" ? (
-                  <ThemedText type="small" style={styles.suggestionLoading}>
-                    {"Đang tải gợi ý..."}
-                  </ThemedText>
-                ) : suggestionError.from ? (
-                  <ThemedText type="small" style={styles.suggestionError}>
-                    {suggestionError.from}
-                  </ThemedText>
-                ) : (
-                  addressSuggestions.from.map((suggestion) => (
-                    <Pressable
-                      key={suggestion.placeId}
-                      style={styles.suggestionItem}
-                      onPress={() => selectAddressSuggestion("from", suggestion)}
-                    >
-                      <View style={styles.suggestionIcon}>
-                        <ThemedText type="smallBold" style={styles.suggestionIconText}>
-                          {"•"}
-                        </ThemedText>
-                      </View>
-                      <View style={styles.suggestionContent}>
-                        <ThemedText
-                          type="smallBold"
-                          style={styles.suggestionMainText}
-                          numberOfLines={1}
-                        >
-                          {suggestion.mainText}
-                        </ThemedText>
-                        <ThemedText
-                          type="small"
-                          style={styles.suggestionSecondaryText}
-                          numberOfLines={2}
-                        >
-                          {suggestion.secondaryText || suggestion.description}
-                        </ThemedText>
-                      </View>
-                    </Pressable>
-                  ))
-                )}
-
-                {(addressSuggestions.from.length > 0 ||
-                  loadingSuggestionsFor === "from" ||
-                  suggestionError.from) && (
                   <ThemedText type="small" style={styles.suggestionAttribution}>
                     VietMap
                   </ThemedText>
-                )}
-              </View>
-            )}
+                </View>
+              )}
             <View style={styles.fieldGroup}>
               <ThemedText type="smallBold" style={styles.inputLabel}>
                 {"Điểm đến"}
@@ -4173,128 +4239,99 @@ export default function SearchScreen() {
             ) : null}
 
             {suggestedSharedRides.map((ride) => {
-              const proposal = getSharedProposal(ride);
-
               return (
-                <View key={ride.id} style={styles.proposalCard}>
-                  <View style={styles.proposalHeader}>
-                    <ThemedText type="default" style={styles.proposalHeaderText}>
-                    {"ĐỀ XUẤT THAM GIA NHÓM"}
-                  </ThemedText>
-                  </View>
-
-                  <View style={styles.proposalBody}>
-                    <View style={styles.proposalInfoCard}>
-                      <ThemedText type="smallBold" style={styles.proposalVehicle}>
-                        {ride.vehicle}
+                <View key={ride.id} style={styles.suggestedGroupCard}>
+                  <View style={styles.suggestedGroupTop}>
+                    <View style={styles.suggestedGroupLabel}>
+                      <ThemedText type="smallBold" style={styles.suggestedGroupLabelText}>
+                        {"Nhóm phù hợp"}
                       </ThemedText>
-                      <ThemedText type="smallBold" style={styles.savingText}>
-                        {"💰 Tiết kiệm "}{proposal.savingPrice}
-                      </ThemedText>
-
-                      <View style={styles.priceLine}>
-                        <ThemedText type="smallBold" style={styles.priceLabel}>
-                          {"Đi lẻ:"}
-                        </ThemedText>
-                        <ThemedText type="smallBold" style={styles.soloPriceText}>
-                          {proposal.soloPrice}
-                        </ThemedText>
-                      </View>
-                      <View style={styles.priceLine}>
-                        <ThemedText type="smallBold" style={styles.priceLabel}>
-                          {"Đi ghép:"}
-                        </ThemedText>
-                        <ThemedText type="smallBold" style={styles.sharedPriceText}>
-                          {proposal.sharedPrice}
-                        </ThemedText>
-                      </View>
-
-                      <View style={styles.proposalDashedDivider} />
-
-                      <ThemedText type="smallBold" style={styles.proposalHighlight}>
-                        {"Thời gian đón dự kiến: "}{proposal.expectedPickup}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.proposalMuted}>
-                        {"Dự kiến đến nơi lúc: "}{proposal.expectedArrival}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.proposalMuted}>
-                        {"Hạn ghép xe (đếm ngược thời gian): 15p"}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.proposalMuted}>
-                        {"Nhóm: "}{ride.participantCount}/{ride.capacity}{" người"}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.proposalMuted}>
-                        {"Slot 1: 7:30 - "}{proposal.pickupDirection}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.proposalMuted}>
-                        {"Tài xế: "}{proposal.driverStatus}
-                      </ThemedText>
-
-                      <View style={styles.proposalDashedDivider} />
-
-                      <ThemedText type="smallBold" style={styles.proposalSectionTitle}>
-                    {"Lộ trình nhóm (đón xa → gần):"}
-                  </ThemedText>
-                      {proposal.routeSteps.map((step) => (
-                        <ThemedText
-                          key={`${ride.id}-${step}`}
-                          type="small"
-                          style={styles.proposalMuted}
-                        >
-                          {step}
-                        </ThemedText>
-                      ))}
-
-                      <View style={styles.proposalDashedDivider} />
-
-                      <ThemedText type="smallBold" style={styles.proposalWarningTitle}>
-                        {"Lưu ý"}
-                      </ThemedText>
-                      {proposal.notes.map((note) => (
-                        <ThemedText
-                          key={`${ride.id}-${note}`}
-                          type="small"
-                          style={styles.proposalMuted}
-                        >
-                          {note}
-                        </ThemedText>
-                      ))}
-
-                      <View style={styles.proposalFooterLine}>
-                        <ThemedText type="smallBold" style={styles.proposalVehicle}>
-                          {"🚗 "}{ride.vehicle}
-                        </ThemedText>
-                        <ThemedText type="default" style={styles.proposalTotal}>
-                          {proposal.sharedPrice}
-                        </ThemedText>
-                      </View>
-                      <ThemedText type="small" style={styles.proposalMuted}>
-                        {"Đón trong 5 phút"}
+                    </View>
+                    <View style={styles.suggestedGroupBadge}>
+                      <ThemedText type="smallBold" style={styles.suggestedGroupBadgeText}>
+                        {ride.seats}
                       </ThemedText>
                     </View>
                   </View>
 
-                  <View style={styles.proposalActionRow}>
-                    <Pressable
-                      style={styles.joinProposalButton}
-                      onPress={() => {
-                        if (requireLogin()) {
-                          router.push(`/search/shared-ride/${ride.id}`);
-                        }
-                      }}
-                    >
-                      <ThemedText type="smallBold" style={styles.joinProposalText}>
-                    {"Tham gia nhóm"}
+                  <ThemedText
+                    type="smallBold"
+                    style={styles.suggestedGroupVehicle}
+                  >
+                    {ride.vehicle}
                   </ThemedText>
-                    </Pressable>
-                    <Pressable
-                      style={styles.backProposalButton}
-                      onPress={() => setMode("now")}
-                    >
-                      <ThemedText type="smallBold" style={styles.backProposalText}>
-                    {"Quay lại"}
+                  <ThemedText
+                    type="default"
+                    style={styles.suggestedGroupRoute}
+                    numberOfLines={2}
+                  >
+                    {ride.route}
                   </ThemedText>
-                    </Pressable>
+
+                  <View style={styles.suggestedGroupChipRow}>
+                    <View style={styles.suggestedGroupChip}>
+                      <ThemedText type="small" style={styles.suggestedGroupChipText}>
+                        {ride.scheduleText || "Chưa có lịch"}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.suggestedGroupChip}>
+                      <ThemedText type="small" style={styles.suggestedGroupChipText}>
+                        {ride.statusLabel}
+                      </ThemedText>
+                    </View>
+                  </View>
+
+                  <View style={styles.suggestedGroupDriverCard}>
+                    <ThemedText type="small" style={styles.suggestedGroupDriverLabel}>
+                      {"Tài xế"}
+                    </ThemedText>
+                    <ThemedText
+                      type="smallBold"
+                      style={styles.suggestedGroupDriverValue}
+                      numberOfLines={1}
+                    >
+                      {ride.driver || "Chưa có"}
+                    </ThemedText>
+                  </View>
+
+                  <View style={styles.suggestedGroupFooter}>
+                    <View style={styles.suggestedGroupPriceBlock}>
+                      <ThemedText type="small" style={styles.suggestedGroupPriceLabel}>
+                        {ride.priceLabel || "Giá mỗi người"}
+                      </ThemedText>
+                      <ThemedText type="default" style={styles.suggestedGroupPriceValue}>
+                        {ride.price || ride.perPersonPrice || "--"}
+                      </ThemedText>
+                    </View>
+
+                    <View style={styles.suggestedGroupActions}>
+                      <Pressable
+                        style={styles.suggestedGroupSecondaryButton}
+                        onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.suggestedGroupSecondaryText}
+                        >
+                          {"Xem nhóm"}
+                        </ThemedText>
+                      </Pressable>
+                      <Pressable
+                        style={styles.suggestedGroupPrimaryButton}
+                        onPress={() => {
+                          if (requireLogin()) {
+                            router.push(`/search/shared-ride/${ride.id}`);
+                          }
+                        }}
+                      >
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.suggestedGroupPrimaryText}
+                        >
+                          {"Tham gia nhóm"}
+                        </ThemedText>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               );
@@ -6707,132 +6744,135 @@ const styles = StyleSheet.create({
   emptySharedText: {
     color: "#71717A",
   },
-  proposalCard: {
+  suggestedGroupCard: {
     borderRadius: 20,
-    overflow: "hidden",
-    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#FFD2AE",
-    borderLeftWidth: 4,
-    borderLeftColor: BRAND,
+    backgroundColor: "#FFFCF8",
+    padding: Spacing.three,
+    gap: Spacing.two,
     shadowColor: "#000000",
     shadowOpacity: 0.06,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
-  proposalHeader: {
-    minHeight: 54,
-    justifyContent: "center",
-    paddingHorizontal: Spacing.three,
-    backgroundColor: "#FFF3E8",
-    borderBottomWidth: 1,
-    borderBottomColor: "#FFD2AE",
-  },
-  proposalHeaderText: {
-    color: "#C75B00",
-    fontSize: 19,
-    fontWeight: "900",
-    lineHeight: 24,
-  },
-  proposalBody: {
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
-  },
-  proposalInfoCard: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    gap: 5,
-  },
-  proposalVehicle: {
-    color: "#111827",
-  },
-  savingText: {
-    color: "#16A34A",
-  },
-  priceLine: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  priceLabel: {
-    color: "#111827",
-  },
-  soloPriceText: {
-    color: "#DC2626",
-  },
-  sharedPriceText: {
-    color: "#111827",
-  },
-  proposalDivider: {
-    height: 1,
-    backgroundColor: "#F3F4F6",
-    marginVertical: 5,
-  },
-  proposalDashedDivider: {
-    borderTopWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#FDBA74",
-    marginVertical: 7,
-  },
-  proposalMuted: {
-    color: "#9CA3AF",
-  },
-  proposalHighlight: {
-    color: "#FB7185",
-  },
-  proposalSectionTitle: {
-    color: "#6B7280",
-  },
-  proposalWarningTitle: {
-    color: "#FB7185",
-  },
-  proposalFooterLine: {
-    marginTop: Spacing.one,
+  suggestedGroupTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: Spacing.two,
   },
-  proposalTotal: {
-    color: "#9CA3AF",
+  suggestedGroupLabel: {
+    borderRadius: 999,
+    backgroundColor: "#FFF1E6",
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 6,
+  },
+  suggestedGroupLabelText: {
+    color: "#C75B00",
+    fontSize: 12,
+  },
+  suggestedGroupBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 6,
+  },
+  suggestedGroupBadgeText: {
+    color: "#9A3412",
+    fontSize: 12,
+  },
+  suggestedGroupVehicle: {
+    color: "#6B7280",
+  },
+  suggestedGroupRoute: {
+    color: "#111827",
     fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 25,
+  },
+  suggestedGroupChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.two,
+  },
+  suggestedGroupChip: {
+    borderRadius: 999,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 6,
+  },
+  suggestedGroupChipText: {
+    color: "#9A3412",
+  },
+  suggestedGroupDriverCard: {
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FDE7D3",
+    padding: Spacing.two,
+    gap: 4,
+  },
+  suggestedGroupDriverLabel: {
+    color: "#6B7280",
+  },
+  suggestedGroupDriverValue: {
+    color: "#111827",
+  },
+  suggestedGroupFooter: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+    paddingTop: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: "#FDE7D3",
+  },
+  suggestedGroupPriceBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  suggestedGroupPriceLabel: {
+    color: "#6B7280",
+  },
+  suggestedGroupPriceValue: {
+    color: BRAND,
+    fontSize: 22,
     fontWeight: "900",
   },
-  proposalActionRow: {
+  suggestedGroupActions: {
     flexDirection: "row",
-    alignItems: "stretch",
+    alignItems: "center",
     gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
-    paddingBottom: Spacing.three,
   },
-  joinProposalButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: BRAND,
-  },
-  joinProposalText: {
-    color: "#FFFFFF",
-    textAlign: "center",
-  },
-  backProposalButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 12,
+  suggestedGroupSecondaryButton: {
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#FFD2AE",
+    borderColor: "#FDBA74",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFF7ED",
   },
-  backProposalText: {
+  suggestedGroupSecondaryText: {
     color: "#C75B00",
-    textAlign: "center",
+  },
+  suggestedGroupPrimaryButton: {
+    borderRadius: 14,
+    backgroundColor: BRAND,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  suggestedGroupPrimaryText: {
+    color: "#FFFFFF",
   },
 });
 

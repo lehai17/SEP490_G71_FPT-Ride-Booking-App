@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -22,10 +22,16 @@ import {
 import { getRideGroupById } from "@/constants/ride-data";
 import { useAuth } from "@/contexts/auth-context";
 import {
+  cancelRideSharingRequest,
+  getMyRideSharingRequest,
   getRideSharingGroup,
   joinRideSharingGroup,
 } from "@/features/ride-sharing/services/ride-sharing-api";
-import { verifyVietMapAddress } from "@/features/booking/services/vietmap-api";
+import {
+  getVietMapPlaceDetails,
+  getVietMapPlaceSuggestions,
+  isVietMapConfigured,
+} from "@/features/booking/services/vietmap-api";
 import { useTheme } from "@/hooks/use-theme";
 
 const BRAND = "#FF7A00";
@@ -39,6 +45,182 @@ function getRideDestinationLabel(ride) {
   return to.includes("FPT") ? to : "Đại học FPT";
 }
 
+function formatDistanceKm(value) {
+  const distanceKm = Number(value ?? 0);
+
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
+    return "--";
+  }
+
+  if (distanceKm >= 10) {
+    return `${distanceKm.toFixed(0)} km`;
+  }
+
+  return `${distanceKm.toFixed(1)} km`;
+}
+
+function toRadians(value) {
+  return (Number(value) * Math.PI) / 180;
+}
+
+function calculateDistanceKmBetweenPoints(origin, destination) {
+  const originLat = Number(origin?.lat);
+  const originLng = Number(origin?.lng);
+  const destinationLat = Number(destination?.lat);
+  const destinationLng = Number(destination?.lng);
+
+  if (
+    !Number.isFinite(originLat) ||
+    !Number.isFinite(originLng) ||
+    !Number.isFinite(destinationLat) ||
+    !Number.isFinite(destinationLng)
+  ) {
+    return 0;
+  }
+
+  const earthRadiusKm = 6371;
+  const deltaLat = toRadians(destinationLat - originLat);
+  const deltaLng = toRadians(destinationLng - originLng);
+  const haversine =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(toRadians(originLat)) *
+      Math.cos(toRadians(destinationLat)) *
+      Math.sin(deltaLng / 2) *
+      Math.sin(deltaLng / 2);
+  const angle = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+
+  return earthRadiusKm * angle;
+}
+
+function getMemberDistanceKm(member) {
+  const estimatedDistanceKm = Number(member?.estimatedDistanceKm ?? 0);
+
+  if (Number.isFinite(estimatedDistanceKm) && estimatedDistanceKm > 0) {
+    return estimatedDistanceKm;
+  }
+
+  return calculateDistanceKmBetweenPoints(
+    {
+      lat: member?.pickupLatitude,
+      lng: member?.pickupLongitude,
+    },
+    {
+      lat: member?.destinationLatitude,
+      lng: member?.destinationLongitude,
+    }
+  );
+}
+
+function calculateAverageGroupFare(members) {
+  const normalizedFares = (Array.isArray(members) ? members : [])
+    .map((member) => Number(member?.finalFare ?? 0))
+    .filter((fare) => Number.isFinite(fare) && fare > 0);
+
+  if (normalizedFares.length === 0) {
+    return 0;
+  }
+
+  const totalFare = normalizedFares.reduce((sum, fare) => sum + fare, 0);
+  return totalFare / normalizedFares.length;
+}
+
+function calculateProjectedJoinFare(members, currentPassengers) {
+  const memberCount = Array.isArray(members) ? members.length : 0;
+  const currentCount = Math.max(Number(currentPassengers) || 0, memberCount);
+  const averageCurrentFare = calculateAverageGroupFare(members);
+
+  if (!Number.isFinite(averageCurrentFare) || averageCurrentFare <= 0) {
+    return 0;
+  }
+
+  if (currentCount <= 0) {
+    return averageCurrentFare;
+  }
+
+  return (averageCurrentFare * currentCount) / (currentCount + 1);
+}
+
+function getReadableApiErrorMessage(error, fallbackMessage) {
+  const rawMessage = String(error?.message ?? "").trim();
+
+  if (!rawMessage) {
+    return fallbackMessage;
+  }
+
+  const cleanedMessage = rawMessage.replace(
+    /^HTTP\s+\d+\s+[^:]+:\s*/i,
+    ""
+  );
+
+  return cleanedMessage || fallbackMessage;
+}
+
+function normalizePlaceCompareText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/^Tài xế\s+/i, "")
+    .replace(/\s+đã nhận chuyến$/i, "")
+    .replace(/\s+đang chờ đến giờ đón$/i, "")
+    .replace(/\s+đang đến điểm đón$/i, "")
+    .replace(/\s+đã đến điểm đón$/i, "")
+    .replace(/\s+đang di chuyển$/i, "")
+    .replace(/\s+đã hoàn thành chuyến$/i, "")
+    .trim();
+}
+
+function isRecentRequest(createdAt, maxMinutes = 3) {
+  if (!createdAt) {
+    return false;
+  }
+
+  const createdTime = new Date(createdAt).getTime();
+  if (Number.isNaN(createdTime)) {
+    return false;
+  }
+
+  return Date.now() - createdTime <= maxMinutes * 60 * 1000;
+}
+
+function isLikelyStrayJoinRequest(request, expectedPickupAddress, expectedDestinationAddress) {
+  if (!request?.id || request?.groupId) {
+    return false;
+  }
+
+  const normalizedPickup = normalizePlaceCompareText(request.pickupAddress);
+  const normalizedExpectedPickup = normalizePlaceCompareText(expectedPickupAddress);
+  const normalizedDestination = normalizePlaceCompareText(
+    request.destinationAddress
+  );
+  const normalizedExpectedDestination = normalizePlaceCompareText(
+    expectedDestinationAddress
+  );
+  const normalizedStatus = String(request?.status ?? "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+  const statusLooksLikeFreshRequest =
+    normalizedStatus === "waiting" ||
+    normalizedStatus === "matched" ||
+    normalizedStatus === "ingroup";
+  const pickupMatches =
+    normalizedPickup &&
+    normalizedExpectedPickup &&
+    normalizedPickup === normalizedExpectedPickup;
+  const destinationMatches =
+    normalizedDestination &&
+    normalizedExpectedDestination &&
+    normalizedDestination === normalizedExpectedDestination;
+
+  return (
+    pickupMatches &&
+    statusLooksLikeFreshRequest &&
+    isRecentRequest(request.createdAt) &&
+    (!normalizedExpectedDestination || destinationMatches)
+  );
+}
+
 function getJoinButtonLabel(isJoiningGroup, pendingRequest) {
   if (isJoiningGroup) {
     return "Đang tham gia...";
@@ -50,7 +232,7 @@ function getJoinButtonLabel(isJoiningGroup, pendingRequest) {
       : "Đang chờ duyệt";
   }
 
-  return "Gửi yêu cầu tham gia";
+  return "Tham gia nhóm";
 }
 
 function getDefaultJoinDestination(ride) {
@@ -158,57 +340,200 @@ function getGroupDriverDisplay(driverName, status) {
   }
 }
 
-function getGroupDestinationDisplay(groupStatus, departureTime) {
-  const scheduleText = formatGroupDateTime(departureTime);
-  const normalizedStatus = normalizeGroupStatusKey(groupStatus);
+function getGroupDestinationDisplay(group) {
+  const members = Array.isArray(group?.members) ? group.members : [];
+  const firstDestination = members.find((member) => member?.destinationAddress)
+    ?.destinationAddress;
 
-  switch (normalizedStatus) {
-    case "driveraccepted":
-    case "waitingdeparture":
-    case "driverdriving":
-    case "driverdrivingtopickup":
-      return `Tài xế đón lúc: ${scheduleText}`;
-    case "passengerboarding":
-      return "Tài xế đã đến điểm đón";
-    case "inprogress":
-      return "Chuyến ghép đang bắt đầu di chuyển";
-    case "completed":
-      return "Chuyến ghép đã hoàn thành";
-    case "cancelled":
-      return "Chuyến ghép đã bị hủy";
-    default:
-      return scheduleText;
-  }
+  return (
+    firstDestination ||
+    group?.destinationAddress ||
+    "Đại học FPT"
+  );
 }
 
-function mapApiGroupToRide(group) {
+function normalizeRequestStatusKey(status) {
+  const normalized = String(status ?? "").replace(/\s+/g, "").toLowerCase();
+  const numericStatusMap = {
+    1: "waiting",
+    2: "matched",
+    3: "ingroup",
+    4: "driverassigned",
+    5: "waitingdeparture",
+    6: "driverdriving",
+    7: "passengerboarding",
+    8: "inprogress",
+    9: "completed",
+    10: "cancelled",
+    11: "nodriverfound",
+    12: "expired",
+  };
+
+  return numericStatusMap[normalized] || normalized;
+}
+
+function getCurrentUserRequest(maybeRequest, session, groupId = "") {
+  if (!maybeRequest?.id || !session?.userId) {
+    return null;
+  }
+
+  const normalizedPassengerId = String(maybeRequest.passengerId ?? "").toLowerCase();
+  const normalizedUserId = String(session.userId ?? "").toLowerCase();
+  const normalizedGroupId = String(groupId ?? "").toLowerCase();
+  const requestGroupId = String(maybeRequest.groupId ?? "").toLowerCase();
+
+  if (normalizedPassengerId && normalizedPassengerId !== normalizedUserId) {
+    return null;
+  }
+
+  if (normalizedGroupId && requestGroupId && requestGroupId !== normalizedGroupId) {
+    return null;
+  }
+
+  return maybeRequest;
+}
+
+function getPassengerStatusNotice({
+  ride,
+  myRequest,
+  currentMember,
+  isCompletedForCurrentUser = false,
+}) {
+  if (!ride) {
+    return null;
+  }
+
+  const requestStatus = normalizeRequestStatusKey(myRequest?.status ?? "");
+  const groupStatus = normalizeGroupStatusKey(ride.rawStatus ?? ride.status);
+  const pickupTimeText = currentMember?.estimatedPickupTime
+    ? formatGroupDateTime(currentMember.estimatedPickupTime)
+    : "";
+  const driverDisplay = String(ride.driver ?? "").replace(/^ðŸ‘¤\s*/, "").trim();
+
+  if (isCompletedForCurrentUser || requestStatus === "completed") {
+    return {
+      tone: "success",
+      title: "Báº¡n Ä‘Ã£ xuá»‘ng xe",
+      message: "Chuyáº¿n Ä‘i cá»§a báº¡n Ä‘Ã£ hoÃ n thÃ nh táº¡i Ä‘iá»ƒm Ä‘áº¿n.",
+    };
+  }
+
+  if (requestStatus === "passengerboarding") {
+    return {
+      tone: "success",
+      title: "Báº¡n Ä‘Ã£ Ä‘Æ°á»£c Ä‘Ã³n",
+      message:
+        "TÃ i xáº¿ Ä‘Ã£ Ä‘Ã³n báº¡n. Xe Ä‘ang tiáº¿p tá»¥c Ä‘Ã³n cÃ¡c hÃ nh khÃ¡ch khÃ¡c trong nhÃ³m.",
+    };
+  }
+
+  if (requestStatus === "inprogress" || groupStatus === "inprogress") {
+    return {
+      tone: "info",
+      title: "Báº¡n Ä‘ang á»Ÿ trÃªn xe",
+      message: "Chuyáº¿n xe ghÃ©p Ä‘ang di chuyá»ƒn tá»›i Ä‘iá»ƒm Ä‘áº¿n cá»§a báº¡n.",
+    };
+  }
+
+  if (groupStatus === "passengerboarding") {
+    return {
+      tone: "info",
+      title: "TÃ i xáº¿ Ä‘ang Ä‘Ã³n khÃ¡ch",
+      message: "TÃ i xáº¿ Ä‘ang Ä‘Ã³n cÃ¡c hÃ nh khÃ¡ch trong nhÃ³m. HÃ£y chá» táº¡i Ä‘iá»ƒm Ä‘Ã³n.",
+    };
+  }
+
+  if (
+    requestStatus === "driverassigned" ||
+    requestStatus === "waitingdeparture" ||
+    groupStatus === "driveraccepted" ||
+    groupStatus === "waitingdeparture"
+  ) {
+    return {
+      tone: "info",
+      title: driverDisplay
+        ? `TÃ i xáº¿ ${driverDisplay} Ä‘Ã£ nháº­n chuyáº¿n`
+        : "TÃ i xáº¿ Ä‘Ã£ nháº­n chuyáº¿n",
+      message: pickupTimeText
+        ? `Dá»± kiáº¿n Ä‘Ã³n báº¡n lÃºc ${pickupTimeText}. HÃ£y sáºµn sÃ ng táº¡i Ä‘iá»ƒm Ä‘Ã³n.`
+        : "TÃ i xáº¿ Ä‘Ã£ nháº­n chuyáº¿n. HÃ£y sáºµn sÃ ng táº¡i Ä‘iá»ƒm Ä‘Ã³n.",
+    };
+  }
+
+  if (
+    requestStatus === "driverdriving" ||
+    groupStatus === "driverdriving" ||
+    groupStatus === "driverdrivingtopickup"
+  ) {
+    return {
+      tone: "info",
+      title: "TÃ i xáº¿ Ä‘ang Ä‘áº¿n Ä‘iá»ƒm Ä‘Ã³n",
+      message: pickupTimeText
+        ? `Dá»± kiáº¿n tÃ i xáº¿ Ä‘Ã³n báº¡n lÃºc ${pickupTimeText}.`
+        : "TÃ i xáº¿ Ä‘ang di chuyá»ƒn tá»›i Ä‘iá»ƒm Ä‘Ã³n cá»§a báº¡n.",
+    };
+  }
+
+  if (requestStatus === "ingroup" || requestStatus === "matched") {
+    return {
+      tone: "info",
+      title: "Báº¡n Ä‘Ã£ vÃ o nhÃ³m xe ghÃ©p",
+      message: "NhÃ³m Ä‘ang chá» Ä‘á»§ Ä‘iá»u kiá»‡n Ä‘á»ƒ tÃ i xáº¿ báº¯t Ä‘áº§u Ä‘Ã³n khÃ¡ch.",
+    };
+  }
+
+  return null;
+}
+
+function mapApiGroupToRide(group, session = null) {
   if (!group?.id) {
     return null;
   }
 
   const groupStatus = normalizeGroupStatusKey(group.status);
   const members = Array.isArray(group.members) ? group.members : [];
-  const firstMember = members[0];
-  const finalFare = firstMember?.finalFare ?? 0;
+  const currentUserId = String(session?.userId ?? "").toLowerCase();
+  const currentUserEmail = String(session?.email ?? "").toLowerCase();
+  const currentMember =
+    members.find((member) => {
+      const memberIds = [member.passengerId, member.userId, member.id].map((value) =>
+        String(value ?? "").toLowerCase()
+      );
+      const memberEmail = String(
+        member.email ?? member.passengerEmail ?? ""
+      ).toLowerCase();
+
+      return (
+        (currentUserId && memberIds.includes(currentUserId)) ||
+        (currentUserEmail && memberEmail === currentUserEmail)
+      );
+    }) ?? null;
+  const joinPreviewFare = calculateProjectedJoinFare(
+    members,
+    group.currentPassengers ?? members.length
+  );
+  const priceValue = currentMember?.finalFare ?? joinPreviewFare ?? null;
+  const hasJoined = Boolean(currentMember);
 
   return {
     id: group.id,
     route: `Nhóm xe ghép • ${formatGroupDateTime(group.scheduledDepartureTime)}`,
     vehicle: "Xe ghép",
-    price: formatCurrencyVnd(finalFare),
-    perPersonPrice: formatCurrencyVnd(finalFare),
+    price: formatCurrencyVnd(priceValue),
+    perPersonPrice: formatCurrencyVnd(priceValue),
     status: normalizeGroupStatusLabel(group.status),
     rawStatus: groupStatus,
     driver: getGroupDriverDisplay(group.driverName, group.status),
-    destination: getGroupDestinationDisplay(
-      group.status,
-      group.scheduledDepartureTime
-    ),
+    driverNameRaw: group.driverName || "",
+    destination: getGroupDestinationDisplay(group),
     participantCount: group.currentPassengers ?? members.length ?? 0,
     capacity: group.maxPassengers ?? 3,
     note: group.isLocked
       ? "Nhóm đã khóa"
       : "Nhóm còn có thể tham gia",
+    priceDescription: hasJoined
+      ? "Giá của bạn trong nhóm"
+      : "Giá khi tham gia",
     members,
   };
 }
@@ -249,17 +574,94 @@ export default function SharedRideDetailScreen() {
   const [loadError, setLoadError] = useState("");
   const ride = apiRide ?? mockRide;
   const [joinModalVisible, setJoinModalVisible] = useState(false);
-  const [pickupConfirmVisible, setPickupConfirmVisible] = useState(false);
   const [pickupPoint, setPickupPoint] = useState("");
+  const [pickupSuggestions, setPickupSuggestions] = useState([]);
+  const [isLoadingPickupSuggestions, setIsLoadingPickupSuggestions] = useState(false);
+  const [pickupSuggestionError, setPickupSuggestionError] = useState("");
+  const [selectedPickupPlace, setSelectedPickupPlace] = useState(null);
   const [joinNote, setJoinNote] = useState("");
   const [joinError, setJoinError] = useState("");
   const [isJoiningGroup, setIsJoiningGroup] = useState(false);
-  const [joinDraft, setJoinDraft] = useState(null);
   const [pendingRequest, setPendingRequest] = useState(null);
+  const [myRideRequest, setMyRideRequest] = useState(null);
+  const [hasCompletedThisRide, setHasCompletedThisRide] = useState(false);
+  const selectedPickupAddressRef = useRef("");
   const defaultDestination = getRideDestinationLabel(ride);
   const joinButtonLabel = getJoinButtonLabel(isJoiningGroup, pendingRequest);
+  const currentMember = Array.isArray(ride?.members)
+    ? ride.members.find((member) => {
+        const memberUserIds = [member.passengerId, member.userId, member.id].map(
+          (value) => String(value ?? "").toLowerCase()
+        );
+        const currentUserId = String(session?.userId ?? "").toLowerCase();
+
+        return currentUserId && memberUserIds.includes(currentUserId);
+      }) ?? null
+    : null;
+  const passengerStatusNotice = null;
+  const normalizedDriverName = String(ride?.driver ?? "")
+    .replace(/^Tài xế\s+/i, "")
+    .trim();
+  const driverStatusText =
+    passengerStatusNotice?.title ||
+    (ride?.driver
+      ? `Tài xế ${ride.driver} đã nhận chuyến`
+      : "Chưa có tài xế");
+  const cleanDriverStatusText = hasCompletedThisRide
+    ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+    : normalizeRequestStatusKey(myRideRequest?.status ?? "") === "completed"
+      ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+      : normalizeRequestStatusKey(myRideRequest?.status ?? "") === "passengerboarding"
+        ? "\u0042\u1ea1n \u0111\u00e3 \u0111\u01b0\u1ee3c \u0111\u00f3n"
+        : normalizeRequestStatusKey(myRideRequest?.status ?? "") === "inprogress" ||
+            normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) === "inprogress"
+          ? "\u0042\u1ea1n \u0111ang \u1edf tr\u00ean xe"
+          : normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) === "passengerboarding"
+            ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111\u00f3n kh\u00e1ch"
+            : normalizeRequestStatusKey(myRideRequest?.status ?? "") ===
+                  "driverdriving" ||
+                normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) ===
+                  "driverdriving" ||
+                normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) ===
+                  "driverdrivingtopickup"
+              ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n"
+              : ride?.driver
+                ? `T\u00e0i x\u1ebf ${ride.driver} \u0111\u00e3 nh\u1eadn chuy\u1ebfn`
+                : "\u0043h\u01b0a c\u00f3 t\u00e0i x\u1ebf";
+  const stableDriverName = String(ride?.driverNameRaw ?? ride?.driver ?? "")
+    .replace(/^Tài xế\s+/i, "")
+    .replace(/^TÃ i xáº¿\s+/i, "")
+    .trim();
+  const stableRequestStatusKey = normalizeRequestStatusKey(myRideRequest?.status ?? "");
+  const stableGroupStatusKey = normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status);
+  const finalDriverStatusText = hasCompletedThisRide
+    ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+    : stableRequestStatusKey === "completed"
+      ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+      : stableRequestStatusKey === "passengerboarding"
+        ? "\u0042\u1ea1n \u0111\u00e3 \u0111\u01b0\u1ee3c \u0111\u00f3n"
+        : stableRequestStatusKey === "inprogress" || stableGroupStatusKey === "inprogress"
+          ? "\u0042\u1ea1n \u0111ang \u1edf tr\u00ean xe"
+          : stableGroupStatusKey === "passengerboarding"
+            ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111\u00f3n kh\u00e1ch"
+            : stableRequestStatusKey === "driverdriving" ||
+                stableGroupStatusKey === "driverdriving" ||
+                stableGroupStatusKey === "driverdrivingtopickup"
+              ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111i chuy\u1ec3n \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n"
+              : stableRequestStatusKey === "driverassigned" ||
+                  stableRequestStatusKey === "waitingdeparture" ||
+                  stableGroupStatusKey === "driveraccepted" ||
+                  stableGroupStatusKey === "waitingdeparture"
+                ? stableDriverName
+                  ? `T\u00e0i x\u1ebf ${stableDriverName} \u0111\u00e3 nh\u1eadn chuy\u1ebfn`
+                  : "\u0054\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn chuy\u1ebfn"
+              : stableDriverName
+                ? `T\u00e0i x\u1ebf ${stableDriverName} \u0111ang \u0111i chuy\u1ec3n \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n`
+                : "\u0043h\u01b0a c\u00f3 t\u00e0i x\u1ebf";
   const isJoinedGroup =
     pendingRequest?.status === "joined" ||
+    Boolean(myRideRequest?.id) ||
+    hasCompletedThisRide ||
     isCurrentUserGroupMember(ride?.members, session);
   void getDefaultJoinDestination;
   void joinButtonLabel;
@@ -278,10 +680,55 @@ export default function SharedRideDetailScreen() {
       setLoadError("");
 
       try {
-        const group = await getRideSharingGroup(rideId, session.accessToken);
+        const [group, latestRequest] = await Promise.all([
+          getRideSharingGroup(rideId, session.accessToken),
+          getMyRideSharingRequest(session.accessToken).catch(() => null),
+        ]);
+        const normalizedRequest = getCurrentUserRequest(
+          latestRequest,
+          session,
+          rideId
+        );
 
         if (isActive) {
-          setApiRide(mapApiGroupToRide(group));
+          setApiRide(mapApiGroupToRide(group, session));
+          setPendingRequest((current) => {
+            if (!current) {
+              return current;
+            }
+
+            if (current.status === "joined") {
+              return null;
+            }
+
+            if (current.status === "pending" && !normalizedRequest) {
+              return null;
+            }
+
+            return current;
+          });
+          setMyRideRequest((current) => {
+            if (normalizedRequest) {
+              const statusKey = normalizeRequestStatusKey(
+                normalizedRequest.status
+              );
+
+              if (statusKey === "completed" || statusKey === "droppedoff") {
+                setHasCompletedThisRide(true);
+              }
+
+              return normalizedRequest;
+            }
+
+            if (
+              current?.id &&
+              !isCurrentUserGroupMember(group?.members, session)
+            ) {
+              setHasCompletedThisRide(true);
+            }
+
+            return null;
+          });
         }
       } catch (error) {
         if (isActive) {
@@ -305,7 +752,7 @@ export default function SharedRideDetailScreen() {
       isActive = false;
       clearInterval(intervalId);
     };
-  }, [mockRide, rideId, session?.accessToken]);
+  }, [mockRide, rideId, session]);
 
   function requireLogin() {
     if (isAuthenticated) {
@@ -319,9 +766,110 @@ export default function SharedRideDetailScreen() {
   function closeJoinModal() {
     setJoinModalVisible(false);
     setJoinError("");
+    setPickupSuggestions([]);
+    setPickupSuggestionError("");
+    setIsLoadingPickupSuggestions(false);
+    setSelectedPickupPlace(null);
+    selectedPickupAddressRef.current = "";
   }
 
-  function handleSubmitJoinRequest() {
+  function clearPickupPointInput() {
+    setPickupPoint("");
+    setSelectedPickupPlace(null);
+    setPickupSuggestions([]);
+    setPickupSuggestionError("");
+    setJoinError("");
+    selectedPickupAddressRef.current = "";
+  }
+
+  useEffect(() => {
+    if (!joinModalVisible) {
+      return undefined;
+    }
+
+    const query = pickupPoint.trim();
+
+    if (query && query === selectedPickupAddressRef.current) {
+      return undefined;
+    }
+
+    if (query.length < 2) {
+      setPickupSuggestions([]);
+      setPickupSuggestionError("");
+      setIsLoadingPickupSuggestions(false);
+      return undefined;
+    }
+
+    if (!isVietMapConfigured()) {
+      setPickupSuggestions([]);
+      setPickupSuggestionError("");
+      setIsLoadingPickupSuggestions(false);
+      return undefined;
+    }
+
+    let isActive = true;
+    const timeoutId = setTimeout(async () => {
+      setIsLoadingPickupSuggestions(true);
+
+      try {
+        const suggestions = await getVietMapPlaceSuggestions(query);
+
+        if (isActive) {
+          setPickupSuggestions(suggestions);
+          setPickupSuggestionError(
+            suggestions.length === 0
+              ? "Chưa có gợi ý phù hợp, thử nhập rõ hơn tên đường hoặc quận."
+              : ""
+          );
+        }
+      } catch (error) {
+        if (isActive) {
+          setPickupSuggestions([]);
+          setPickupSuggestionError(
+            error.message || "Không tải được gợi ý điểm đón từ VietMap."
+          );
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingPickupSuggestions(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
+  }, [joinModalVisible, pickupPoint]);
+
+  async function handleSelectPickupSuggestion(suggestion) {
+    try {
+      const resolvedPlace = suggestion.location
+        ? suggestion
+        : await getVietMapPlaceDetails(suggestion.refId || suggestion.placeId);
+      const resolvedAddress =
+        resolvedPlace.formattedAddress ||
+        resolvedPlace.description ||
+        resolvedPlace.mainText ||
+        pickupPoint;
+
+      selectedPickupAddressRef.current = resolvedAddress.trim();
+      setSelectedPickupPlace({
+        ...resolvedPlace,
+        formattedAddress: resolvedAddress,
+      });
+      setPickupPoint(resolvedAddress);
+      setPickupSuggestions([]);
+      setPickupSuggestionError("");
+      setJoinError("");
+    } catch (error) {
+      setPickupSuggestionError(
+        error.message || "Không lấy được tọa độ điểm đón từ VietMap."
+      );
+    }
+  }
+
+  async function handleSubmitJoinRequest() {
     if (!requireLogin()) {
       return;
     }
@@ -331,31 +879,19 @@ export default function SharedRideDetailScreen() {
       return;
     }
 
-    setJoinDraft({
-      pickupPoint: pickupPoint.trim(),
-      destination: defaultDestination,
-      note: joinNote.trim(),
-    });
-    setJoinModalVisible(false);
-    setPickupConfirmVisible(true);
-    setJoinError("");
-  }
-
-  async function confirmPickupPoint() {
-    if (!requireLogin()) {
-      return;
-    }
-
-    if (!joinDraft) {
+    if (!selectedPickupPlace?.location) {
+      setJoinError("Vui lòng chọn điểm đón từ danh sách gợi ý VietMap.");
       return;
     }
 
     if (mockRide) {
       setPendingRequest({
-        ...joinDraft,
+        pickupPoint: pickupPoint.trim(),
+        destination: defaultDestination,
+        note: joinNote.trim(),
         status: "pending",
       });
-      setPickupConfirmVisible(false);
+      setJoinModalVisible(false);
       return;
     }
 
@@ -363,7 +899,11 @@ export default function SharedRideDetailScreen() {
     setJoinError("");
 
     try {
-      const verifiedPickup = await verifyVietMapAddress(joinDraft.pickupPoint);
+      const verifiedPickup = selectedPickupPlace;
+      const expectedDestinationAddress =
+        ride?.members?.[0]?.destinationAddress ||
+        apiRide?.members?.[0]?.destinationAddress ||
+        defaultDestination;
       const destinationLat =
         Number(ride?.members?.[0]?.destinationLatitude) ||
         Number(apiRide?.members?.[0]?.destinationLatitude) ||
@@ -383,20 +923,58 @@ export default function SharedRideDetailScreen() {
         {
           pickupLatitude: pickupLat,
           pickupLongitude: pickupLng,
-          pickupAddress: verifiedPickup.formattedAddress || joinDraft.pickupPoint,
+          pickupAddress: verifiedPickup.formattedAddress || pickupPoint.trim(),
           estimatedDistanceKm,
           estimatedDurationMinutes,
         },
         session.accessToken
       );
-      setApiRide(mapApiGroupToRide(joinedGroup));
+      setApiRide(mapApiGroupToRide(joinedGroup, session));
+      setMyRideRequest({
+        id: `joined-${rideId}`,
+        groupId: rideId,
+        status: "InGroup",
+        passengerId: session?.userId,
+      });
+      setHasCompletedThisRide(false);
       setPendingRequest({
-        ...joinDraft,
+        pickupPoint: verifiedPickup.formattedAddress || pickupPoint.trim(),
+        destination: defaultDestination,
+        note: joinNote.trim(),
         status: "joined",
       });
-      setPickupConfirmVisible(false);
+      setJoinModalVisible(false);
     } catch (error) {
-      setJoinError(error.message || "Không thể tham gia nhóm xe ghép.");
+      if (session?.accessToken) {
+        try {
+          const latestRequest = await getMyRideSharingRequest(session.accessToken);
+
+          if (
+            isLikelyStrayJoinRequest(
+              latestRequest,
+              selectedPickupPlace?.formattedAddress || pickupPoint.trim(),
+              ride?.members?.[0]?.destinationAddress ||
+                apiRide?.members?.[0]?.destinationAddress ||
+                defaultDestination
+            )
+          ) {
+            await cancelRideSharingRequest(
+              latestRequest.id,
+              { cancelReason: 4 },
+              session.accessToken
+            );
+          }
+        } catch {
+          // Ignore cleanup failures; the main join error below is still shown.
+        }
+      }
+
+      setJoinError(
+        getReadableApiErrorMessage(
+          error,
+          "Không thể tham gia nhóm xe ghép."
+        )
+      );
     } finally {
       setIsJoiningGroup(false);
     }
@@ -470,12 +1048,15 @@ export default function SharedRideDetailScreen() {
                     <ThemedText type="default" style={styles.priceText}>
                       {ride.price}
                     </ThemedText>
+                    <ThemedText type="small" style={styles.priceHintText}>
+                      {ride.priceDescription}
+                    </ThemedText>
                   </View>
                 </View>
 
                 <View style={styles.infoBlock}>
                   <ThemedText type="default" style={styles.driverText}>
-                    👤 {ride.driver}
+                    {finalDriverStatusText}
                   </ThemedText>
                   <ThemedText type="default" style={styles.destinationText}>
                     Điểm đến: {ride.destination}
@@ -492,14 +1073,27 @@ export default function SharedRideDetailScreen() {
                         {"Thành viên trong nhóm"}
                       </ThemedText>
                       {ride.members.map((member) => (
-                        <ThemedText
+                        <View
                           key={`${member.passengerId}-${member.joinedAt ?? ""}`}
-                          type="small"
-                          style={styles.metaText}
+                          style={styles.memberItem}
                         >
-                          {member.passengerName || "Hành khách"}{" • "}
-                          {formatCurrencyVnd(member.finalFare)}
-                        </ThemedText>
+                          <View style={styles.memberItemTop}>
+                            <ThemedText type="smallBold" style={styles.memberName}>
+                              {member.passengerName || "Hành khách"}
+                            </ThemedText>
+                            <ThemedText type="smallBold" style={styles.memberFare}>
+                              {formatCurrencyVnd(member.finalFare)}
+                            </ThemedText>
+                          </View>
+                          <ThemedText type="small" style={styles.metaText}>
+                            {"Điểm đón: "}{member.pickupAddress || "--"}
+                          </ThemedText>
+                          <ThemedText type="small" style={styles.metaText}>
+                            {"Quãng đường của khách: "}{formatDistanceKm(
+                              getMemberDistanceKm(member)
+                            )}
+                          </ThemedText>
+                        </View>
                       ))}
                     </View>
                   )}
@@ -547,7 +1141,7 @@ export default function SharedRideDetailScreen() {
                   }}
                 >
                   <ThemedText type="default" style={styles.primaryButtonText}>
-                    {pendingRequest ? "Đang chờ duyệt" : "Gửi yêu cầu tham gia"}
+                    {pendingRequest ? "Đang chờ duyệt" : "Tham gia nhóm"}
                   </ThemedText>
                 </Pressable>
               )}
@@ -610,19 +1204,79 @@ export default function SharedRideDetailScreen() {
                 Điểm đón
                 <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
               </ThemedText>
-              <TextInput
-                placeholder="VD: Cổng chính, trạm xe, đường XYZ..."
-                placeholderTextColor="#9CA3AF"
+              <View
                 style={[
-                  styles.formInput,
-                  { color: theme.text, backgroundColor: theme.background },
+                  styles.formInputWrap,
+                  { backgroundColor: theme.background },
                 ]}
-                value={pickupPoint}
-                onChangeText={(value) => {
-                  setPickupPoint(value);
-                  setJoinError("");
-                }}
-              />
+              >
+                <TextInput
+                  placeholder="VD: Cổng chính, trạm xe, đường XYZ..."
+                  placeholderTextColor="#9CA3AF"
+                  style={[
+                    styles.formInput,
+                    styles.formInputField,
+                    { color: theme.text, backgroundColor: "transparent" },
+                  ]}
+                  value={pickupPoint}
+                  onChangeText={(value) => {
+                    setPickupPoint(value);
+                    setSelectedPickupPlace(null);
+                    setJoinError("");
+
+                    if (value.trim() !== selectedPickupAddressRef.current) {
+                      selectedPickupAddressRef.current = "";
+                    }
+                  }}
+                />
+                {Boolean(pickupPoint) && (
+                  <Pressable
+                    style={styles.clearInputButton}
+                    onPress={clearPickupPointInput}
+                  >
+                    <ThemedText type="smallBold" style={styles.clearInputButtonText}>
+                      {"×"}
+                    </ThemedText>
+                  </Pressable>
+                )}
+              </View>
+              {Boolean(pickupPoint.trim()) && (
+                <View style={styles.pickupSuggestionCard}>
+                  {isLoadingPickupSuggestions ? (
+                    <ThemedText type="small" style={styles.pickupSuggestionMeta}>
+                      {"Đang tải gợi ý điểm đón..."}
+                    </ThemedText>
+                  ) : pickupSuggestions.length > 0 ? (
+                    pickupSuggestions.map((suggestion, index) => {
+                      const suggestionLabel =
+                        suggestion.formattedAddress ||
+                        suggestion.description ||
+                        suggestion.mainText ||
+                        `Địa điểm ${index + 1}`;
+
+                      return (
+                        <Pressable
+                          key={`${suggestion.refId || suggestion.placeId || suggestionLabel}-${index}`}
+                          style={styles.pickupSuggestionItem}
+                          onPress={() => handleSelectPickupSuggestion(suggestion)}
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.pickupSuggestionText}
+                            numberOfLines={2}
+                          >
+                            {suggestionLabel}
+                          </ThemedText>
+                        </Pressable>
+                      );
+                    })
+                  ) : Boolean(pickupSuggestionError) ? (
+                    <ThemedText type="small" style={styles.pickupSuggestionMeta}>
+                      {pickupSuggestionError}
+                    </ThemedText>
+                  ) : null}
+                </View>
+              )}
             </View>
 
             <View style={styles.readonlyDestination}>
@@ -665,107 +1319,21 @@ export default function SharedRideDetailScreen() {
               >
                 <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
-              <Pressable style={styles.modalPrimaryButton} onPress={handleSubmitJoinRequest}>
+              <Pressable
+                style={[
+                  styles.modalPrimaryButton,
+                  isJoiningGroup && styles.pendingButton,
+                ]}
+                onPress={handleSubmitJoinRequest}
+                disabled={isJoiningGroup}
+              >
                 <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                  Gửi yêu cầu
+                  {isJoiningGroup ? "Đang tham gia..." : "Tham gia nhóm"}
                 </ThemedText>
               </Pressable>
             </View>
           </View>
         </View>
-      </Modal>
-
-      <Modal
-        visible={pickupConfirmVisible}
-        animationType="slide"
-        onRequestClose={() => setPickupConfirmVisible(false)}
-      >
-        <ScrollView
-          style={[styles.container, { backgroundColor: "#F8F8F8" }]}
-          contentContainerStyle={[
-            styles.contentContainer,
-            {
-              paddingTop: ScreenHeaderTop,
-              paddingBottom: insets.bottom + BottomTabInset + Spacing.four,
-            },
-          ]}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.content}>
-            <View style={styles.headerRow}>
-              <Pressable
-                onPress={() => setPickupConfirmVisible(false)}
-                style={styles.backButton}
-              >
-                <ThemedText type="subtitle" style={styles.backIcon}>
-                  ←
-                </ThemedText>
-              </Pressable>
-              <ThemedText type="default" style={styles.headerTitle}>
-                Xác nhận điểm đón
-              </ThemedText>
-            </View>
-
-            <View style={styles.mapCard}>
-              <View style={styles.pinWrap}>
-                <ThemedText type="default" style={styles.pinIcon}>
-                  📍
-                </ThemedText>
-              </View>
-              <ThemedText type="default" style={styles.mapLabel}>
-                {joinDraft?.pickupPoint}
-              </ThemedText>
-            </View>
-
-            <ThemedView
-              style={[
-                styles.pickupSummaryCard,
-                { backgroundColor: theme.backgroundElement },
-              ]}
-            >
-              <ThemedText type="default" style={styles.summaryText}>
-                Điểm đón:{" "}
-                <ThemedText type="default" style={styles.summaryStrong}>
-                  {joinDraft?.pickupPoint}
-                </ThemedText>
-              </ThemedText>
-              <ThemedText type="default" style={styles.summaryText}>
-                Điểm đến:{" "}
-                <ThemedText type="default" style={styles.summaryStrong}>
-                  {joinDraft?.destination}
-                </ThemedText>
-              </ThemedText>
-            </ThemedView>
-
-            {Boolean(joinError) && (
-              <ThemedText type="smallBold" style={styles.errorText}>
-                {joinError}
-              </ThemedText>
-            )}
-
-            <Pressable
-              style={[styles.primaryButton, isJoiningGroup && styles.pendingButton]}
-              onPress={confirmPickupPoint}
-              disabled={isJoiningGroup}
-            >
-              <ThemedText type="default" style={styles.primaryButtonText}>
-                Xác nhận điểm đón
-              </ThemedText>
-            </Pressable>
-
-            <Pressable
-              style={[styles.secondaryButton, { backgroundColor: theme.backgroundElement }]}
-              onPress={() => {
-                setPickupConfirmVisible(false);
-                setJoinModalVisible(true);
-              }}
-            >
-              <ThemedText type="default" style={styles.secondaryButtonText}>
-                Sửa điểm đón
-              </ThemedText>
-            </Pressable>
-          </View>
-        </ScrollView>
       </Modal>
     </>
   );
@@ -871,12 +1439,38 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "800",
   },
+  priceHintText: {
+    color: MUTED,
+    textAlign: "right",
+    maxWidth: 180,
+  },
   perPersonText: {
     color: MUTED,
     textAlign: "right",
   },
   infoBlock: {
     gap: Spacing.two,
+  },
+  statusNoticeCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    gap: 4,
+  },
+  statusNoticeInfo: {
+    backgroundColor: "#EFF6FF",
+    borderColor: "#BFDBFE",
+  },
+  statusNoticeSuccess: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  statusNoticeTitle: {
+    color: "#111827",
+  },
+  statusNoticeText: {
+    color: "#4B5563",
   },
   driverText: {
     color: "#111827",
@@ -894,11 +1488,32 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   memberList: {
-    gap: 4,
+    gap: Spacing.two,
     paddingTop: Spacing.one,
   },
   memberTitle: {
     color: "#111827",
+  },
+  memberItem: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+    padding: Spacing.two,
+    gap: 4,
+  },
+  memberItemTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  memberName: {
+    color: "#111827",
+    flex: 1,
+  },
+  memberFare: {
+    color: BRAND,
   },
   primaryButton: {
     minHeight: 56,
@@ -1007,10 +1622,54 @@ const styles = StyleSheet.create({
   },
   formInput: {
     minHeight: 48,
+    flex: 1,
+  },
+  formInputWrap: {
+    minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.one,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  formInputField: {
+    paddingHorizontal: 0,
+  },
+  clearInputButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clearInputButtonText: {
+    color: "#9CA3AF",
+    fontSize: 20,
+    lineHeight: 22,
+  },
+  pickupSuggestionCard: {
+    marginTop: Spacing.one,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    backgroundColor: "#FFF7ED",
+    overflow: "hidden",
+  },
+  pickupSuggestionItem: {
     paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderBottomWidth: 1,
+    borderBottomColor: "#FFE4CC",
+  },
+  pickupSuggestionText: {
+    color: "#111827",
+  },
+  pickupSuggestionMeta: {
+    color: "#9A3412",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
   },
   noteInput: {
     minHeight: 88,

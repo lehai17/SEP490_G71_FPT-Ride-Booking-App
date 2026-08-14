@@ -65,3 +65,9 @@ export async function persistRideSharingCards(cards, userId) {
 
   return limitedCards;
 }
+
+export async function replaceRideSharingCards(cards, userId) {
+  const nextCards = (cards ?? []).filter(Boolean).slice(0, 50);
+  await writeRideSharingCards(nextCards, userId);
+  return nextCards;
+}
