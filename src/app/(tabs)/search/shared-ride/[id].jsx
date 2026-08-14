@@ -408,38 +408,38 @@ function getPassengerStatusNotice({
   const pickupTimeText = currentMember?.estimatedPickupTime
     ? formatGroupDateTime(currentMember.estimatedPickupTime)
     : "";
-  const driverDisplay = String(ride.driver ?? "").replace(/^ðŸ‘¤\s*/, "").trim();
+  const driverDisplay = String(ride.driver ?? "").replace(/^👤\s*/, "").trim();
 
   if (isCompletedForCurrentUser || requestStatus === "completed") {
     return {
       tone: "success",
-      title: "Báº¡n Ä‘Ã£ xuá»‘ng xe",
-      message: "Chuyáº¿n Ä‘i cá»§a báº¡n Ä‘Ã£ hoÃ n thÃ nh táº¡i Ä‘iá»ƒm Ä‘áº¿n.",
+      title: "Bạn đã xuống xe",
+      message: "Chuyến đi của bạn đã hoàn thành tại điểm đến.",
     };
   }
 
   if (requestStatus === "passengerboarding") {
     return {
       tone: "success",
-      title: "Báº¡n Ä‘Ã£ Ä‘Æ°á»£c Ä‘Ã³n",
+      title: "Bạn đã được đón",
       message:
-        "TÃ i xáº¿ Ä‘Ã£ Ä‘Ã³n báº¡n. Xe Ä‘ang tiáº¿p tá»¥c Ä‘Ã³n cÃ¡c hÃ nh khÃ¡ch khÃ¡c trong nhÃ³m.",
+        "Tài xế đã đón bạn. Xe đang tiếp tục đón các hành khách khác trong nhóm.",
     };
   }
 
   if (requestStatus === "inprogress" || groupStatus === "inprogress") {
     return {
       tone: "info",
-      title: "Báº¡n Ä‘ang á»Ÿ trÃªn xe",
-      message: "Chuyáº¿n xe ghÃ©p Ä‘ang di chuyá»ƒn tá»›i Ä‘iá»ƒm Ä‘áº¿n cá»§a báº¡n.",
+      title: "Bạn đang ở trên xe",
+      message: "Chuyến xe ghép đang di chuyển tới điểm đến của bạn.",
     };
   }
 
   if (groupStatus === "passengerboarding") {
     return {
       tone: "info",
-      title: "TÃ i xáº¿ Ä‘ang Ä‘Ã³n khÃ¡ch",
-      message: "TÃ i xáº¿ Ä‘ang Ä‘Ã³n cÃ¡c hÃ nh khÃ¡ch trong nhÃ³m. HÃ£y chá» táº¡i Ä‘iá»ƒm Ä‘Ã³n.",
+      title: "Tài xế đang đón khách",
+      message: "Tài xế đang đón các hành khách trong nhóm. Hãy chờ tại điểm đón.",
     };
   }
 
@@ -452,11 +452,11 @@ function getPassengerStatusNotice({
     return {
       tone: "info",
       title: driverDisplay
-        ? `TÃ i xáº¿ ${driverDisplay} Ä‘Ã£ nháº­n chuyáº¿n`
-        : "TÃ i xáº¿ Ä‘Ã£ nháº­n chuyáº¿n",
+        ? `Tài xế ${driverDisplay} đã nhận chuyến`
+        : "Tài xế đã nhận chuyến",
       message: pickupTimeText
-        ? `Dá»± kiáº¿n Ä‘Ã³n báº¡n lÃºc ${pickupTimeText}. HÃ£y sáºµn sÃ ng táº¡i Ä‘iá»ƒm Ä‘Ã³n.`
-        : "TÃ i xáº¿ Ä‘Ã£ nháº­n chuyáº¿n. HÃ£y sáºµn sÃ ng táº¡i Ä‘iá»ƒm Ä‘Ã³n.",
+        ? `Dự kiến đón bạn lúc ${pickupTimeText}. Hãy sẵn sàng tại điểm đón.`
+        : "Tài xế đã nhận chuyến. Hãy sẵn sàng tại điểm đón.",
     };
   }
 
@@ -467,18 +467,18 @@ function getPassengerStatusNotice({
   ) {
     return {
       tone: "info",
-      title: "TÃ i xáº¿ Ä‘ang Ä‘áº¿n Ä‘iá»ƒm Ä‘Ã³n",
+      title: "Tài xế đang đến điểm đón",
       message: pickupTimeText
-        ? `Dá»± kiáº¿n tÃ i xáº¿ Ä‘Ã³n báº¡n lÃºc ${pickupTimeText}.`
-        : "TÃ i xáº¿ Ä‘ang di chuyá»ƒn tá»›i Ä‘iá»ƒm Ä‘Ã³n cá»§a báº¡n.",
+        ? `Dự kiến tài xế đón bạn lúc ${pickupTimeText}.`
+        : "Tài xế đang di chuyển tới điểm đón của bạn.",
     };
   }
 
   if (requestStatus === "ingroup" || requestStatus === "matched") {
     return {
       tone: "info",
-      title: "Báº¡n Ä‘Ã£ vÃ o nhÃ³m xe ghÃ©p",
-      message: "NhÃ³m Ä‘ang chá» Ä‘á»§ Ä‘iá»u kiá»‡n Ä‘á»ƒ tÃ i xáº¿ báº¯t Ä‘áº§u Ä‘Ã³n khÃ¡ch.",
+      title: "Bạn đã vào nhóm xe ghép",
+      message: "Nhóm đang chờ đủ điều kiện để tài xế bắt đầu đón khách.",
     };
   }
 
@@ -608,56 +608,55 @@ export default function SharedRideDetailScreen() {
       ? `Tài xế ${ride.driver} đã nhận chuyến`
       : "Chưa có tài xế");
   const cleanDriverStatusText = hasCompletedThisRide
-    ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+    ? "Bạn đã trả khách"
     : normalizeRequestStatusKey(myRideRequest?.status ?? "") === "completed"
-      ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+      ? "Bạn đã trả khách"
       : normalizeRequestStatusKey(myRideRequest?.status ?? "") === "passengerboarding"
-        ? "\u0042\u1ea1n \u0111\u00e3 \u0111\u01b0\u1ee3c \u0111\u00f3n"
+        ? "Bạn đã được đón"
         : normalizeRequestStatusKey(myRideRequest?.status ?? "") === "inprogress" ||
             normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) === "inprogress"
-          ? "\u0042\u1ea1n \u0111ang \u1edf tr\u00ean xe"
+          ? "Bạn đang ở trên xe"
           : normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) === "passengerboarding"
-            ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111\u00f3n kh\u00e1ch"
+            ? "Tài xế đang đón khách"
             : normalizeRequestStatusKey(myRideRequest?.status ?? "") ===
                   "driverdriving" ||
                 normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) ===
                   "driverdriving" ||
                 normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status) ===
                   "driverdrivingtopickup"
-              ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n"
+              ? "Tài xế đang đến điểm đón"
               : ride?.driver
-                ? `T\u00e0i x\u1ebf ${ride.driver} \u0111\u00e3 nh\u1eadn chuy\u1ebfn`
-                : "\u0043h\u01b0a c\u00f3 t\u00e0i x\u1ebf";
+                ? `Tài xế ${ride.driver} đã nhận chuyến`
+                : "Chưa có tài xế";
   const stableDriverName = String(ride?.driverNameRaw ?? ride?.driver ?? "")
     .replace(/^Tài xế\s+/i, "")
-    .replace(/^TÃ i xáº¿\s+/i, "")
     .trim();
   const stableRequestStatusKey = normalizeRequestStatusKey(myRideRequest?.status ?? "");
   const stableGroupStatusKey = normalizeGroupStatusKey(ride?.rawStatus ?? ride?.status);
   const finalDriverStatusText = hasCompletedThisRide
-    ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+    ? "Bạn đã trả khách"
     : stableRequestStatusKey === "completed"
-      ? "\u0042\u1ea1n \u0111\u00e3 tr\u1ea3 kh\u00e1ch"
+      ? "Bạn đã trả khách"
       : stableRequestStatusKey === "passengerboarding"
-        ? "\u0042\u1ea1n \u0111\u00e3 \u0111\u01b0\u1ee3c \u0111\u00f3n"
+        ? "Bạn đã được đón"
         : stableRequestStatusKey === "inprogress" || stableGroupStatusKey === "inprogress"
-          ? "\u0042\u1ea1n \u0111ang \u1edf tr\u00ean xe"
+          ? "Bạn đang ở trên xe"
           : stableGroupStatusKey === "passengerboarding"
-            ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111\u00f3n kh\u00e1ch"
+            ? "Tài xế đang đón khách"
             : stableRequestStatusKey === "driverdriving" ||
                 stableGroupStatusKey === "driverdriving" ||
                 stableGroupStatusKey === "driverdrivingtopickup"
-              ? "\u0054\u00e0i x\u1ebf \u0111ang \u0111i chuy\u1ec3n \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n"
+              ? "Tài xế đang di chuyển đến điểm đón"
               : stableRequestStatusKey === "driverassigned" ||
                   stableRequestStatusKey === "waitingdeparture" ||
                   stableGroupStatusKey === "driveraccepted" ||
                   stableGroupStatusKey === "waitingdeparture"
                 ? stableDriverName
-                  ? `T\u00e0i x\u1ebf ${stableDriverName} \u0111\u00e3 nh\u1eadn chuy\u1ebfn`
-                  : "\u0054\u00e0i x\u1ebf \u0111\u00e3 nh\u1eadn chuy\u1ebfn"
+                  ? `Tài xế ${stableDriverName} đã nhận chuyến`
+                  : "Tài xế đã nhận chuyến"
               : stableDriverName
-                ? `T\u00e0i x\u1ebf ${stableDriverName} \u0111ang \u0111i chuy\u1ec3n \u0111\u1ebfn \u0111i\u1ec3m \u0111\u00f3n`
-                : "\u0043h\u01b0a c\u00f3 t\u00e0i x\u1ebf";
+                ? `Tài xế ${stableDriverName} đang di chuyển đến điểm đón`
+                : "Chưa có tài xế";
   const isJoinedGroup =
     pendingRequest?.status === "joined" ||
     Boolean(myRideRequest?.id) ||

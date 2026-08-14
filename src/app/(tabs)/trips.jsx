@@ -47,14 +47,13 @@ const HISTORY_PAGE_SIZE = 3;
 const PASSENGER_CANCEL_REASON_OTHER = 5;
 
 const tabs = [
-  { key: "scheduled", label: "\u0110\u00e3 \u0111\u1eb7t tr\u01b0\u1edbc" },
-  { key: "history", label: "L\u1ecbch s\u1eed", minWidth: 88 },
+  { key: "scheduled", label: "Đã đặt trước" },
+  { key: "history", label: "Lịch sử", minWidth: 88 },
 ];
 
 const MAX_SCHEDULE_DAYS = 7;
 const MIN_PICKUP_BUFFER_MINUTES = 30;
 const MINUTE_STEP = 5;
-const MOCK_TRIP_DURATION_MINUTES = 13;
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -105,11 +104,11 @@ function parseDateValue(value) {
 
 function getDateLabel(date, index) {
   if (index === 0) {
-    return "H\u00f4m nay";
+    return "Hôm nay";
   }
 
   if (index === 1) {
-    return "Ng\u00e0y mai";
+    return "Ngày mai";
   }
 
   return formatDateDisplay(date);
@@ -200,8 +199,8 @@ function getDefaultScheduleDraft() {
 }
 
 function getTripDraft(item) {
-  const [from = "", to = ""] = item.route.split(/\s*(?:Ã¢â€ â€™|->|\\u279D)\s*/);
-  const [schedule = "", price = ""] = item.meta.split(/\s*[Ã‚Â·Ã¢â‚¬Â¢]\s*/);
+  const [from = "", to = ""] = item.route.split(/\s*(?:→|->|➝)\s*/);
+  const [schedule = "", price = ""] = item.meta.split(/\s*[·•]\s*/);
   const defaultSchedule = getDefaultScheduleDraft();
   const scheduleMatch = schedule.match(/(.+)\s+(\d{1,2}):(\d{2})$/);
   const dateOptions = createDateOptions();
@@ -227,11 +226,11 @@ function getTripDraft(item) {
 }
 
 function getScheduledTripView(item) {
-  const [destination = item.route, pickup = "VÃ¡Â»â€¹ trÃƒÂ­ hiÃ¡Â»â€¡n tÃ¡ÂºÂ¡i"] = item.route.split(/\s*(?:\u2192|->|\u279D)\s*/);
-  const [time = "", price = ""] = item.meta.split(/\s*[\u00B7\u2022]\s*/);
-  const vehicle = item.icon.includes("\uD83D\uDEF5") || item.icon.includes("\uD83D\uDE97")
-    ? "Xe mÃƒÂ¡y"
-    : "Xe 4 chÃ¡Â»â€”";
+  const [destination = item.route, pickup = "Vị trí hiện tại"] = item.route.split(/\s*(?:→|->|➝)\s*/);
+  const [time = "", price = ""] = item.meta.split(/\s*[·•]\s*/);
+  const vehicle = item.icon.includes("🛵") || item.icon.includes("🚗")
+    ? "Xe máy"
+    : "Xe 4 chỗ";
 
   return {
     destination,
@@ -281,7 +280,7 @@ function formatCurrencyVnd(value) {
     return "--";
   }
 
-  return `${Math.round(numberValue).toLocaleString("vi-VN")}\u0111`;
+  return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
 }
 
 function formatDistanceKm(value) {
@@ -306,7 +305,7 @@ function formatDurationMinute(value) {
     return "";
   }
 
-  return `${Math.max(1, Math.round(numberValue))} ph\u00fat`;
+  return `${Math.max(1, Math.round(numberValue))} phút`;
 }
 
 function getTripField(source, camelKey, pascalKey) {
@@ -343,23 +342,23 @@ function normalizeTripStatus(status) {
 function getScheduledStatusLabel(status) {
   switch (normalizeTripStatus(status)) {
     case "pending":
-      return "Ã„Âang tÃƒÂ¬m tÃƒÂ i xÃ¡ÂºÂ¿";
+      return "Đang tìm tài xế";
     case "pendingdriverassignment":
-      return "ChÃ¡Â»Â phÃƒÂ¢n tÃƒÂ i xÃ¡ÂºÂ¿";
+      return "Chờ tài xế";
     case "accepted":
-      return "TÃƒÂ i xÃ¡ÂºÂ¿ Ã„â€˜ÃƒÂ£ nhÃ¡ÂºÂ­n";
+      return "Tài xế đã nhận";
     case "driverarrived":
-      return "TÃƒÂ i xÃ¡ÂºÂ¿ Ã„â€˜ÃƒÂ£ Ã„â€˜Ã¡ÂºÂ¿n";
+      return "Tài xế đã đến";
     case "inprogress":
-      return "Ã„Âang di chuyÃ¡Â»Æ’n";
+      return "Đang di chuyển";
     case "completed":
-      return "HoÃƒÂ n thÃƒÂ nh";
+      return "Hoàn thành";
     case "cancelled":
-      return "Ã„ÂÃƒÂ£ hÃ¡Â»Â§y";
+      return "Đã hủy";
     case "nodriverfound":
-      return "KhÃƒÂ´ng tÃƒÂ¬m thÃ¡ÂºÂ¥y tÃƒÂ i xÃ¡ÂºÂ¿";
+      return "Không tìm thấy tài xế";
     default:
-      return "ChÃ¡Â»Â tÃƒÂ i xÃ¡ÂºÂ¿";
+      return "Chờ tài xế";
   }
 }
 
@@ -377,11 +376,11 @@ function formatScheduledPickupText(value) {
     scheduledDate.getMonth() + 1
   )}/${scheduledDate.getFullYear()}`;
 
-  return `GiÃ¡Â»Â Ã„â€˜ÃƒÂ³n: ${time} Ã¢â‚¬Â¢ ${date}`;
+  return `Giờ đón: ${time} • ${date}`;
 }
 
 function isSchedulePlaceholder(value) {
-  return String(value ?? "").trim() === "\u0110\u00e3 h\u1eb9n l\u1ecbch";
+  return String(value ?? "").trim() === "Đã hẹn lịch";
 }
 
 function mapTripToScheduledItem(trip) {
@@ -394,10 +393,10 @@ function mapTripToScheduledItem(trip) {
     icon:
       String(vehicleType ?? "").toLowerCase().includes("bike") ||
       String(vehicleType ?? "") === "1"
-        ? "\ud83d\udef5"
-        : "\ud83d\ude97",
-    route: `${getTripField(trip, "pickupAddress", "PickupAddress") || "\u0110i\u1ec3m \u0111\u00f3n"} \u2192 ${
-      getTripField(trip, "destinationAddress", "DestinationAddress") || "\u0110i\u1ec3m \u0111\u1ebfn"
+        ? "🛵"
+        : "🚗",
+    route: `${getTripField(trip, "pickupAddress", "PickupAddress") || "Điểm đón"} → ${
+      getTripField(trip, "destinationAddress", "DestinationAddress") || "Điểm đến"
     }`,
     pickup: getTripField(trip, "pickupAddress", "PickupAddress"),
     destination: getTripField(trip, "destinationAddress", "DestinationAddress"),
@@ -442,7 +441,7 @@ export default function TripsScreen() {
     {
       id: "driver-hi",
       sender: "driver",
-      text: "MÃƒÂ¬nh Ã„â€˜ang Ã„â€˜Ã¡ÂºÂ¿n Ã„â€˜iÃ¡Â»Æ’m Ã„â€˜ÃƒÂ³n, bÃ¡ÂºÂ¡n chÃ¡Â»Â mÃƒÂ¬nh khoÃ¡ÂºÂ£ng 1 phÃƒÂºt nhÃƒÂ©.",
+      text: "Mình đang đến điểm đón, bạn chờ mình khoảng 1 phút nhé.",
     },
   ]);
   const [editDraft, setEditDraft] = useState({
@@ -567,7 +566,7 @@ export default function TripsScreen() {
                 const item = mapTripToScheduledItem(trip);
                 const localItem = localScheduledById.get(item.id);
 
-                const localScheduleText = localItem?.meta?.split(/\s*[Ã‚Â·Ã¢â‚¬Â¢]\s*/)?.[0] || "";
+                const localScheduleText = localItem?.meta?.split(/\s*[·•]\s*/)?.[0] || "";
 
                 return {
                   ...item,
@@ -657,19 +656,19 @@ export default function TripsScreen() {
   const activePickup =
     typeof params.pickup === "string" && params.pickup
       ? params.pickup
-      : "CÃ¡Â»â€¢ng FPT";
+      : "Cổng FPT";
   const activeDriverOrigin =
     typeof params.driverOrigin === "string" && params.driverOrigin
       ? params.driverOrigin
-      : "VÃ¡Â»â€¹ trÃƒÂ­ tÃƒÂ i xÃ¡ÂºÂ¿";
+      : "Vị trí tài xế";
   const activeDestination =
     typeof params.destination === "string" && params.destination
       ? params.destination
-      : "VÃ¡Â»â€¹ trÃƒÂ­ cÃ¡Â»Â§a bÃ¡ÂºÂ¡n";
+      : "Vị trí của bạn";
   const activeMapImageUrl =
     typeof params.mapImageUrl === "string" ? params.mapImageUrl : "";
   const activeDuration =
-    typeof params.duration === "string" && params.duration ? params.duration : "1 phÃƒÂºt";
+    typeof params.duration === "string" && params.duration ? params.duration : "1 phút";
   const activeDistance =
     typeof params.distance === "string" && params.distance ? params.distance : "1.2 km";
   const scheduleDateOptions = createDateOptions();
@@ -681,16 +680,7 @@ export default function TripsScreen() {
     selectedDateOption.value,
     editDraft.hour
   );
-  const selectedPickupDate = createScheduleDate(
-    selectedDateOption.value,
-    editDraft.hour,
-    editDraft.minute
-  );
-  const selectedArrivalDate = addMinutes(
-    selectedPickupDate,
-    MOCK_TRIP_DURATION_MINUTES
-  );
-  const selectedScheduleText = `${editDraft.time} Ã¢â‚¬Â¢ ${editDraft.dateDisplay} (${editDraft.dateLabel})`;
+  const selectedScheduleText = `${editDraft.time} • ${editDraft.dateDisplay} (${editDraft.dateLabel})`;
 
   function requireLogin() {
     if (isAuthenticated) {
@@ -714,7 +704,7 @@ export default function TripsScreen() {
       return;
     }
 
-    if (item.actionPrimary !== "Ã„ÂÃƒÂ¡nh giÃƒÂ¡") {
+    if (item.actionPrimary !== "Đánh giá") {
       return;
     }
 
@@ -737,7 +727,7 @@ export default function TripsScreen() {
       return;
     }
 
-    if (item.actionSecondary !== "BÃƒÂ¡o cÃƒÂ¡o") {
+    if (item.actionSecondary !== "Báo cáo") {
       return;
     }
 
@@ -753,12 +743,12 @@ export default function TripsScreen() {
     }
 
     if (!editDraft.from.trim() || !editDraft.to.trim()) {
-      setFormError("Vui lÃƒÂ²ng nhÃ¡ÂºÂ­p Ã„â€˜Ã¡ÂºÂ§y Ã„â€˜Ã¡Â»Â§ Ã„â€˜iÃ¡Â»Æ’m Ã„â€˜ÃƒÂ³n vÃƒÂ  Ã„â€˜iÃ¡Â»Æ’m Ã„â€˜Ã¡ÂºÂ¿n");
+      setFormError("Vui lòng nhập đầy đủ điểm đón và điểm đến");
       return;
     }
 
     if (!editDraft.date.trim() || !editDraft.time.trim()) {
-      setFormError("Vui lÃƒÂ²ng chÃ¡Â»Ân ngÃƒÂ y vÃƒÂ  giÃ¡Â»Â hÃ¡ÂºÂ¹n");
+      setFormError("Vui lòng chọn ngày và giờ hẹn");
       return;
     }
 
@@ -768,8 +758,8 @@ export default function TripsScreen() {
         trip.id === selectedTrip?.id
           ? {
               ...trip,
-              route: `${editDraft.from.trim()} Ã¢â€ â€™ ${editDraft.to.trim()}`,
-              meta: `${editDraft.dateLabel} ${editDraft.time.trim()} Ã‚Â· ${editDraft.price}`,
+              route: `${editDraft.from.trim()} → ${editDraft.to.trim()}`,
+              meta: `${editDraft.dateLabel} ${editDraft.time.trim()} · ${editDraft.price}`,
             }
           : trip
       ),
@@ -785,12 +775,12 @@ export default function TripsScreen() {
     }
 
     if (!selectedTrip?.id || !session?.accessToken) {
-      setFormError("Kh\u00f4ng t\u00ecm th\u1ea5y chuy\u1ebfn c\u1ea7n h\u1ee7y");
+      setFormError("Không tìm thấy chuyến cần hủy");
       return;
     }
 
     if (!cancelReason.trim()) {
-      setFormError("Vui lÃƒÂ²ng nhÃ¡ÂºÂ­p lÃƒÂ½ do hÃ¡Â»Â§y");
+      setFormError("Vui lòng nhập lý do hủy");
       return;
     }
 
@@ -831,7 +821,7 @@ export default function TripsScreen() {
     } catch (error) {
       setFormError(
         error.message ||
-          "Kh\u00f4ng th\u1ec3 h\u1ee7y chuy\u1ebfn. Vui l\u00f2ng th\u1eed l\u1ea1i."
+          "Không thể hủy chuyến. Vui lòng thử lại."
       );
     } finally {
       setIsCancellingTrip(false);
@@ -873,7 +863,7 @@ export default function TripsScreen() {
       setReviewDraft("");
     } catch (error) {
       setFormError(
-        error?.message || "KhÃƒÂ´ng thÃ¡Â»Æ’ gÃ¡Â»Â­i Ã„â€˜ÃƒÂ¡nh giÃƒÂ¡. Vui lÃƒÂ²ng thÃ¡Â»Â­ lÃ¡ÂºÂ¡i."
+        error?.message || "Không thể gửi đánh giá. Vui lòng thử lại."
       );
     } finally {
       setIsSubmittingReview(false);
@@ -890,7 +880,7 @@ export default function TripsScreen() {
     }
 
     if (!reportReason.trim()) {
-      setFormError("Vui lÃƒÂ²ng nhÃ¡ÂºÂ­p nÃ¡Â»â„¢i dung bÃƒÂ¡o cÃƒÂ¡o");
+      setFormError("Vui lòng nhập nội dung báo cáo");
       return;
     }
 
@@ -934,7 +924,7 @@ export default function TripsScreen() {
         {
           id: `driver-${Date.now()}`,
           sender: "driver",
-          text: "TÃƒÂ i xÃ¡ÂºÂ¿ Ã„â€˜ÃƒÂ£ nhÃ¡ÂºÂ­n tin nhÃ¡ÂºÂ¯n, mÃƒÂ¬nh sÃ¡ÂºÂ½ phÃ¡ÂºÂ£n hÃ¡Â»â€œi ngay.",
+          text: "Tài xế đã nhận tin nhắn, mình sẽ phản hồi ngay.",
         },
       ]);
     }, 700);
@@ -993,8 +983,8 @@ export default function TripsScreen() {
           {selectedTab === "history" ? (
             <View style={styles.historyFilterRow}>
               {[
-                { key: "newest", label: "M\u1edbi nh\u1ea5t" },
-                { key: "oldest", label: "C\u0169 nh\u1ea5t" },
+                { key: "newest", label: "Mới nhất" },
+                { key: "oldest", label: "Cũ nhất" },
               ].map((option) => {
                 const isActive = historySortOrder === option.key;
 
@@ -1028,8 +1018,8 @@ export default function TripsScreen() {
           {selectedTab === "scheduled" ? (
             <View style={styles.historyFilterRow}>
               {[
-                { key: "newest", label: "M\u1edbi nh\u1ea5t" },
-                { key: "oldest", label: "C\u0169 nh\u1ea5t" },
+                { key: "newest", label: "Mới nhất" },
+                { key: "oldest", label: "Cũ nhất" },
               ].map((option) => {
                 const isActive = scheduledSortOrder === option.key;
 
@@ -1062,7 +1052,7 @@ export default function TripsScreen() {
               {hasActiveRide ? (
                 <>
                   <ThemedText type="default" style={styles.activeJourneyTitle}>
-                    HÃƒÂ nh trÃƒÂ¬nh cÃ¡Â»Â§a bÃ¡ÂºÂ¡n
+                    Hành trình của bạn
                   </ThemedText>
 
                   <View style={styles.activeMapCard}>
@@ -1075,29 +1065,29 @@ export default function TripsScreen() {
                     ) : (
                       <View style={styles.activeMapFallback}>
                         <ThemedText type="default" style={styles.activeMapFallbackIcon}>
-                          Ã°Å¸â€”ÂºÃ¯Â¸Â
+                          🗺️
                         </ThemedText>
                         <ThemedText type="smallBold" style={styles.activeMapFallbackText}>
-                          BÃ¡ÂºÂ£n Ã„â€˜Ã¡Â»â€œ hÃƒÂ nh trÃƒÂ¬nh
+                          Bản đồ hành trình
                         </ThemedText>
                       </View>
                     )}
                     <View style={styles.activeMapBadge}>
                       <ThemedText type="smallBold" style={styles.activeMapBadgeText}>
-                        Google Maps Ã¢â‚¬Â¢ Driver Ã¢â€ â€™ KhÃƒÂ¡ch
+                        Google Maps • Driver → Khách
                       </ThemedText>
                     </View>
                   </View>
 
                   <View style={styles.activeEtaCard}>
                     <ThemedText type="small" style={styles.activeEtaStatus}>
-                      Ã°Å¸â€ºÂµ TÃƒÂ i xÃ¡ÂºÂ¿ Ã„â€˜ang Ã„â€˜Ã¡ÂºÂ¿n...
+                      🛵 Tài xế đang đến...
                     </ThemedText>
                     <ThemedText type="default" style={styles.activeEtaNumber}>
                       {activeDuration}
                     </ThemedText>
                     <ThemedText type="small" style={styles.activeEtaDistance}>
-                      KhoÃ¡ÂºÂ£ng cÃƒÂ¡ch {activeDistance}
+                      Khoảng cách {activeDistance}
                     </ThemedText>
                   </View>
 
@@ -1108,19 +1098,19 @@ export default function TripsScreen() {
                     ]}
                   >
                     <ThemedText type="small" style={styles.activeRouteLabel}>
-                      Ã„ÂiÃ¡Â»Æ’m tÃƒÂ i xÃ¡ÂºÂ¿ xuÃ¡ÂºÂ¥t phÃƒÂ¡t
+                      Điểm tài xế xuất phát
                     </ThemedText>
                     <ThemedText type="default" style={styles.activeRouteValue}>
                       {activeDriverOrigin}
                     </ThemedText>
                     <ThemedText type="small" style={styles.activeRouteLabel}>
-                      Ã„ÂiÃ¡Â»Æ’m Ã„â€˜ÃƒÂ³n khÃƒÂ¡ch
+                      Điểm đón khách
                     </ThemedText>
                     <ThemedText type="default" style={styles.activeRouteValue}>
                       {activePickup}
                     </ThemedText>
                     <ThemedText type="small" style={styles.activeRouteLabel}>
-                      Ã„ÂiÃ¡Â»Æ’m Ã„â€˜Ã¡ÂºÂ¿n chuyÃ¡ÂºÂ¿n xe
+                      Điểm đến chuyến xe
                     </ThemedText>
                     <ThemedText type="default" style={styles.activeRouteValue}>
                       {activeDestination}
@@ -1134,17 +1124,17 @@ export default function TripsScreen() {
                     ]}
                   >
                     <View style={styles.activeDriverAvatar}>
-                      <ThemedText type="default">Ã°Å¸â€˜Â¨</ThemedText>
+                      <ThemedText type="default">👨</ThemedText>
                     </View>
                     <View style={styles.activeDriverInfo}>
                       <ThemedText type="default" style={styles.activeDriverName}>
-                        NguyÃ¡Â»â€¦n VÃ„Æ’n TÃƒÂ i
+                        Nguyễn Văn Tài
                       </ThemedText>
                       <ThemedText type="small" style={styles.activeDriverPhone}>
                         0901 234 567
                       </ThemedText>
                       <ThemedText type="small" style={styles.activeDriverMeta}>
-                        59-X1 234.56 Ã‚Â· Ã¢Ëœâ€¦ 4.8
+                        59-X1 234.56 · ★ 4.8
                       </ThemedText>
                     </View>
                     <Pressable
@@ -1156,14 +1146,14 @@ export default function TripsScreen() {
                       }}
                     >
                       <ThemedText type="default" style={styles.activeMessageIcon}>
-                        Ã°Å¸â€™Â¬
+                        💬
                       </ThemedText>
                     </Pressable>
                   </View>
 
                   <View style={styles.activePaymentCard}>
                     <ThemedText type="small" style={styles.activePaymentText}>
-                      Ã°Å¸â€™Âµ TrÃ¡ÂºÂ£ tiÃ¡Â»Ân mÃ¡ÂºÂ·t: 25.000Ã„â€˜
+                      💵 Trả tiền mặt: 25.000đ
                     </ThemedText>
                   </View>
                 </>
@@ -1175,10 +1165,10 @@ export default function TripsScreen() {
                   ]}
                 >
                   <ThemedText type="default" style={styles.emptyActiveTitle}>
-                    ChÃ†Â°a cÃƒÂ³ chuyÃ¡ÂºÂ¿n xe Ã„â€˜Ã†Â°Ã¡Â»Â£c Ã„â€˜Ã¡ÂºÂ·t hiÃ¡Â»â€¡n tÃ¡ÂºÂ¡i
+                    Chưa có chuyến xe được đặt hiện tại
                   </ThemedText>
                   <ThemedText type="small" style={styles.emptyActiveText}>
-                    Khi bÃ¡ÂºÂ¡n Ã„â€˜Ã¡ÂºÂ·t xe thÃƒÂ nh cÃƒÂ´ng, thÃƒÂ´ng tin chuyÃ¡ÂºÂ¿n Ã„â€˜ang Ã„â€˜i sÃ¡ÂºÂ½ hiÃ¡Â»Æ’n thÃ¡Â»â€¹ Ã¡Â»Å¸ Ã„â€˜ÃƒÂ¢y.
+                    Khi bạn đặt xe thành công, thông tin chuyến đang đi sẽ hiển thị ở đây.
                   </ThemedText>
                 </View>
               )}
@@ -1201,11 +1191,16 @@ export default function TripsScreen() {
             <View style={styles.scheduledCards}>
               {items.map((item) => {
                 const trip = getScheduledTripView(item);
+                const normalizedItemStatus = normalizeTripStatus(item.status);
                 const canEditScheduledTrip = ![
                   "inprogress",
                   "completed",
                   "cancelled",
-                ].includes(normalizeTripStatus(item.status));
+                ].includes(normalizedItemStatus);
+                const canCancelScheduledTrip = ![
+                  "completed",
+                  "cancelled",
+                ].includes(normalizedItemStatus);
 
                 return (
                   <View
@@ -1232,7 +1227,7 @@ export default function TripsScreen() {
                           type="smallBold"
                           style={styles.scheduledStatusText}
                         >
-                          ChÃ¡Â»Â tÃƒÂ i xÃ¡ÂºÂ¿
+                          {"Chờ tài xế"}
                         </ThemedText>
                       </View>
                       <View style={styles.scheduledStatusBadge}>
@@ -1247,7 +1242,7 @@ export default function TripsScreen() {
 
                     <View style={styles.scheduledMetaGroup}>
                       <ThemedText type="default" style={styles.scheduledMetaLine}>
-                        Ã°Å¸â€œÂ Ã„ÂiÃ¡Â»Æ’m Ã„â€˜ÃƒÂ³n:{" "}
+                        {"📍 Điểm đón: "}
                         <ThemedText
                           type="default"
                           style={styles.scheduledMetaStrong}
@@ -1260,14 +1255,14 @@ export default function TripsScreen() {
                       </ThemedText>
                       {Boolean(item.distanceText || item.durationText) && (
                         <ThemedText type="default" style={styles.scheduledMetaLine}>
-                          {"Qu\u00e3ng \u0111\u01b0\u1eddng: "}
+                          {"Quãng đường: "}
                           <ThemedText
                             type="default"
                             style={styles.scheduledMetaStrong}
                           >
                             {[item.distanceText, item.durationText]
                               .filter(Boolean)
-                              .join(" \u2022 ")}
+                              .join(" • ")}
                           </ThemedText>
                         </ThemedText>
                       )}
@@ -1289,20 +1284,22 @@ export default function TripsScreen() {
                             type="smallBold"
                             style={styles.scheduledEditText}
                           >
-                            ChÃ¡Â»â€°nh sÃ¡Â»Â­a
+                            {"Chỉnh sửa"}
                           </ThemedText>
                         </Pressable>
-                        <Pressable
-                          style={styles.scheduledCancelButton}
-                          onPress={() => handleSecondaryAction(item)}
-                        >
-                          <ThemedText
-                            type="smallBold"
-                            style={styles.scheduledCancelText}
+                        {canCancelScheduledTrip ? (
+                          <Pressable
+                            style={styles.scheduledCancelButton}
+                            onPress={() => handleSecondaryAction(item)}
                           >
-                            HÃ¡Â»Â§y
-                          </ThemedText>
-                        </Pressable>
+                            <ThemedText
+                              type="smallBold"
+                              style={styles.scheduledCancelText}
+                            >
+                              {"Hủy"}
+                            </ThemedText>
+                          </Pressable>
+                        ) : null}
                       </View>
                     </View>
                   </View>
@@ -1394,9 +1391,9 @@ export default function TripsScreen() {
                         ]}
                       >
                         {selectedTab === "scheduled"
-                          ? "S\u1EEDa"
+                          ? "Sửa"
                           : hasRated
-                            ? "\u0110\u00E3 \u0111\u00E1nh gi\u00E1"
+                            ? "Đã đánh giá"
                             : item.actionPrimary}
                       </ThemedText>
                     </Pressable>
@@ -1421,16 +1418,16 @@ export default function TripsScreen() {
                         ]}
                       >
                         {selectedTab === "scheduled"
-                          ? "H\u1EE7y"
+                          ? "Hủy"
                           : hasReported
-                            ? "\u0110\u00E3 b\u00E1o c\u00E1o"
+                            ? "Đã báo cáo"
                             : item.actionSecondary}
                       </ThemedText>
                     </Pressable>
 
                     {typeof displayRating === "number" && (
                       <ThemedText type="smallBold" style={styles.ratingText}>
-                        {"\u2605"} {displayRating}
+                        {"★"} {displayRating}
                       </ThemedText>
                     )}
                   </View>
@@ -1455,7 +1452,7 @@ export default function TripsScreen() {
                         currentHistoryPage === 1 && styles.historyPageButtonTextDisabled,
                       ]}
                     >
-                      {"Tr\u01b0\u1edbc"}
+                      {"Trước"}
                     </ThemedText>
                   </Pressable>
 
@@ -1509,14 +1506,14 @@ export default function TripsScreen() {
           >
             <View style={styles.chatHeader}>
               <View style={styles.activeDriverAvatar}>
-                <ThemedText type="default">{"\uD83D\uDC68"}</ThemedText>
+                <ThemedText type="default">{"👨"}</ThemedText>
               </View>
               <View style={styles.chatHeaderInfo}>
                 <ThemedText type="default" style={styles.chatTitle}>
-                  {"Nguy\u1EC5n V\u0103n T\u00E0i"}
+                  {"Nguyễn Văn Tài"}
                 </ThemedText>
                 <ThemedText type="small" style={styles.chatSubtitle}>
-                  {"\u0110ang ho\u1EA1t \u0111\u1ED9ng \u00B7 0901 234 567"}
+                  {"Đang hoạt động · 0901 234 567"}
                 </ThemedText>
               </View>
               <Pressable
@@ -1560,7 +1557,7 @@ export default function TripsScreen() {
 
             <View style={styles.chatInputRow}>
               <TextInput
-                placeholder={"Nh\u1EAFn tin v\u1EDBi t\u00E0i x\u1EBF..."}
+                placeholder={"Nhắn tin với tài xế..."}
                 placeholderTextColor={MUTED}
                 style={[
                   styles.chatInput,
@@ -1578,7 +1575,7 @@ export default function TripsScreen() {
                 onPress={handleSendChatMessage}
               >
                 <ThemedText type="smallBold" style={styles.chatSendText}>
-                  {"G\u1EEDi"}
+                  {"Gửi"}
                 </ThemedText>
               </Pressable>
             </View>
@@ -1600,7 +1597,7 @@ export default function TripsScreen() {
             ]}
           >
             <ThemedText type="default" style={styles.modalTitle}>
-              {"\u0110\u00E1nh gi\u00E1 chuy\u1EBFn \u0111i"}
+              {"Đánh giá chuyến đi"}
             </ThemedText>
             <ThemedText type="small" style={styles.metaText}>
               {selectedTrip?.route}
@@ -1620,7 +1617,7 @@ export default function TripsScreen() {
                       star <= ratingDraft && styles.starTextActive,
                     ]}
                   >
-                    {"\u2605"}
+                    {"★"}
                   </ThemedText>
                 </Pressable>
               ))}
@@ -1628,7 +1625,7 @@ export default function TripsScreen() {
 
             <TextInput
               multiline
-              placeholder={"Nh\u1EADn x\u00E9t chuy\u1EBFn \u0111i"}
+              placeholder={"Nhận xét chuyến đi"}
               placeholderTextColor={MUTED}
               style={[
                 styles.reviewInput,
@@ -1649,7 +1646,7 @@ export default function TripsScreen() {
                 ]}
                 onPress={() => setRatingModalVisible(false)}
               >
-                <ThemedText type="smallBold">{"H\u1EE7y"}</ThemedText>
+                <ThemedText type="smallBold">{"Hủy"}</ThemedText>
               </Pressable>
               <Pressable
                 style={[
@@ -1663,7 +1660,7 @@ export default function TripsScreen() {
                   type="smallBold"
                   style={styles.modalPrimaryButtonText}
                 >
-                  {isSubmittingReview ? "\u0110ang g\u1EEDi..." : "G\u1EEDi \u0111\u00E1nh gi\u00E1"}
+                  {isSubmittingReview ? "Đang gửi..." : "Gửi đánh giá"}
                 </ThemedText>
               </Pressable>
             </View>
@@ -1690,7 +1687,7 @@ export default function TripsScreen() {
               </ThemedText>
             </View>
             <ThemedText type="default" style={styles.modalTitle}>
-              BÃƒÂ¡o cÃƒÂ¡o chuyÃ¡ÂºÂ¿n Ã„â€˜i
+              Báo cáo chuyến đi
             </ThemedText>
             <ThemedText type="small" style={styles.metaText}>
               {selectedTrip?.route}
@@ -1698,7 +1695,7 @@ export default function TripsScreen() {
 
             <TextInput
               multiline
-              placeholder="NhÃ¡ÂºÂ­p lÃƒÂ½ do bÃƒÂ¡o cÃƒÂ¡o, vÃƒÂ­ dÃ¡Â»Â¥: tÃƒÂ i xÃ¡ÂºÂ¿ Ã„â€˜Ã¡ÂºÂ¿n muÃ¡Â»â„¢n, thÃƒÂ¡i Ã„â€˜Ã¡Â»â„¢ khÃƒÂ´ng phÃƒÂ¹ hÃ¡Â»Â£p..."
+              placeholder="Nhập lý do báo cáo, ví dụ: tài xế đến muộn, thái độ không phù hợp..."
               placeholderTextColor={MUTED}
               style={[
                 styles.reviewInput,
@@ -1728,11 +1725,11 @@ export default function TripsScreen() {
                   setFormError("");
                 }}
               >
-                <ThemedText type="smallBold">Ã„ÂÃƒÂ³ng</ThemedText>
+                <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
               <Pressable style={styles.modalDangerButton} onPress={handleSubmitReport}>
                 <ThemedText type="smallBold" style={styles.modalPrimaryButtonText}>
-                  GÃ¡Â»Â­i bÃƒÂ¡o cÃƒÂ¡o
+                  Gửi báo cáo
                 </ThemedText>
               </Pressable>
             </View>
@@ -1754,14 +1751,14 @@ export default function TripsScreen() {
             ]}
           >
             <ThemedText type="default" style={styles.modalTitle}>
-              SÃ¡Â»Â­a lÃ¡Â»â€¹ch Ã„â€˜Ã¡ÂºÂ·t xe
+              Sửa lịch đặt xe
             </ThemedText>
             <ThemedText type="small" style={styles.metaText}>
-              CÃ¡ÂºÂ­p nhÃ¡ÂºÂ­t thÃƒÂ´ng tin chuyÃ¡ÂºÂ¿n Ã„â€˜ÃƒÂ£ hÃ¡ÂºÂ¹n trÃ†Â°Ã¡Â»â€ºc
+              Cập nhật thông tin chuyến đã hẹn trước
             </ThemedText>
 
             <TextInput
-              placeholder="Ã„ÂiÃ¡Â»Æ’m Ã„â€˜ÃƒÂ³n"
+              placeholder="Điểm đón"
               placeholderTextColor={MUTED}
               style={[
                 styles.formInput,
@@ -1774,7 +1771,7 @@ export default function TripsScreen() {
               }}
             />
             <TextInput
-              placeholder="Ã„ÂiÃ¡Â»Æ’m Ã„â€˜Ã¡ÂºÂ¿n"
+              placeholder="Điểm đến"
               placeholderTextColor={MUTED}
               style={[
                 styles.formInput,
@@ -1800,20 +1797,20 @@ export default function TripsScreen() {
               </View>
               <View style={styles.scheduleSummaryInfo}>
                 <ThemedText type="smallBold" style={styles.scheduleSummaryTitle}>
-                  Xe Ã„â€˜ÃƒÂ³n lÃƒÂºc {editDraft.time}
+                  Xe đón lúc {editDraft.time}
                 </ThemedText>
                 <ThemedText type="small" style={styles.scheduleSummaryMeta}>
                   {editDraft.dateDisplay} ({editDraft.dateLabel})
                 </ThemedText>
               </View>
               <ThemedText type="smallBold" style={styles.scheduleChangeText}>
-                ChÃ¡Â»Ân
+                Chọn
               </ThemedText>
             </Pressable>
 
             <View style={styles.lockedPriceBox}>
               <ThemedText type="small" style={styles.lockedPriceLabel}>
-                GiÃƒÂ¡ chuyÃ¡ÂºÂ¿n Ã„â€˜i
+                Giá chuyến đi
               </ThemedText>
               <ThemedText type="smallBold" style={styles.lockedPriceText}>
                 {editDraft.price}
@@ -1831,14 +1828,14 @@ export default function TripsScreen() {
                 style={[styles.modalSecondaryButton, { backgroundColor: theme.background }]}
                 onPress={() => setEditModalVisible(false)}
               >
-                <ThemedText type="smallBold">Ã„ÂÃƒÂ³ng</ThemedText>
+                <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
               <Pressable
                 style={styles.modalPrimaryButton}
                 onPress={handleUpdateScheduledTrip}
               >
                 <ThemedText type="smallBold" style={styles.modalPrimaryButtonText}>
-                  LÃ†Â°u thay Ã„â€˜Ã¡Â»â€¢i
+                  Lưu thay đổi
                 </ThemedText>
               </Pressable>
             </View>
@@ -1866,11 +1863,11 @@ export default function TripsScreen() {
               onPress={() => setSchedulePickerVisible(false)}
             >
               <ThemedText type="default" style={styles.scheduleBackIcon}>
-                Ã¢â€ Â
+                ←
               </ThemedText>
             </Pressable>
             <ThemedText type="default" style={styles.scheduleTitle}>
-              HÃ¡ÂºÂ¹n giÃ¡Â»Â
+              Hẹn giờ
             </ThemedText>
             <View style={styles.scheduleBackButton} />
           </View>
@@ -1886,10 +1883,10 @@ export default function TripsScreen() {
 
           <View style={styles.scheduleIntro}>
             <ThemedText type="default" style={styles.scheduleQuestion}>
-              BÃ¡ÂºÂ¡n muÃ¡Â»â€˜n xe Ã„â€˜ÃƒÂ³n lÃƒÂºc nÃƒÂ o?
+              Bạn muốn xe đón lúc nào?
             </ThemedText>
             <ThemedText type="default" style={styles.scheduleHint}>
-              ChÃ¡Â»Ân thÃ¡Â»Âi gian trong vÃƒÂ²ng tÃ¡Â»â€˜i Ã„â€˜a 7 ngÃƒÂ y kÃ¡Â»Æ’ tÃ¡Â»Â« hiÃ¡Â»â€¡n tÃ¡ÂºÂ¡i.
+              Chọn thời gian trong vòng tối đa 7 ngày kể từ hiện tại.
             </ThemedText>
           </View>
 
@@ -2011,19 +2008,7 @@ export default function TripsScreen() {
 
           <View style={styles.scheduleResultCard}>
             <ThemedText type="default" style={styles.scheduleResultTitle}>
-              Xe Ã„â€˜ÃƒÂ³n bÃ¡ÂºÂ¡n lÃƒÂºc {selectedScheduleText}
-            </ThemedText>
-            <ThemedText
-              type="default"
-              style={[styles.scheduleArrivalText, styles.hiddenScheduleMeta]}
-            >
-              Ã„ÂÃ¡ÂºÂ¿n nÃ†Â¡i lÃƒÂºc {pad(selectedArrivalDate.getHours())}:{pad(selectedArrivalDate.getMinutes())}
-            </ThemedText>
-            <ThemedText
-              type="small"
-              style={[styles.scheduleHint, styles.hiddenScheduleMeta]}
-            >
-              di chuyÃ¡Â»Æ’n khoÃ¡ÂºÂ£ng {MOCK_TRIP_DURATION_MINUTES} phÃƒÂºt
+              Xe đón bạn lúc {selectedScheduleText}
             </ThemedText>
           </View>
 
@@ -2032,7 +2017,7 @@ export default function TripsScreen() {
             onPress={() => setSchedulePickerVisible(false)}
           >
             <ThemedText type="smallBold" style={styles.scheduleConfirmText}>
-              XÃƒÂ¡c nhÃ¡ÂºÂ­n
+              Xác nhận
             </ThemedText>
           </Pressable>
         </View>
@@ -2052,7 +2037,7 @@ export default function TripsScreen() {
             ]}
           >
             <ThemedText type="default" style={styles.modalTitle}>
-              HÃ¡Â»Â§y yÃƒÂªu cÃ¡ÂºÂ§u Ã„â€˜Ã¡ÂºÂ·t xe
+              {"Hủy yêu cầu đặt xe"}
             </ThemedText>
             <ThemedText type="small" style={styles.metaText}>
               {selectedTrip?.route}
@@ -2060,7 +2045,7 @@ export default function TripsScreen() {
 
             <TextInput
               multiline
-              placeholder="NhÃ¡ÂºÂ­p lÃƒÂ½ do hÃ¡Â»Â§y yÃƒÂªu cÃ¡ÂºÂ§u..."
+              placeholder={"Nhập lý do hủy yêu cầu..."}
               placeholderTextColor={MUTED}
               style={[
                 styles.reviewInput,
@@ -2088,7 +2073,7 @@ export default function TripsScreen() {
                 disabled={isCancellingTrip}
                 onPress={() => setCancelModalVisible(false)}
               >
-                <ThemedText type="smallBold">Ã„ÂÃƒÂ³ng</ThemedText>
+                <ThemedText type="smallBold">{"Đóng"}</ThemedText>
               </Pressable>
               <Pressable
                 style={[
@@ -2099,7 +2084,7 @@ export default function TripsScreen() {
                 onPress={handleCancelTrip}
               >
                 <ThemedText type="smallBold" style={styles.modalPrimaryButtonText}>
-                  XÃƒÂ¡c nhÃ¡ÂºÂ­n hÃ¡Â»Â§y
+                  {"Xác nhận hủy"}
                 </ThemedText>
               </Pressable>
             </View>

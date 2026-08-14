@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
+  BackHandler,
   Modal,
   Pressable,
   ScrollView,
@@ -1114,25 +1115,25 @@ function mapAvailableRideSharingGroupToCard(group) {
   const directionValue = Number(group.direction);
   const directionLabel =
     directionValue === 2 || String(group.direction ?? "").toLowerCase() === "inbound"
-      ? "Chuyáº¿n vá»"
-      : "Chuyáº¿n Ä‘i";
+      ? "Chuyến về"
+      : "Chuyến đi";
 
   return {
     id: group.id,
     requestId: "",
     groupId: group.id,
-    route: `${directionLabel} â€¢ ${scheduleText}`,
-    vehicle: capacity >= 7 ? "Xe 7 chá»—" : "Xe 4 chá»—",
+    route: `${directionLabel} • ${scheduleText}`,
+    vehicle: capacity >= 7 ? "Xe 7 chỗ" : "Xe 4 chỗ",
     price: "--",
     distance: "--",
     duration: "--",
-    seats: `${participantCount}/${capacity} ngÆ°á»i`,
-    note: availableSeats > 0 ? "NhÃ³m cÃ²n chá»— trá»‘ng" : "NhÃ³m Ä‘Ã£ Ä‘á»§ ngÆ°á»i",
+    seats: `${participantCount}/${capacity} người`,
+    note: availableSeats > 0 ? "Nhóm còn chỗ trống" : "Nhóm đã đủ người",
     scheduleText,
     status: group.status,
     groupStatus: group.status,
     statusLabel: normalizeSharedStatusLabelClean(group.status),
-    driver: "ChÆ°a cÃ³ tÃ i xáº¿",
+    driver: "Chưa có tài xế",
     destination: scheduleText,
     participantCount,
     capacity,
@@ -1157,7 +1158,6 @@ const initialSavedAddresses = [
 const MAX_SCHEDULE_DAYS = 7;
 const MIN_PICKUP_BUFFER_MINUTES = 30;
 const MINUTE_STEP = 5;
-const MOCK_TRIP_DURATION_MINUTES = 13;
 
 function padSchedule(value) {
   return String(value).padStart(2, "0");
@@ -1432,6 +1432,10 @@ export default function SearchScreen() {
     trackedTripStatus === "accepted" ||
     trackedTripStatus === "driverarrived";
   const isCompletedTrip = trackedTripStatus === "completed";
+  const isSoloRideInProgress =
+    mode !== "shared" &&
+    bookingStep === "findingDriver" &&
+    trackedTripStatus === "inprogress";
   const completedDbFare = getTripEstimatedFare(acceptedTrip);
   const completedFare =
     completedDbFare != null
@@ -1440,6 +1444,20 @@ export default function SearchScreen() {
   const completedAtText = formatTripDateTime(
     acceptedTrip?.completedAt ?? activeBookedRide?.completedAt
   );
+
+  useEffect(() => {
+    if (!isSoloRideInProgress) {
+      return undefined;
+    }
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => true
+    );
+
+    return () => backHandler.remove();
+  }, [isSoloRideInProgress]);
+
   const refreshSharedState = useCallback(
     async ({ showLoading = false } = {}) => {
       if (mode !== "shared" || !session?.accessToken) {
@@ -1876,7 +1894,11 @@ export default function SearchScreen() {
 
   const selectSingleRide = () => {
     setMode("now");
-    setBookingStep("form");
+    setBookingStep(
+      activeBookedRide?.id && trackedTripStatus === "inprogress"
+        ? "findingDriver"
+        : "form"
+    );
     setScheduledRideTime("");
     setScheduledRideAt("");
   };
@@ -1936,7 +1958,6 @@ export default function SearchScreen() {
     scheduleDraft.hour,
     scheduleDraft.minute
   );
-  const arrivalDate = addScheduleMinutes(pickupDate, MOCK_TRIP_DURATION_MINUTES);
   const scheduleDisplayText = `${scheduleDraft.time} • ${scheduleDraft.dateDisplay} (${scheduleDraft.dateLabel})`;
   const pickupMapHtml = verifiedTripMap
     ? buildMapInteractiveMapHtml({
@@ -3300,7 +3321,7 @@ export default function SearchScreen() {
                 : insets.bottom + Spacing.five,
           },
         ]}
-        scrollEnabled={bookingStep === "form"}
+        scrollEnabled={bookingStep === "form" || isCompletedTrip}
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
@@ -3313,31 +3334,33 @@ export default function SearchScreen() {
           ]}
         >
         <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => {
-              if (bookingStep === "findingDriver") {
+          {!isSoloRideInProgress ? (
+            <Pressable
+              onPress={() => {
+                if (bookingStep === "findingDriver") {
+                  router.back();
+                  return;
+                }
+
+                if (bookingStep === "rideOptions") {
+                  setBookingStep("confirm");
+                  return;
+                }
+
+                if (bookingStep === "confirm") {
+                  setBookingStep("form");
+                  return;
+                }
+
                 router.back();
-                return;
-              }
-
-              if (bookingStep === "rideOptions") {
-                setBookingStep("confirm");
-                return;
-              }
-
-              if (bookingStep === "confirm") {
-                setBookingStep("form");
-                return;
-              }
-
-              router.back();
-            }}
-            style={styles.backButton}
-          >
-            <ThemedText type="subtitle" style={styles.backIcon}>
-                    {"←"}
-                  </ThemedText>
-          </Pressable>
+              }}
+              style={styles.backButton}
+            >
+              <ThemedText type="subtitle" style={styles.backIcon}>
+                {"←"}
+              </ThemedText>
+            </Pressable>
+          ) : null}
           <ThemedText type="default" style={styles.headerTitle}>
                     {"Đặt xe"}
                   </ThemedText>
@@ -3507,7 +3530,7 @@ export default function SearchScreen() {
                     </ThemedText>
                   </Pressable>
                 </View>
-              ) : (
+              ) : isSoloRideInProgress ? null : (
                 <Pressable
                   style={[
                     styles.findingSecondaryButton,
@@ -4568,12 +4591,6 @@ export default function SearchScreen() {
           <View style={styles.scheduleResultCard}>
             <ThemedText type="default" style={styles.scheduleResultTitle}>
               {"Xe đón bạn lúc "}{scheduleDisplayText}
-            </ThemedText>
-            <ThemedText type="default" style={styles.scheduleArrivalText}>
-              {"Đến nơi lúc "}{padSchedule(arrivalDate.getHours())}:{padSchedule(arrivalDate.getMinutes())}
-            </ThemedText>
-            <ThemedText type="small" style={styles.scheduleHint}>
-              {"di chuyển khoảng "}{MOCK_TRIP_DURATION_MINUTES}{" phút"}
             </ThemedText>
           </View>
 
