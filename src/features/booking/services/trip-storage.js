@@ -6,6 +6,37 @@ function getField(source, camelKey, pascalKey) {
   return source?.[camelKey] ?? source?.[pascalKey];
 }
 
+function parseBackendDateTime(value) {
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const normalizedValue = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawValue)
+    ? rawValue
+    : `${rawValue}Z`;
+  const date = new Date(normalizedValue);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatVietnamDateTime(value) {
+  const utcDate = parseBackendDateTime(value);
+
+  if (!utcDate) {
+    return "";
+  }
+
+  const vietnamDate = new Date(utcDate.getTime() + 7 * 60 * 60 * 1000);
+  return `${String(vietnamDate.getUTCDate()).padStart(2, "0")}/${String(
+    vietnamDate.getUTCMonth() + 1
+  ).padStart(2, "0")} ${String(vietnamDate.getUTCHours()).padStart(
+    2,
+    "0"
+  )}:${String(vietnamDate.getUTCMinutes()).padStart(2, "0")}`;
+}
+
 async function readBookedTrips() {
   const rawTrips = await SecureStore.getItemAsync(BOOKED_TRIPS_STORAGE_KEY);
 
@@ -75,16 +106,9 @@ export function toScheduledTripSectionItem(trip) {
     trip.route || `${trip.pickup || ""} → ${trip.destination || ""}`.trim();
   const price = trip.price || trip.estimatedFare || "--";
   const scheduledAtValue = getField(trip, "scheduledAt", "ScheduledAt");
-  const scheduledAt = scheduledAtValue ? new Date(scheduledAtValue) : null;
+  const scheduledAt = parseBackendDateTime(scheduledAtValue);
   const scheduleText =
-    scheduledAt && !Number.isNaN(scheduledAt.getTime())
-      ? `${String(scheduledAt.getDate()).padStart(2, "0")}/${String(
-          scheduledAt.getMonth() + 1
-        ).padStart(2, "0")} ${String(scheduledAt.getHours()).padStart(
-          2,
-          "0"
-        )}:${String(scheduledAt.getMinutes()).padStart(2, "0")}`
-      : trip.scheduledRideTime || "";
+    formatVietnamDateTime(scheduledAtValue) || trip.scheduledRideTime || "";
 
   return {
     id: trip.id,

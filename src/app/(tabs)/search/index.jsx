@@ -52,7 +52,6 @@ import {
   getMyRideSharingRequest,
   getRideSharingGroup,
   getRideSharingRequest,
-  leaveRideSharingGroup,
 } from "@/features/ride-sharing/services/ride-sharing-api";
 import {
   loadStoredRideSharingCards,
@@ -148,12 +147,25 @@ const sharedTripTypes = [
   "Chuyến về (Từ FPT đi nơi khác)",
 ];
 
-const sharedSlotOptions = [
-  { id: "slot-1", label: "Slot 1", time: "07:30" },
-  { id: "slot-2", label: "Slot 2", time: "10:00" },
-  { id: "slot-3", label: "Slot 3", time: "12:50" },
-  { id: "slot-4", label: "Slot 4", time: "15:20" },
-];
+// Keep these slot numbers and times in sync with RideSharing settings on the BE.
+const sharedSlotOptionsByDirection = {
+  1: [
+    { id: "slot-1", label: "Slot 1", time: "07:00" },
+    { id: "slot-2", label: "Slot 2", time: "09:00" },
+    { id: "slot-3", label: "Slot 3", time: "10:00" },
+    { id: "slot-4", label: "Slot 4", time: "12:00" },
+    { id: "slot-5", label: "Slot 5", time: "14:00" },
+    { id: "slot-6", label: "Slot 6", time: "16:00" },
+  ],
+  2: [
+    { id: "slot-1", label: "Slot 1", time: "09:00" },
+    { id: "slot-2", label: "Slot 2", time: "10:50" },
+    { id: "slot-3", label: "Slot 3", time: "12:30" },
+    { id: "slot-4", label: "Slot 4", time: "14:30" },
+    { id: "slot-5", label: "Slot 5", time: "16:10" },
+    { id: "slot-6", label: "Slot 6", time: "17:50" },
+  ],
+};
 
 const defaultSharedForm = {
   rideMode: "scheduled",
@@ -464,13 +476,19 @@ function mapRideSharingRequestToCardClean(request, group = null) {
   const pickup = request.pickupAddress || "Điểm đón";
   const destination = request.destinationAddress || "Điểm đến";
   const requestStatus = normalizeRideSharingRequestStatus(request.status);
+  const requestGroupId = String(request.groupId ?? "").trim().toLowerCase();
+  const receivedGroupId = String(group?.id ?? "").trim().toLowerCase();
+  const matchingGroup =
+    requestGroupId && requestGroupId === receivedGroupId ? group : null;
   const rawGroupStatus =
-    group?.status != null ? normalizeRideSharingGroupStatus(group.status) : "";
+    matchingGroup?.status != null
+      ? normalizeRideSharingGroupStatus(matchingGroup.status)
+      : "";
   const shouldIgnoreGroup =
     requestStatus &&
     isSharedRideActive(requestStatus) &&
     isSharedGroupTerminal(rawGroupStatus);
-  const effectiveGroup = shouldIgnoreGroup ? null : group;
+  const effectiveGroup = shouldIgnoreGroup ? null : matchingGroup;
   const groupPassengerCount = effectiveGroup?.currentPassengers ?? 1;
   const groupCapacity = effectiveGroup?.maxPassengers ?? 3;
   const fare = Number(
@@ -1349,6 +1367,7 @@ export default function SearchScreen() {
   const fromInputRef = useRef(null);
   const toInputRef = useRef(null);
   const sharedLocationPickedRef = useRef("");
+  const sharedRefreshSequenceRef = useRef(0);
   const hasEditedFromInputRef = useRef(false);
   const [isVerifyingMap, setIsVerifyingMap] = useState(false);
   const [isOpeningSchedulePicker, setIsOpeningSchedulePicker] = useState(false);
@@ -1376,6 +1395,7 @@ export default function SearchScreen() {
   const [sharedForm, setSharedForm] = useState(defaultSharedForm);
   const [openSharedDropdown, setOpenSharedDropdown] = useState("");
   const [sharedFormError, setSharedFormError] = useState("");
+  const [sharedCancelError, setSharedCancelError] = useState("");
   const [sharedLocationSuggestions, setSharedLocationSuggestions] = useState([]);
   const [sharedLocationLoading, setSharedLocationLoading] = useState(false);
   const [sharedLocationError, setSharedLocationError] = useState("");
@@ -1452,6 +1472,8 @@ export default function SearchScreen() {
 
   const refreshSharedState = useCallback(
     async ({ showLoading = false } = {}) => {
+      const refreshSequence = ++sharedRefreshSequenceRef.current;
+
       if (mode !== "shared" || !session?.accessToken) {
         setPendingSharedRequests([]);
         setAvailableSharedGroups([]);
@@ -1532,6 +1554,10 @@ export default function SearchScreen() {
           refreshedStoredCards
         );
 
+        if (refreshSequence !== sharedRefreshSequenceRef.current) {
+          return;
+        }
+
         setPendingSharedRequests(mergedCards);
 
         if (currentCards.length > 0 || refreshedStoredCards.length > 0) {
@@ -1543,7 +1569,10 @@ export default function SearchScreen() {
 
         setAvailableSharedGroups(mappedAvailableGroups);
       } finally {
-        if (showLoading) {
+        if (
+          showLoading &&
+          refreshSequence === sharedRefreshSequenceRef.current
+        ) {
           setIsLoadingSharedState(false);
         }
       }
@@ -1724,14 +1753,18 @@ export default function SearchScreen() {
       return;
     }
 
-    const selectedSlot = sharedSlotOptions.find(
+    const direction =
+      sharedDirectionByTripType[sharedForm.tripType] ??
+      sharedDirectionByTripType[sharedTripTypes[0]];
+    const directionSlots = sharedSlotOptionsByDirection[direction] ?? [];
+    const selectedSlot = directionSlots.find(
       (slot) => slot.id === sharedForm.slotId
     );
 
     if (selectedSlot && !isSharedSlotAvailable(selectedSlot, sharedForm.date)) {
       updateSharedForm("slotId", "");
     }
-  }, [sharedForm.date, sharedForm.slotId]);
+  }, [sharedForm.date, sharedForm.slotId, sharedForm.tripType]);
 
   useEffect(() => {
     if (!createSharedVisible) {
@@ -1916,6 +1949,11 @@ export default function SearchScreen() {
   const selectedSharedDate = scheduleDateOptions.find(
     (option) => option.value === sharedForm.date
   );
+  const selectedSharedDirection =
+    sharedDirectionByTripType[sharedForm.tripType] ??
+    sharedDirectionByTripType[sharedTripTypes[0]];
+  const sharedSlotOptions =
+    sharedSlotOptionsByDirection[selectedSharedDirection]?.slice(0, 4) ?? [];
   const availableSharedSlotOptions = sharedSlotOptions.filter((slot) =>
     isSharedSlotAvailable(slot, selectedSharedDate?.value)
   );
@@ -1928,7 +1966,7 @@ export default function SearchScreen() {
     selectedSharedSlot && selectedSharedDate
       ? `Xe ghép lúc ${selectedSharedSlot.time} • ${selectedSharedDate.display} (${selectedSharedDate.label})`
       : "Chọn slot và ngày đi để hoàn tất yêu cầu.";
-  const isSharedTripToFpt = sharedForm.tripType.startsWith("Chuyến đi");
+  const isSharedTripToFpt = selectedSharedDirection === 1;
   const sharedLocationLabel = isSharedTripToFpt ? "Điểm đón" : "Điểm đến";
   const sharedLocationPlaceholder = isSharedTripToFpt
     ? "VD: Trạm xe, Đường XYZ..."
@@ -2882,17 +2920,6 @@ export default function SearchScreen() {
       return;
     }
 
-    const hasActiveSharedRide = pendingSharedRequests.some((request) =>
-      isSharedRideActive(request.status)
-    );
-
-    if (hasActiveSharedRide) {
-      setSharedFormError(
-        "Bạn đang có yêu cầu xe ghép đang hoạt động. Vui lòng hủy yêu cầu hiện tại trước khi tạo mới."
-      );
-      return;
-    }
-
     if (!sharedForm.tripType) {
       setSharedFormError("Vui lòng chọn loại chuyến.");
       return;
@@ -3117,6 +3144,7 @@ export default function SearchScreen() {
 
     setCancellingSharedRequestId(requestId);
     setSharedFormError("");
+    setSharedCancelError("");
 
     try {
       const requestToCancel = pendingSharedRequests.find(
@@ -3125,32 +3153,45 @@ export default function SearchScreen() {
 
       let cancelledRequest = null;
 
-      if (requestToCancel?.groupId) {
-        await leaveRideSharingGroup(
-          requestToCancel.groupId,
-          { cancelReason: 4 },
-          session.accessToken
-        );
+      let cancelApiError = null;
 
-        try {
-          cancelledRequest = await getRideSharingRequest(
-            requestId,
-            session.accessToken
-          );
-        } catch {
-          cancelledRequest = {
-            ...requestToCancel,
-            id: requestId,
-            status: "Cancelled",
-            groupId: "",
-          };
-        }
-      } else {
+      try {
         cancelledRequest = await cancelRideSharingRequest(
           requestId,
           { cancelReason: 4 },
           session.accessToken
         );
+      } catch (error) {
+        cancelApiError = error;
+      }
+
+      if (cancelApiError) {
+        let latestRequest = null;
+        let requestNoLongerExists = false;
+
+        try {
+          latestRequest = await getRideSharingRequest(
+            requestId,
+            session.accessToken
+          );
+        } catch (verifyError) {
+          requestNoLongerExists = verifyError?.status === 404;
+        }
+
+        const latestStatus = normalizeRideSharingRequestStatus(
+          latestRequest?.status
+        );
+
+        if (requestNoLongerExists || isSharedTerminalStatus(latestStatus)) {
+          cancelledRequest = latestRequest ?? {
+            ...requestToCancel,
+            id: requestId,
+            status: "Cancelled",
+            groupId: "",
+          };
+        } else {
+          throw cancelApiError;
+        }
       }
 
       const cancelledCard = mapRideSharingRequestToCardClean(
@@ -3165,23 +3206,31 @@ export default function SearchScreen() {
       );
 
       if (cancelledCard) {
-        setPendingSharedRequests((current) => {
-          const remainingRequests = removeSharedRequestCards(
-            current,
-            requestId,
-            requestToCancel?.groupId
-          );
-          const nextRequests = mergeSharedRequestCards(
-            [{ ...cancelledCard, status: "cancelled", requestStatus: "cancelled" }],
-            remainingRequests
-          );
-          replaceRideSharingCards(nextRequests, session.userId).catch(() => {});
-          return nextRequests;
-        });
+        sharedRefreshSequenceRef.current += 1;
+        setIsLoadingSharedState(false);
+
+        const remainingRequests = removeSharedRequestCards(
+          pendingSharedRequests,
+          requestId,
+          requestToCancel?.groupId
+        );
+        const nextRequests = mergeSharedRequestCards(
+          [{ ...cancelledCard, status: "cancelled", requestStatus: "cancelled" }],
+          remainingRequests
+        );
+
+        setPendingSharedRequests(nextRequests);
+        await replaceRideSharingCards(nextRequests, session.userId).catch(() => []);
         setSharedRequestFilter("cancelled");
+        await refreshSharedState({ showLoading: false });
       }
     } catch (error) {
-      setAlertMessage(error.message || "Không thể hủy yêu cầu xe ghép.");
+      const serverMessage = error?.payload?.message || error?.message;
+      const readableMessage = String(
+        serverMessage || "Không thể hủy yêu cầu xe ghép."
+      ).replace(/^HTTP\s+\d+\s+\S+:\s*/, "");
+
+      setSharedCancelError(readableMessage);
     } finally {
       setCancellingSharedRequestId("");
     }
@@ -3511,10 +3560,10 @@ export default function SearchScreen() {
                   </Pressable>
                   <Pressable
                     style={styles.completedHomeButton}
-                    onPress={() => router.push("/")}
+                    onPress={resetSingleRideBookingForm}
                   >
                     <ThemedText type="smallBold" style={styles.completedHomeText}>
-                      {"Về trang chủ"}
+                      {"Quay lại"}
                     </ThemedText>
                   </Pressable>
                 </View>
@@ -4143,6 +4192,12 @@ export default function SearchScreen() {
                 )}
               </View>
 
+              {Boolean(sharedCancelError) && (
+                <ThemedText type="smallBold" style={styles.createError}>
+                  {sharedCancelError}
+                </ThemedText>
+              )}
+
               {isLoadingSharedState ? (
                 <View style={styles.pendingSharedEmptyCard}>
                   <ThemedText type="small" style={styles.pendingSharedMeta}>
@@ -4184,8 +4239,9 @@ export default function SearchScreen() {
                     {request.scheduleText}
                   </ThemedText>
                   <ThemedText type="small" style={styles.pendingSharedMeta}>
-                    {"Nhóm: "}{request.participantCount}/{request.capacity}
-                    {" người • "}{request.statusLabel}
+                    {request.groupId
+                      ? `Nhóm: ${request.participantCount}/${request.capacity} người • ${request.statusLabel}`
+                      : `Chưa vào nhóm • ${request.statusLabel}`}
                   </ThemedText>
                   <ThemedText type="small" style={styles.pendingSharedMeta}>
                     {"Quãng đường: "}{request.distance}{" • "}{request.duration}
@@ -4209,25 +4265,27 @@ export default function SearchScreen() {
                         </ThemedText>
                       </Pressable>
                     )}
-                    <Pressable
-                      style={[
-                        styles.pendingSharedCancelButton,
-                        !request.requestId && styles.hidden,
-                        cancellingSharedRequestId === request.requestId &&
-                          styles.buttonDisabled,
-                      ]}
-                      onPress={() => handleCancelSharedRequest(request.requestId)}
-                      disabled={cancellingSharedRequestId === request.requestId}
-                    >
-                      <ThemedText
-                        type="smallBold"
-                        style={styles.pendingSharedCancelText}
+                    {request.requestId &&
+                    isSharedRideActive(getSharedRequestEffectiveStatus(request)) ? (
+                      <Pressable
+                        style={[
+                          styles.pendingSharedCancelButton,
+                          cancellingSharedRequestId === request.requestId &&
+                            styles.buttonDisabled,
+                        ]}
+                        onPress={() => handleCancelSharedRequest(request.requestId)}
+                        disabled={cancellingSharedRequestId === request.requestId}
                       >
-                        {cancellingSharedRequestId === request.requestId
-                          ? "Đang hủy..."
-                          : "Hủy yêu cầu"}
-                      </ThemedText>
-                    </Pressable>
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.pendingSharedCancelText}
+                        >
+                          {cancellingSharedRequestId === request.requestId
+                            ? "Đang hủy..."
+                            : "Hủy yêu cầu"}
+                        </ThemedText>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </View>
               ))}
@@ -4709,7 +4767,12 @@ export default function SearchScreen() {
                             styles.createDropdownItemActive,
                         ]}
                         onPress={() => {
-                          updateSharedForm("tripType", item);
+                          setSharedForm((current) => ({
+                            ...current,
+                            tripType: item,
+                            slotId: "",
+                          }));
+                          setSharedFormError("");
                           setOpenSharedDropdown("");
                         }}
                       >
