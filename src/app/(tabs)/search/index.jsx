@@ -140,25 +140,14 @@ const rideOptions = [
     eta: "Đón trong 5 phút",
     vehicleType: 2,
   },
-  {
-    id: "car7",
-    icon: "Xe 7 chỗ",
-    name: "Xe 7 chỗ",
-    eta: "Đón trong 7 phút",
-    vehicleType: 4,
-  },
 ];
-const availableRideOptions = rideOptions.filter((option) => option.id !== "car7");
+const availableRideOptions = rideOptions;
 
 const sharedTripTypes = [
   "Chuyến đi (Từ nơi khác đến FPT)",
   "Chuyến về (Từ FPT đi nơi khác)",
 ];
 
-const sharedVehicleOptions = [
-  { label: "Xe 4 chỗ", vehicle: "Xe 4 chỗ", capacity: 4, price: "30.000đ" },
-  { label: "Xe 7 chỗ", vehicle: "Xe 7 chỗ", capacity: 7, price: "42.000đ" },
-];
 const sharedSlotOptions = [
   { id: "slot-1", label: "Slot 1", time: "07:30" },
   { id: "slot-2", label: "Slot 2", time: "10:00" },
@@ -169,7 +158,6 @@ const sharedSlotOptions = [
 const defaultSharedForm = {
   rideMode: "scheduled",
   tripType: sharedTripTypes[0],
-  vehicleIndex: 0,
   location: "",
   slotId: "",
   date: "",
@@ -1123,7 +1111,7 @@ function mapAvailableRideSharingGroupToCard(group) {
     requestId: "",
     groupId: group.id,
     route: `${directionLabel} • ${scheduleText}`,
-    vehicle: capacity >= 7 ? "Xe 7 chỗ" : "Xe 4 chỗ",
+    vehicle: "Xe 4 chỗ",
     price: "--",
     distance: "--",
     duration: "--",
@@ -4745,56 +4733,11 @@ export default function SearchScreen() {
                 <ThemedText type="small" style={styles.createLabel}>
                   {"Loại xe"}
                 </ThemedText>
-                <Pressable
-                  style={styles.createSelect}
-                  onPress={() =>
-                    setOpenSharedDropdown(
-                      openSharedDropdown === "vehicle" ? "" : "vehicle"
-                    )
-                  }
-                >
+                <View style={styles.createSelect}>
                   <ThemedText type="default" style={styles.createSelectText}>
-                    {sharedVehicleOptions[sharedForm.vehicleIndex].label}
+                    Xe 4 chỗ
                   </ThemedText>
-                  <View style={styles.createSelectIndicator}>
-                    <ThemedText type="smallBold" style={styles.createSelectChevron}>
-                      {openSharedDropdown === "vehicle" ? "⌃" : "⌄"}
-                    </ThemedText>
-                  </View>
-                </Pressable>
-                {openSharedDropdown === "vehicle" && (
-                  <View style={styles.createDropdown}>
-                    {sharedVehicleOptions.map((item, index) => (
-                      <Pressable
-                        key={item.vehicle}
-                        style={[
-                          styles.createDropdownItem,
-                          sharedForm.vehicleIndex === index &&
-                            styles.createDropdownItemActive,
-                        ]}
-                        onPress={() => {
-                          setSharedForm((current) => ({
-                            ...current,
-                            vehicleIndex: index,
-                          }));
-                          setOpenSharedDropdown("");
-                          setSharedFormError("");
-                        }}
-                      >
-                        <ThemedText
-                          type="smallBold"
-                          style={[
-                            styles.createDropdownText,
-                            sharedForm.vehicleIndex === index &&
-                              styles.createDropdownTextActive,
-                          ]}
-                        >
-                          {item.label}
-                        </ThemedText>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
+                </View>
               </View>
 
               <View style={styles.createField}>
