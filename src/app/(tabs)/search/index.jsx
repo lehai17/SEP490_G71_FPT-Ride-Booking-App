@@ -1432,10 +1432,14 @@ export default function SearchScreen() {
     trackedTripStatus === "accepted" ||
     trackedTripStatus === "driverarrived";
   const isCompletedTrip = trackedTripStatus === "completed";
-  const isSoloRideInProgress =
+  const isSoloRideTrackingLocked =
     mode !== "shared" &&
     bookingStep === "findingDriver" &&
-    trackedTripStatus === "inprogress";
+    ["pending", "accepted", "driverarrived", "inprogress"].includes(
+      trackedTripStatus
+    );
+  const isSoloRideInProgress =
+    isSoloRideTrackingLocked && trackedTripStatus === "inprogress";
   const completedDbFare = getTripEstimatedFare(acceptedTrip);
   const completedFare =
     completedDbFare != null
@@ -1446,7 +1450,7 @@ export default function SearchScreen() {
   );
 
   useEffect(() => {
-    if (!isSoloRideInProgress) {
+    if (!isSoloRideTrackingLocked) {
       return undefined;
     }
 
@@ -1456,7 +1460,7 @@ export default function SearchScreen() {
     );
 
     return () => backHandler.remove();
-  }, [isSoloRideInProgress]);
+  }, [isSoloRideTrackingLocked]);
 
   const refreshSharedState = useCallback(
     async ({ showLoading = false } = {}) => {
@@ -1894,11 +1898,7 @@ export default function SearchScreen() {
 
   const selectSingleRide = () => {
     setMode("now");
-    setBookingStep(
-      activeBookedRide?.id && trackedTripStatus === "inprogress"
-        ? "findingDriver"
-        : "form"
-    );
+    setBookingStep(activeBookedRide?.id ? "findingDriver" : "form");
     setScheduledRideTime("");
     setScheduledRideAt("");
   };
@@ -3334,7 +3334,7 @@ export default function SearchScreen() {
           ]}
         >
         <View style={styles.headerRow}>
-          {!isSoloRideInProgress ? (
+          {!isSoloRideTrackingLocked ? (
             <Pressable
               onPress={() => {
                 if (bookingStep === "findingDriver") {
