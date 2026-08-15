@@ -44,6 +44,7 @@ const BRAND = "#FF7A00";
 const BORDER = "#E9E9E9";
 const MUTED = "#6B7280";
 const HISTORY_PAGE_SIZE = 3;
+const SCHEDULED_PAGE_SIZE = 3;
 const PASSENGER_CANCEL_REASON_OTHER = 5;
 
 const tabs = [
@@ -363,20 +364,26 @@ function getScheduledStatusLabel(status) {
 }
 
 function formatScheduledPickupText(value) {
-  const scheduledDate = value ? new Date(value) : null;
+  const rawValue = String(value ?? "").trim();
+  const normalizedValue =
+    rawValue && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawValue)
+      ? `${rawValue}Z`
+      : rawValue;
+  const utcDate = normalizedValue ? new Date(normalizedValue) : null;
 
-  if (!scheduledDate || Number.isNaN(scheduledDate.getTime())) {
+  if (!utcDate || Number.isNaN(utcDate.getTime())) {
     return "";
   }
 
-  const time = `${pad(scheduledDate.getHours())}:${pad(
-    scheduledDate.getMinutes()
+  const vietnamDate = new Date(utcDate.getTime() + 7 * 60 * 60 * 1000);
+  const date = `${pad(vietnamDate.getUTCDate())}/${pad(
+    vietnamDate.getUTCMonth() + 1
   )}`;
-  const date = `${pad(scheduledDate.getDate())}/${pad(
-    scheduledDate.getMonth() + 1
-  )}/${scheduledDate.getFullYear()}`;
+  const time = `${pad(vietnamDate.getUTCHours())}:${pad(
+    vietnamDate.getUTCMinutes()
+  )}`;
 
-  return `Giờ đón: ${time} • ${date}`;
+  return `${date} ${time}`;
 }
 
 function isSchedulePlaceholder(value) {
@@ -423,6 +430,7 @@ export default function TripsScreen() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [scheduledSortOrder, setScheduledSortOrder] = useState("newest");
+  const [scheduledPage, setScheduledPage] = useState(1);
   const [historySortOrder, setHistorySortOrder] = useState("newest");
   const [historyPage, setHistoryPage] = useState(1);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
@@ -643,6 +651,11 @@ export default function TripsScreen() {
     Math.ceil(sortedHistoryItems.length / HISTORY_PAGE_SIZE)
   );
   const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
+  const totalScheduledPages = Math.max(
+    1,
+    Math.ceil(sortedScheduledItems.length / SCHEDULED_PAGE_SIZE)
+  );
+  const currentScheduledPage = Math.min(scheduledPage, totalScheduledPages);
   const items =
     selectedTab === "history"
       ? sortedHistoryItems.slice(
@@ -650,7 +663,10 @@ export default function TripsScreen() {
           currentHistoryPage * HISTORY_PAGE_SIZE
         )
       : selectedTab === "scheduled"
-        ? sortedScheduledItems
+        ? sortedScheduledItems.slice(
+            (currentScheduledPage - 1) * SCHEDULED_PAGE_SIZE,
+            currentScheduledPage * SCHEDULED_PAGE_SIZE
+          )
       : rawItems;
   const hasActiveRide = params.activeRide === "1";
   const activePickup =
@@ -1030,7 +1046,10 @@ export default function TripsScreen() {
                       styles.historyFilterButton,
                       isActive && styles.historyFilterButtonActive,
                     ]}
-                    onPress={() => setScheduledSortOrder(option.key)}
+                    onPress={() => {
+                      setScheduledSortOrder(option.key);
+                      setScheduledPage(1);
+                    }}
                   >
                     <ThemedText
                       type="smallBold"
@@ -1305,6 +1324,60 @@ export default function TripsScreen() {
                   </View>
                 );
               })}
+              {sortedScheduledItems.length > SCHEDULED_PAGE_SIZE ? (
+                <View style={styles.historyPaginationRow}>
+                  <Pressable
+                    style={[
+                      styles.historyPageButton,
+                      currentScheduledPage === 1 && styles.historyPageButtonDisabled,
+                    ]}
+                    disabled={currentScheduledPage === 1}
+                    onPress={() =>
+                      setScheduledPage((current) => Math.max(1, current - 1))
+                    }
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={[
+                        styles.historyPageButtonText,
+                        currentScheduledPage === 1 &&
+                          styles.historyPageButtonTextDisabled,
+                      ]}
+                    >
+                      Trước
+                    </ThemedText>
+                  </Pressable>
+
+                  <ThemedText type="smallBold" style={styles.historyPageInfo}>
+                    {`Trang ${currentScheduledPage}/${totalScheduledPages}`}
+                  </ThemedText>
+
+                  <Pressable
+                    style={[
+                      styles.historyPageButton,
+                      currentScheduledPage === totalScheduledPages &&
+                        styles.historyPageButtonDisabled,
+                    ]}
+                    disabled={currentScheduledPage === totalScheduledPages}
+                    onPress={() =>
+                      setScheduledPage((current) =>
+                        Math.min(totalScheduledPages, current + 1)
+                      )
+                    }
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={[
+                        styles.historyPageButtonText,
+                        currentScheduledPage === totalScheduledPages &&
+                          styles.historyPageButtonTextDisabled,
+                      ]}
+                    >
+                      Sau
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           ) : selectedTab === "history" && isHistoryLoading ? (
             <View
