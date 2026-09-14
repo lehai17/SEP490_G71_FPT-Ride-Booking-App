@@ -1,4 +1,7 @@
-import * as SecureStore from "expo-secure-store";
+import {
+  getPersistentItem,
+  setPersistentItem,
+} from "@/services/persistent-storage";
 
 const BOOKED_TRIPS_STORAGE_KEY = "fpt-ride.booked-trips";
 
@@ -38,7 +41,7 @@ function formatVietnamDateTime(value) {
 }
 
 async function readBookedTrips() {
-  const rawTrips = await SecureStore.getItemAsync(BOOKED_TRIPS_STORAGE_KEY);
+  const rawTrips = await getPersistentItem(BOOKED_TRIPS_STORAGE_KEY);
 
   if (!rawTrips) {
     return [];
@@ -53,7 +56,7 @@ async function readBookedTrips() {
 }
 
 async function writeBookedTrips(trips) {
-  await SecureStore.setItemAsync(
+  await setPersistentItem(
     BOOKED_TRIPS_STORAGE_KEY,
     JSON.stringify(trips ?? [])
   );

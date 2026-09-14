@@ -21,8 +21,24 @@ import { useTheme } from "@/hooks/use-theme";
 
 const BRAND = "#FF7A00";
 const BRAND_DARK = "#F56A00";
-const CARD_BORDER = "#F2F2F2";
+const BRAND_LIGHT = "#FFF4EA";
+const CARD_BORDER = "#ECEFF3";
+const INK = "#111827";
 const SOFT_TEXT = "#8A8F98";
+const homeRideOptions = [
+  {
+    id: "bike",
+    name: "Xe máy",
+    icon: "🛵",
+    description: "Linh hoạt, nhanh",
+  },
+  {
+    id: "car4",
+    name: "Ô tô",
+    icon: "🚗",
+    description: "Thoải mái, riêng tư",
+  },
+];
 
 function getDisplayRole(role) {
   return role === "Customer" ? "Khách hàng" : role;
@@ -170,7 +186,7 @@ function getVehicleLabel(trip) {
     return "Xe 7 chỗ";
   }
 
-  return "Xe 4 chỗ";
+  return "Ô tô";
 }
 
 function getTripIcon(trip) {
@@ -376,50 +392,76 @@ export default function HomeScreen() {
 
   return (
     <ScrollView
-      style={[styles.scrollView, { backgroundColor: "#F8F8F8" }]}
+      style={[styles.scrollView, { backgroundColor: "#F5F6FA" }]}
       contentContainerStyle={{
         alignItems: "center",
-        paddingTop: Spacing.two,
+        paddingTop: 0,
         paddingBottom: safeAreaInsets.bottom + BottomTabInset + Spacing.four,
       }}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.wrapper}>
         <View style={styles.heroCard}>
-          <ThemedText type="smallBold" style={styles.heroEyebrow}>
-            CHÀO MỪNG SINH VIÊN FPTU
-          </ThemedText>
+          <View style={styles.heroPatternTop} />
+          <View style={styles.heroPatternBottom} />
 
-          <View style={styles.heroContent}>
-            <View style={styles.avatar}>
-              <ThemedText type="smallBold" style={styles.avatarText}>
-                {displayInitial}
-              </ThemedText>
-            </View>
-
-            <View style={styles.heroText}>
-              <ThemedText type="default" style={styles.heroName}>
-                {displayName}
-              </ThemedText>
-              <ThemedText type="small" style={styles.heroMeta}>
-                {isAuthenticated
-                  ? `${displayRole} - Người đặt xe`
-                  : "Hãy đăng nhập để đồng bộ tài khoản"}
-              </ThemedText>
-            </View>
-
-            {!isAuthenticated ? (
-              <View style={styles.statusBadge}>
-                <ThemedText type="smallBold" style={styles.statusText}>
-                  KHÁCH
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroIdentity}>
+              <View style={styles.avatar}>
+                <ThemedText type="smallBold" style={styles.avatarText}>
+                  {displayInitial}
                 </ThemedText>
               </View>
-            ) : null}
+
+              <View style={styles.heroText}>
+                <ThemedText type="small" style={styles.heroMeta}>
+                  Xin chào,
+                </ThemedText>
+                <ThemedText type="default" style={styles.heroName}>
+                  {displayName}
+                </ThemedText>
+              </View>
+            </View>
+
+            <View style={styles.statusBadge}>
+              <ThemedText type="smallBold" style={styles.statusText}>
+                {isAuthenticated ? displayRole : "KHÁCH"}
+              </ThemedText>
+            </View>
+          </View>
+
+          <View style={styles.heroMessage}>
+            <ThemedText type="subtitle" style={styles.heroTitle}>
+              FPT Ride
+            </ThemedText>
+            <ThemedText type="small" style={styles.heroSubtitle}>
+              Đặt xe nhanh trong khuôn viên và các điểm quen thuộc của sinh viên FPTU.
+            </ThemedText>
+          </View>
+
+          <View style={styles.heroInfoRow}>
+            <View style={styles.heroInfoPill}>
+              <ThemedText type="smallBold" style={styles.heroInfoIcon}>
+                ⚡
+              </ThemedText>
+              <ThemedText type="smallBold" style={styles.heroInfoText}>
+                Nhanh chóng
+              </ThemedText>
+            </View>
+            <View style={styles.heroInfoPill}>
+              <ThemedText type="smallBold" style={styles.heroInfoIcon}>
+                🎓
+              </ThemedText>
+              <ThemedText type="smallBold" style={styles.heroInfoText}>
+                FPTU
+              </ThemedText>
+            </View>
           </View>
 
           {!session?.accessToken ? (
             <View style={styles.authActions}>
               <Pressable
+                testID="home-login-button"
                 style={({ pressed }) => [
                   styles.authButton,
                   pressed && styles.pressedButton,
@@ -458,6 +500,9 @@ export default function HomeScreen() {
           <ThemedText type="default" style={styles.primaryTitle}>
             Bạn muốn di chuyển thế nào?
           </ThemedText>
+          <ThemedText type="small" style={styles.primarySubtitle}>
+            Chọn hình thức phù hợp, sau đó chọn loại xe để tìm chuyến.
+          </ThemedText>
 
           <View style={styles.toggleRow}>
             <Pressable
@@ -468,18 +513,29 @@ export default function HomeScreen() {
               ]}
               onPress={() => {
                 setSelectedMode("now");
-                router.push("/search?mode=now&when=now");
               }}
             >
-              <ThemedText
-                type="smallBold"
-                style={[
-                  styles.modeText,
-                  selectedMode === "now" && styles.modeTextActive,
-                ]}
-              >
-                Xe lẻ
-              </ThemedText>
+              <View style={styles.modeContent}>
+                <View style={styles.modeIconBadge}>
+                  <ThemedText type="default" style={styles.modeIcon}>
+                    🚕
+                  </ThemedText>
+                </View>
+                <View style={styles.modeCopy}>
+                  <ThemedText
+                    type="smallBold"
+                    style={[
+                      styles.modeText,
+                      selectedMode === "now" && styles.modeTextActive,
+                    ]}
+                  >
+                    Xe lẻ
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.modeDescription}>
+                    Đi riêng ngay
+                  </ThemedText>
+                </View>
+              </View>
             </Pressable>
 
             <Pressable
@@ -493,17 +549,71 @@ export default function HomeScreen() {
                 router.push("/search?mode=shared&when=any");
               }}
             >
-              <ThemedText
-                type="smallBold"
-                style={[
-                  styles.modeText,
-                  selectedMode === "shared" && styles.modeTextActive,
-                ]}
-              >
-                Xe ghép
-              </ThemedText>
+              <View style={styles.modeContent}>
+                <View style={styles.modeIconBadge}>
+                  <ThemedText type="default" style={styles.modeIcon}>
+                    👥
+                  </ThemedText>
+                </View>
+                <View style={styles.modeCopy}>
+                  <ThemedText
+                    type="smallBold"
+                    style={[
+                      styles.modeText,
+                      selectedMode === "shared" && styles.modeTextActive,
+                    ]}
+                  >
+                    Xe ghép
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.modeDescription}>
+                    Chia chuyến rẻ hơn
+                  </ThemedText>
+                </View>
+              </View>
             </Pressable>
           </View>
+
+          {selectedMode === "now" ? (
+            <View style={styles.homeVehicleBlock}>
+              <ThemedText type="smallBold" style={styles.homeVehicleLabel}>
+                Chọn loại xe
+              </ThemedText>
+              <View testID="home-vehicle-selector" style={styles.homeVehicleRow}>
+                {homeRideOptions.map((option) => (
+                  <Pressable
+                    key={option.id}
+                    testID={`home-vehicle-option-${option.id}`}
+                    style={({ pressed }) => [
+                      styles.homeVehicleOption,
+                      pressed && styles.pressedButton,
+                    ]}
+                    onPress={() =>
+                      router.push(
+                        `/search?mode=now&when=now&source=home&vehicle=${option.id}`
+                      )
+                    }
+                  >
+                    <View style={styles.vehicleIconBadge}>
+                      <ThemedText type="default" style={styles.homeVehicleIcon}>
+                        {option.icon}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.vehicleCopy}>
+                      <ThemedText
+                        type="smallBold"
+                        style={styles.homeVehicleName}
+                      >
+                        {option.name}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.vehicleDescription}>
+                        {option.description}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
         </ThemedView>
 
         <View style={styles.sectionHeader}>
@@ -675,53 +785,124 @@ const styles = StyleSheet.create({
   wrapper: {
     width: "100%",
     maxWidth: MaxContentWidth,
-    gap: 12,
+    gap: 14,
     paddingHorizontal: 16,
   },
   heroCard: {
-    backgroundColor: BRAND,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
+    backgroundColor: BRAND_DARK,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    marginHorizontal: -16,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 44,
+    gap: 16,
+    overflow: "hidden",
   },
-  heroEyebrow: {
-    color: "#FFFFFF",
-    textAlign: "center",
-    fontSize: 13,
+  heroPatternTop: {
+    position: "absolute",
+    top: -42,
+    right: -24,
+    width: 150,
+    height: 150,
+    borderRadius: 32,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    transform: [{ rotate: "18deg" }],
   },
-  heroContent: {
+  heroPatternBottom: {
+    position: "absolute",
+    bottom: -48,
+    left: -36,
+    width: 150,
+    height: 110,
+    borderRadius: 26,
+    backgroundColor: "rgba(17,24,39,0.12)",
+    transform: [{ rotate: "-12deg" }],
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  heroIdentity: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 3,
   },
   avatarText: {
     color: BRAND_DARK,
+    fontSize: 16,
   },
   heroText: {
     flex: 1,
-    marginLeft: 10,
-    gap: 2,
+    marginLeft: 12,
   },
   heroName: {
     color: "#FFFFFF",
-    fontWeight: "700",
+    fontWeight: "800",
+    fontSize: 18,
   },
   heroMeta: {
     color: "#FFE7D1",
   },
-  statusBadge: {
-    backgroundColor: "#FFB97B",
+  heroMessage: {
+    gap: 6,
+    maxWidth: 520,
+  },
+  heroTitle: {
+    color: "#FFFFFF",
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: "800",
+  },
+  heroSubtitle: {
+    color: "#FFF1E4",
+    maxWidth: 460,
+  },
+  heroInfoRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  heroInfoPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.24)",
+  },
+  heroInfoIcon: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  heroInfoText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+  },
+  statusBadge: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
   },
   statusText: {
     color: "#FFFFFF",
@@ -730,11 +911,12 @@ const styles = StyleSheet.create({
   authActions: {
     flexDirection: "row",
     gap: 10,
+    marginTop: 2,
   },
   authButton: {
     flex: 1,
-    minHeight: 44,
-    borderRadius: 10,
+    minHeight: 46,
+    borderRadius: 14,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
@@ -744,10 +926,10 @@ const styles = StyleSheet.create({
   },
   authButtonSecondary: {
     flex: 1,
-    minHeight: 44,
-    borderRadius: 10,
+    minHeight: 46,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#FFFFFF",
+    borderColor: "rgba(255,255,255,0.72)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -755,99 +937,198 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   primaryCard: {
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
+    borderRadius: 22,
+    marginTop: -28,
+    padding: 18,
+    gap: 16,
     borderWidth: 1,
     borderColor: CARD_BORDER,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.11,
+    shadowRadius: 24,
+    elevation: 4,
   },
   primaryTitle: {
-    textAlign: "center",
-    color: "#374151",
-    fontSize: 18,
-    fontWeight: "600",
+    color: INK,
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  primarySubtitle: {
+    color: SOFT_TEXT,
+    marginTop: -12,
   },
   toggleRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 12,
   },
   modeBtn: {
     flex: 1,
-    minHeight: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    minHeight: 78,
+    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
     borderWidth: 1,
-    borderColor: BRAND,
+    borderColor: "#E5E7EB",
+    padding: 12,
   },
   modeBtnActive: {
-    backgroundColor: "#FFF3E8",
+    backgroundColor: BRAND_LIGHT,
+    borderColor: BRAND,
+  },
+  modeContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  modeIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modeIcon: {
+    fontSize: 20,
+    lineHeight: 24,
+  },
+  modeCopy: {
+    flex: 1,
+    gap: 1,
   },
   modeText: {
-    color: BRAND,
+    color: INK,
   },
   modeTextActive: {
     color: BRAND_DARK,
   },
+  modeDescription: {
+    color: SOFT_TEXT,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  homeVehicleBlock: {
+    gap: 10,
+  },
+  homeVehicleLabel: {
+    color: INK,
+    fontSize: 15,
+  },
+  homeVehicleRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  homeVehicleOption: {
+    flex: 1,
+    minHeight: 72,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FBFCFE",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  vehicleIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#EEF0F4",
+  },
+  homeVehicleIcon: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  vehicleCopy: {
+    flex: 1,
+  },
+  homeVehicleName: {
+    color: INK,
+  },
+  vehicleDescription: {
+    color: SOFT_TEXT,
+    fontSize: 12,
+    lineHeight: 16,
+  },
   sectionHeader: {
-    gap: 2,
-    marginTop: 4,
+    gap: 3,
+    marginTop: 6,
+    paddingHorizontal: 2,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    color: "#1F2937",
+    fontWeight: "800",
+    color: INK,
   },
   emptyCard: {
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#D8DDE6",
+    borderColor: "#D5DBE4",
     backgroundColor: "#FFFFFF",
-    gap: 4,
+    gap: 5,
   },
   emptyTitle: {
-    color: "#374151",
+    color: INK,
   },
   emptyDescription: {
     color: SOFT_TEXT,
   },
   recentCard: {
-    minHeight: 50,
-    borderRadius: 14,
+    minHeight: 62,
+    borderRadius: 18,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderWidth: 1,
     borderColor: CARD_BORDER,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 2,
   },
   recentIconWrap: {
-    width: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    backgroundColor: BRAND_LIGHT,
     alignItems: "center",
+    justifyContent: "center",
   },
   recentContent: {
     flex: 1,
     gap: 2,
   },
   recentRoute: {
-    color: "#111827",
+    color: INK,
   },
   mutedText: {
     color: SOFT_TEXT,
   },
   scheduledCard: {
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 18,
+    padding: 16,
     gap: 12,
     borderWidth: 1,
     borderColor: CARD_BORDER,
-    borderLeftWidth: 3,
+    borderLeftWidth: 4,
     borderLeftColor: BRAND,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 2,
   },
   scheduledTopRow: {
     flexDirection: "row",
@@ -855,10 +1136,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   waitingBadge: {
-    backgroundColor: "#FFF0E3",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: BRAND_LIGHT,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   waitingText: {
     color: BRAND_DARK,
@@ -873,7 +1154,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   scheduledFrom: {
-    color: "#111827",
+    color: INK,
     fontWeight: "700",
   },
   scheduledBottomRow: {
@@ -884,13 +1165,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   rideCard: {
-    borderRadius: 16,
-    padding: 14,
-    gap: 10,
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
     borderWidth: 1,
     borderColor: CARD_BORDER,
-    borderLeftWidth: 3,
+    borderLeftWidth: 4,
     borderLeftColor: BRAND,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 2,
   },
   rideTitleRow: {
     flexDirection: "row",
@@ -899,11 +1185,12 @@ const styles = StyleSheet.create({
   },
   vehiclePill: {
     color: "#FFFFFF",
-    backgroundColor: "#1F2937",
+    backgroundColor: INK,
     overflow: "hidden",
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    fontSize: 12,
   },
   ridePrice: {
     color: BRAND,
@@ -914,7 +1201,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   rideRoute: {
-    color: "#111827",
+    color: INK,
     fontWeight: "700",
   },
   rideDriverRow: {
@@ -924,16 +1211,25 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   noteText: {
-    color: SOFT_TEXT,
+    color: "#64748B",
     fontStyle: "italic",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
   joinButton: {
-    marginTop: 4,
-    minHeight: 44,
-    borderRadius: 10,
+    marginTop: 2,
+    minHeight: 46,
+    borderRadius: 14,
     backgroundColor: BRAND,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: BRAND_DARK,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 2,
   },
   joinButtonText: {
     color: "#FFFFFF",

@@ -44,6 +44,7 @@ import {
   loadBookedTrips,
   persistBookedTrip,
 } from "@/features/booking/services/trip-storage";
+import { createReview } from "@/features/trip-history/services/review-api";
 import {
   cancelRideSharingRequest,
   createRideSharingRequest,
@@ -82,6 +83,8 @@ const FPT_HOLA_PLACE = {
 };
 const MOCK_DRIVER_LOCATION = "Cổng chính Đại học FPT, Thạch Hòa, Hà Nội";
 const SHARED_RIDE_MAX_DISTANCE_KM = 50;
+const MIN_BOOKING_DISTANCE_KM = 0.1;
+const MIN_BOOKING_DISTANCE_METERS = 100;
 const vietnameseTextInputProps = {
   autoCapitalize: "none",
   autoCorrect: false,
@@ -124,19 +127,21 @@ function formatCoordinateAddress(location) {
   return `Tọa độ hiện tại: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 }
 
+function getSingleParam(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 const rideOptions = [
   {
     id: "bike",
     icon: "Xe máy",
     name: "Xe máy",
-    eta: "Đón trong 3 phút",
     vehicleType: 1,
   },
   {
     id: "car4",
-    icon: "Xe 4 chỗ",
-    name: "Xe 4 chỗ",
-    eta: "Đón trong 5 phút",
+    icon: "Ô tô",
+    name: "Ô tô",
     vehicleType: 2,
   },
 ];
@@ -733,6 +738,32 @@ function areSameBookingPlaces(origin, destination) {
   );
 }
 
+function getMinimumDistanceValidationMessage(
+  origin,
+  destination,
+  routeMetrics = null
+) {
+  if (!origin?.location || !destination?.location) {
+    return "";
+  }
+
+  const routeDistanceKm = Number(routeMetrics?.distanceKm);
+  const directDistanceKm = calculateBackendDistanceKm(origin, destination);
+  const distanceKm =
+    Number.isFinite(routeDistanceKm) && routeDistanceKm > 0
+      ? routeDistanceKm
+      : directDistanceKm;
+
+  if (
+    areSameBookingPlaces(origin, destination) ||
+    distanceKm < MIN_BOOKING_DISTANCE_KM
+  ) {
+    return `Điểm đón và điểm đến quá gần nhau. Vui lòng chọn lộ trình cách nhau tối thiểu ${MIN_BOOKING_DISTANCE_METERS}m.`;
+  }
+
+  return "";
+}
+
 function getBackendTripMetrics(verifiedMap) {
   const routeDistanceKm = Number(verifiedMap?.directions?.distanceKm);
   const routeDurationMinute = Number(verifiedMap?.directions?.durationMinute);
@@ -1129,7 +1160,7 @@ function mapAvailableRideSharingGroupToCard(group) {
     requestId: "",
     groupId: group.id,
     route: `${directionLabel} • ${scheduleText}`,
-    vehicle: "Xe 4 chỗ",
+    vehicle: "Ô tô",
     price: "--",
     distance: "--",
     duration: "--",
@@ -1350,8 +1381,16 @@ export default function SearchScreen() {
   const { session, isAuthenticated, refreshSession } = useAuth();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const rawMode = params.mode ?? "now";
+  const rawMode = getSingleParam(params.mode) ?? "now";
   const normalizedMode = rawMode === "shared" ? "shared" : "now";
+  const rawVehicle = getSingleParam(params.vehicle);
+  const initialRideId = availableRideOptions.some(
+    (option) => option.id === rawVehicle
+  )
+    ? rawVehicle
+    : "bike";
+  const isHomeBookingFlow =
+    getSingleParam(params.source) === "home" && normalizedMode === "now";
 
   const [mode, setMode] = useState(normalizedMode);
   const [fromInput, setFromInput] = useState("");
@@ -1360,7 +1399,7 @@ export default function SearchScreen() {
   const [bookingStep, setBookingStep] = useState("form");
   const [alertMessage, setAlertMessage] = useState("");
   const [driverNote, setDriverNote] = useState("");
-  const [selectedRideId, setSelectedRideId] = useState("bike");
+  const [selectedRideId, setSelectedRideId] = useState(initialRideId);
   const [ridePriceQuotes, setRidePriceQuotes] = useState({});
   const [isLoadingRidePrices, setIsLoadingRidePrices] = useState(false);
   const [ridePriceError, setRidePriceError] = useState("");
@@ -1407,6 +1446,12 @@ export default function SearchScreen() {
   const [isCancellingRide, setIsCancellingRide] = useState(false);
   const [activeBookedRide, setActiveBookedRide] = useState(null);
   const [acceptedTrip, setAcceptedTrip] = useState(null);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewError, setReviewError] = useState("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewedTripIds, setReviewedTripIds] = useState({});
   const [savedAddresses, setSavedAddresses] = useState(initialSavedAddresses);
   const [addressModalVisible, setAddressModalVisible] = useState(false);
   const [addressForm, setAddressForm] = useState(defaultAddressForm);
@@ -1448,6 +1493,10 @@ export default function SearchScreen() {
     );
   const isSoloRideInProgress =
     isSoloRideTrackingLocked && trackedTripStatus === "inprogress";
+  const selectedRideOption =
+    availableRideOptions.find((option) => option.id === selectedRideId) ??
+    availableRideOptions[0];
+  const selectedRidePrice = ridePriceQuotes[selectedRideOption.id] ?? "";
   const completedDbFare = getTripEstimatedFare(acceptedTrip);
   const completedFare =
     completedDbFare != null
@@ -1456,6 +1505,16 @@ export default function SearchScreen() {
   const completedAtText = formatTripDateTime(
     acceptedTrip?.completedAt ?? activeBookedRide?.completedAt
   );
+  const completedTripId = acceptedTrip?.id ?? activeBookedRide?.id ?? "";
+  const hasReviewedCompletedTrip = Boolean(
+    completedTripId && reviewedTripIds[completedTripId]
+  );
+
+  useEffect(() => {
+    if (isHomeBookingFlow && selectedRideId !== initialRideId) {
+      setSelectedRideId(initialRideId);
+    }
+  }, [initialRideId, isHomeBookingFlow, selectedRideId]);
 
   useEffect(() => {
     if (!isSoloRideTrackingLocked) {
@@ -1938,10 +1997,6 @@ export default function SearchScreen() {
     verifiedTripMap?.origin.formattedAddress ?? fromLabel;
   const verifiedToLabel =
     verifiedTripMap?.destination.formattedAddress ?? toLabel;
-  const selectedRideOption =
-    availableRideOptions.find((option) => option.id === selectedRideId) ??
-    availableRideOptions[0];
-  const selectedRidePrice = ridePriceQuotes[selectedRideOption.id] ?? "";
   const scheduleDateOptions = createScheduleDateOptions();
   const selectedScheduleDate =
     scheduleDateOptions.find((option) => option.value === scheduleDraft.date) ??
@@ -2468,6 +2523,17 @@ export default function SearchScreen() {
       return;
     }
 
+    const minimumDistanceValidationMessage = getMinimumDistanceValidationMessage(
+      verifiedTripMap.origin,
+      verifiedTripMap.destination,
+      validatedTripMetrics
+    );
+
+    if (minimumDistanceValidationMessage) {
+      setAlertMessage(minimumDistanceValidationMessage);
+      return;
+    }
+
     if (isLoadingRidePrices) {
       setAlertMessage("Giá cước đang được tính. Vui lòng đợi trong giây lát.");
       return;
@@ -2655,6 +2721,71 @@ export default function SearchScreen() {
     }
   };
 
+  const openCompletedTripReview = () => {
+    if (!requireLogin()) {
+      return;
+    }
+
+    if (!completedTripId) {
+      setAlertMessage("Không tìm thấy chuyến đi để đánh giá.");
+      return;
+    }
+
+    if (hasReviewedCompletedTrip) {
+      return;
+    }
+
+    setReviewRating(5);
+    setReviewComment("");
+    setReviewError("");
+    setReviewModalVisible(true);
+  };
+
+  const handleSubmitCompletedTripReview = async () => {
+    if (!requireLogin()) {
+      return;
+    }
+
+    if (!completedTripId || !session?.accessToken || isSubmittingReview) {
+      return;
+    }
+
+    setReviewError("");
+    setIsSubmittingReview(true);
+
+    const payload = {
+      tripId: completedTripId,
+      rating: reviewRating,
+      comment: reviewComment.trim() || null,
+    };
+
+    try {
+      try {
+        await createReview(payload, session.accessToken);
+      } catch (error) {
+        if (error?.status !== 401) {
+          throw error;
+        }
+
+        const nextSession = await refreshSession();
+        await createReview(payload, nextSession.accessToken);
+      }
+
+      setReviewedTripIds((current) => ({
+        ...current,
+        [completedTripId]: true,
+      }));
+      setReviewModalVisible(false);
+      setReviewComment("");
+    } catch (error) {
+      setReviewError(
+        error?.message || "Không thể gửi đánh giá. Vui lòng thử lại."
+      );
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
   const resetSingleRideBookingForm = () => {
     setMode("now");
     setBookingStep("form");
@@ -2713,19 +2844,13 @@ export default function SearchScreen() {
       return null;
     }
 
-    if (areSameBookingPlaces(selectedFromPlace, selectedToPlace)) {
-      setAlertMessage("Điểm đón và điểm đến không được trùng nhau.");
-      setFocusedField("to");
-      return null;
-    }
-
-    const distanceBetweenPlaces = calculateBackendDistanceKm(
+    const directDistanceValidationMessage = getMinimumDistanceValidationMessage(
       selectedFromPlace,
       selectedToPlace
     );
 
-    if (Number.isFinite(distanceBetweenPlaces) && distanceBetweenPlaces < 0.1) {
-      setAlertMessage("Điểm đón và điểm đến quá gần nhau. Vui lòng chọn lộ trình khác.");
+    if (directDistanceValidationMessage) {
+      setAlertMessage(directDistanceValidationMessage);
       setFocusedField("to");
       return null;
     }
@@ -2821,6 +2946,19 @@ export default function SearchScreen() {
   const confirmSchedulePicker = () => {
     if (!verifiedTripMap) {
       setAlertMessage("Vui lòng xác nhận điểm đón và điểm đến trước khi hẹn lịch.");
+      setSchedulePickerVisible(false);
+      return;
+    }
+
+    const routeMetrics = getBackendTripMetrics(verifiedTripMap);
+    const minimumDistanceValidationMessage = getMinimumDistanceValidationMessage(
+      verifiedTripMap.origin,
+      verifiedTripMap.destination,
+      routeMetrics
+    );
+
+    if (minimumDistanceValidationMessage) {
+      setAlertMessage(minimumDistanceValidationMessage);
       setSchedulePickerVisible(false);
       return;
     }
@@ -2991,6 +3129,17 @@ export default function SearchScreen() {
       setSharedFormError(
         "Không thể tính tuyến đường xe ghép. Vui lòng chọn lại địa chỉ."
       );
+      return;
+    }
+
+    const minimumDistanceValidationMessage = getMinimumDistanceValidationMessage(
+      pickupPlace,
+      destinationPlace,
+      routeMetrics
+    );
+
+    if (minimumDistanceValidationMessage) {
+      setSharedFormError(minimumDistanceValidationMessage);
       return;
     }
 
@@ -3421,6 +3570,7 @@ export default function SearchScreen() {
           <Pressable
             style={[styles.segment, mode === "shared" && styles.segmentActive]}
             onPress={selectSharedRide}
+            testID="booking-mode-shared"
           >
             <ThemedText
               type="smallBold"
@@ -3435,7 +3585,7 @@ export default function SearchScreen() {
         </View>
 
         {bookingStep === "findingDriver" && mode !== "shared" ? (
-          <View style={styles.findingDriverStage}>
+          <View testID="booking-finding-driver-stage" style={styles.findingDriverStage}>
             <View
               style={[
                 styles.findingRadarCard,
@@ -3553,9 +3703,17 @@ export default function SearchScreen() {
               ) : null}
               {isCompletedTrip ? (
                 <View style={styles.completedActionRow}>
-                  <Pressable style={styles.completedReviewButton}>
+                  <Pressable
+                    testID="booking-completed-review-button"
+                    style={[
+                      styles.completedReviewButton,
+                      hasReviewedCompletedTrip && styles.completedReviewButtonDisabled,
+                    ]}
+                    disabled={hasReviewedCompletedTrip}
+                    onPress={openCompletedTripReview}
+                  >
                     <ThemedText type="smallBold" style={styles.completedReviewText}>
-                      {"Đánh giá tài xế"}
+                      {hasReviewedCompletedTrip ? "Đã đánh giá" : "Đánh giá tài xế"}
                     </ThemedText>
                   </Pressable>
                   <Pressable
@@ -3569,6 +3727,7 @@ export default function SearchScreen() {
                 </View>
               ) : isSoloRideInProgress ? null : (
                 <Pressable
+                  testID="booking-finding-secondary-button"
                   style={[
                     styles.findingSecondaryButton,
                     canCancelTrackedTrip && styles.cancelRideButton,
@@ -3674,46 +3833,65 @@ export default function SearchScreen() {
               </View>
             </View>
 
-            <View style={styles.rideOptionsSheet}>
+            <View testID="booking-ride-options-stage" style={styles.rideOptionsSheet}>
               <View style={styles.sheetHandle} />
               <ThemedText type="default" style={styles.rideSheetTitle}>
-                    {"Chọn loại xe"}
+                    {isHomeBookingFlow ? "Giá chuyến đi" : "Chọn loại xe"}
                   </ThemedText>
               {Boolean(ridePriceError) && (
                 <ThemedText type="small" style={styles.paymentNoticeText}>
                   {ridePriceError}
                 </ThemedText>
               )}
-              {availableRideOptions.map((option) => {
-                const isSelected = option.id === selectedRideId;
-
-                return (
-                  <Pressable
-                    key={option.id}
-                    style={[
-                      styles.rideOption,
-                      { backgroundColor: theme.backgroundElement },
-                      isSelected && styles.rideOptionActive,
-                    ]}
-                    onPress={() => setSelectedRideId(option.id)}
-                    >
-                    <View>
-                      <ThemedText type="smallBold" style={styles.rideOptionName}>
-                        {option.name}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.rideOptionEta}>
-                        {option.eta}
-                      </ThemedText>
-                    </View>
-                    <ThemedText type="default" style={styles.rideOptionPrice}>
-                      {isLoadingRidePrices
-                        ? "Đang tính..."
-                        : ridePriceQuotes[option.id] ?? "--"}
+              {isHomeBookingFlow ? (
+                <View
+                  testID={`booking-ride-option-${selectedRideOption.id}`}
+                  style={[
+                    styles.rideOption,
+                    { backgroundColor: theme.backgroundElement },
+                    styles.rideOptionActive,
+                  ]}
+                >
+                  <View>
+                    <ThemedText type="smallBold" style={styles.rideOptionName}>
+                      {selectedRideOption.name}
                     </ThemedText>
-                  </Pressable>
-                );
-              })}
+                  </View>
+                  <ThemedText type="default" style={styles.rideOptionPrice}>
+                    {isLoadingRidePrices ? "Đang tính..." : selectedRidePrice ?? "--"}
+                  </ThemedText>
+                </View>
+              ) : (
+                availableRideOptions.map((option) => {
+                  const isSelected = option.id === selectedRideId;
+
+                  return (
+                    <Pressable
+                      testID={`booking-ride-option-${option.id}`}
+                      key={option.id}
+                      style={[
+                        styles.rideOption,
+                        { backgroundColor: theme.backgroundElement },
+                        isSelected && styles.rideOptionActive,
+                      ]}
+                      onPress={() => setSelectedRideId(option.id)}
+                      >
+                      <View>
+                        <ThemedText type="smallBold" style={styles.rideOptionName}>
+                          {option.name}
+                        </ThemedText>
+                      </View>
+                      <ThemedText type="default" style={styles.rideOptionPrice}>
+                        {isLoadingRidePrices
+                          ? "Đang tính..."
+                          : ridePriceQuotes[option.id] ?? "--"}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })
+              )}
               <Pressable
+                testID="booking-book-button"
                 style={[styles.bookButton, isBookingRide && styles.bookButtonDisabled]}
                 onPress={handleBookRide}
                 disabled={isBookingRide}
@@ -3725,7 +3903,7 @@ export default function SearchScreen() {
             </View>
           </>
         ) : bookingStep === "confirm" && mode !== "shared" ? (
-          <View style={styles.confirmStage}>
+          <View testID="booking-confirm-stage" style={styles.confirmStage}>
             <View style={styles.dotsRow}>
               <View style={styles.dotActive} />
               <View style={styles.dotActive} />
@@ -3806,6 +3984,7 @@ export default function SearchScreen() {
               )}
 
               <Pressable
+                testID="booking-confirm-destination-button"
                 style={styles.pickupConfirmButton}
                 onPress={() => setBookingStep("rideOptions")}
               >
@@ -3830,6 +4009,7 @@ export default function SearchScreen() {
                 ]}
               >
                 <TextInput
+                  testID="booking-pickup-input"
                   ref={fromInputRef}
                   {...vietnameseTextInputProps}
                   placeholder={"Nhập điểm xuất phát"}
@@ -3889,8 +4069,9 @@ export default function SearchScreen() {
                       {suggestionError.from}
                     </ThemedText>
                   ) : (
-                    addressSuggestions.from.map((suggestion) => (
+                    addressSuggestions.from.map((suggestion, index) => (
                       <Pressable
+                        testID={`booking-pickup-suggestion-${index}`}
                         key={suggestion.placeId}
                         style={styles.suggestionItem}
                         onPress={() => selectAddressSuggestion("from", suggestion)}
@@ -3938,6 +4119,7 @@ export default function SearchScreen() {
                 ]}
               >
                 <TextInput
+                  testID="booking-destination-input"
                   ref={toInputRef}
                   {...vietnameseTextInputProps}
                   placeholder={"Bạn muốn đi đâu?"}
@@ -3995,8 +4177,9 @@ export default function SearchScreen() {
                       {suggestionError.to}
                     </ThemedText>
                   ) : (
-                    addressSuggestions.to.map((suggestion) => (
+                    addressSuggestions.to.map((suggestion, index) => (
                       <Pressable
+                        testID={`booking-destination-suggestion-${index}`}
                         key={suggestion.placeId}
                         style={styles.suggestionItem}
                         onPress={() => selectAddressSuggestion("to", suggestion)}
@@ -4111,6 +4294,7 @@ export default function SearchScreen() {
               </Pressable>
 
               <Pressable
+                testID="booking-continue-button"
                 style={[styles.primaryButton, isVerifyingMap && styles.buttonDisabled]}
                 onPress={showConfirmationStep}
                 disabled={isVerifyingMap}
@@ -4122,13 +4306,14 @@ export default function SearchScreen() {
             </View>
           </>
         ) : (
-          <View style={styles.sharedSection}>
+          <View testID="ride-sharing-section" style={styles.sharedSection}>
             <View style={styles.pendingSharedSection}>
               <View style={styles.sharedHeader}>
                 <ThemedText type="default" style={styles.pendingSharedTitle}>
                   {"Yêu cầu xe ghép của bạn"}
                 </ThemedText>
                 <Pressable
+                  testID="ride-sharing-create-button"
                   onPress={() => {
                     if (requireLogin()) {
                       setCreateSharedVisible(true);
@@ -4215,8 +4400,12 @@ export default function SearchScreen() {
                 </View>
               ) : null}
 
-              {filteredSharedRequests.map((request) => (
-                <View key={request.id} style={styles.pendingSharedCard}>
+              {filteredSharedRequests.map((request, index) => (
+                <View
+                  key={request.id}
+                  testID={`ride-sharing-request-card-${index}`}
+                  style={styles.pendingSharedCard}
+                >
                   <View style={styles.pendingSharedHeader}>
                     <ThemedText type="smallBold" style={styles.pendingSharedVehicle}>
                       {request.vehicle}
@@ -4252,6 +4441,7 @@ export default function SearchScreen() {
                     </ThemedText>
                     {Boolean(request.groupId) && (
                       <Pressable
+                        testID={`ride-sharing-request-detail-${index}`}
                         style={styles.pendingSharedDetailButton}
                         onPress={() =>
                           router.push(`/search/shared-ride/${request.groupId}`)
@@ -4268,6 +4458,7 @@ export default function SearchScreen() {
                     {request.requestId &&
                     isSharedRideActive(getSharedRequestEffectiveStatus(request)) ? (
                       <Pressable
+                        testID={`ride-sharing-request-cancel-${index}`}
                         style={[
                           styles.pendingSharedCancelButton,
                           cancellingSharedRequestId === request.requestId &&
@@ -4307,9 +4498,13 @@ export default function SearchScreen() {
               </View>
             ) : null}
 
-            {suggestedSharedRides.map((ride) => {
+            {suggestedSharedRides.map((ride, index) => {
               return (
-                <View key={ride.id} style={styles.suggestedGroupCard}>
+                <View
+                  key={ride.id}
+                  testID={`ride-sharing-suggested-group-${index}`}
+                  style={styles.suggestedGroupCard}
+                >
                   <View style={styles.suggestedGroupTop}>
                     <View style={styles.suggestedGroupLabel}>
                       <ThemedText type="smallBold" style={styles.suggestedGroupLabelText}>
@@ -4375,6 +4570,7 @@ export default function SearchScreen() {
 
                     <View style={styles.suggestedGroupActions}>
                       <Pressable
+                        testID={`ride-sharing-suggested-detail-${index}`}
                         style={styles.suggestedGroupSecondaryButton}
                         onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
                       >
@@ -4386,6 +4582,7 @@ export default function SearchScreen() {
                         </ThemedText>
                       </Pressable>
                       <Pressable
+                        testID={`ride-sharing-suggested-join-${index}`}
                         style={styles.suggestedGroupPrimaryButton}
                         onPress={() => {
                           if (requireLogin()) {
@@ -4658,7 +4855,7 @@ export default function SearchScreen() {
         onRequestClose={closeCreateSharedModal}
       >
         <View style={styles.createSharedOverlay}>
-          <View style={styles.createSharedCard}>
+          <View testID="ride-sharing-create-modal" style={styles.createSharedCard}>
             <View style={styles.createSharedHeader}>
               <ThemedText type="default" style={styles.createSharedTitle}>
                     {"Tạo yêu cầu xe ghép"}
@@ -4798,7 +4995,7 @@ export default function SearchScreen() {
                 </ThemedText>
                 <View style={styles.createSelect}>
                   <ThemedText type="default" style={styles.createSelectText}>
-                    Xe 4 chỗ
+                    Ô tô
                   </ThemedText>
                 </View>
               </View>
@@ -4810,6 +5007,7 @@ export default function SearchScreen() {
                 </ThemedText>
                 <View style={styles.createLocationInputWrap}>
                   <TextInput
+                    testID="ride-sharing-location-input"
                     {...vietnameseTextInputProps}
                     placeholder={sharedLocationPlaceholder}
                     placeholderTextColor="#A1A1AA"
@@ -4843,8 +5041,9 @@ export default function SearchScreen() {
                         {sharedLocationError}
                       </ThemedText>
                     ) : (
-                      sharedLocationSuggestions.map((suggestion) => (
+                      sharedLocationSuggestions.map((suggestion, index) => (
                         <Pressable
+                          testID={`ride-sharing-location-suggestion-${index}`}
                           key={suggestion.placeId || suggestion.description}
                           style={styles.suggestionItem}
                           onPress={() => selectSharedLocationSuggestion(suggestion)}
@@ -4912,6 +5111,7 @@ export default function SearchScreen() {
 
                       return (
                         <Pressable
+                          testID={`ride-sharing-slot-${slot.id}`}
                           key={slot.id}
                           style={[
                             styles.slotChip,
@@ -4961,11 +5161,12 @@ export default function SearchScreen() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.dateChipRow}
                   >
-                    {scheduleDateOptions.slice(0, 7).map((date) => {
+                    {scheduleDateOptions.slice(0, 7).map((date, index) => {
                       const isSelected = sharedForm.date === date.value;
 
                       return (
                         <Pressable
+                          testID={`ride-sharing-date-${index}`}
                           key={date.value}
                           style={[
                             styles.dateChip,
@@ -5015,12 +5216,17 @@ export default function SearchScreen() {
               )}
 
               {Boolean(sharedFormError) && (
-                <ThemedText type="smallBold" style={styles.createError}>
+                <ThemedText
+                  testID="ride-sharing-form-error"
+                  type="smallBold"
+                  style={styles.createError}
+                >
                   {sharedFormError}
                 </ThemedText>
               )}
 
               <Pressable
+                testID="ride-sharing-submit-button"
                 style={[
                   styles.createSubmitButton,
                   isCreatingSharedRequest && styles.buttonDisabled,
@@ -5038,6 +5244,86 @@ export default function SearchScreen() {
       </Modal>
 
       <Modal
+        visible={reviewModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReviewModalVisible(false)}
+      >
+        <View style={styles.reviewOverlay}>
+          <View testID="booking-review-modal" style={styles.reviewCard}>
+            <ThemedText type="default" style={styles.reviewTitle}>
+              {"Đánh giá chuyến đi"}
+            </ThemedText>
+            <ThemedText type="small" style={styles.reviewRouteText} numberOfLines={2}>
+              {(activeBookedRide?.pickup ?? verifiedFromLabel) + " → " + (activeBookedRide?.destination ?? verifiedToLabel)}
+            </ThemedText>
+
+            <View style={styles.reviewStarsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <Pressable
+                  key={star}
+                  testID={`booking-review-star-${star}`}
+                  style={styles.reviewStarButton}
+                  onPress={() => setReviewRating(star)}
+                >
+                  <ThemedText
+                    type="default"
+                    style={[
+                      styles.reviewStarText,
+                      star <= reviewRating && styles.reviewStarTextActive,
+                    ]}
+                  >
+                    {"★"}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </View>
+
+            <TextInput
+              testID="booking-review-comment-input"
+              {...vietnameseTextInputProps}
+              multiline
+              placeholder={"Nhận xét chuyến đi"}
+              placeholderTextColor="#9CA3AF"
+              style={styles.reviewCommentInput}
+              value={reviewComment}
+              onChangeText={setReviewComment}
+            />
+
+            {Boolean(reviewError) && (
+              <ThemedText testID="booking-review-error" type="smallBold" style={styles.reviewErrorText}>
+                {reviewError}
+              </ThemedText>
+            )}
+
+            <View style={styles.reviewButtonRow}>
+              <Pressable
+                style={styles.reviewCancelButton}
+                onPress={() => setReviewModalVisible(false)}
+              >
+                <ThemedText type="smallBold" style={styles.reviewCancelText}>
+                  {"Hủy"}
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                testID="booking-review-submit-button"
+                style={[
+                  styles.reviewSubmitButton,
+                  isSubmittingReview && styles.bookButtonDisabled,
+                ]}
+                disabled={isSubmittingReview}
+                onPress={handleSubmitCompletedTripReview}
+              >
+                <ThemedText type="smallBold" style={styles.reviewSubmitText}>
+                  {isSubmittingReview ? "Đang gửi..." : "Gửi đánh giá"}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={Boolean(alertMessage)}
         transparent
         animationType="fade"
@@ -5047,7 +5333,7 @@ export default function SearchScreen() {
           style={styles.alertOverlay}
           onPress={() => setAlertMessage("")}
         >
-          <Pressable style={styles.alertCard}>
+          <Pressable testID="booking-alert-card" style={styles.alertCard}>
             <View style={styles.alertIcon}>
               <ThemedText type="smallBold" style={styles.alertIconText}>
                 !
@@ -5056,7 +5342,11 @@ export default function SearchScreen() {
             <ThemedText type="default" style={styles.alertTitle}>
                     {"Thiếu thông tin"}
                   </ThemedText>
-            <ThemedText type="default" style={styles.alertMessage}>
+            <ThemedText
+              testID="booking-alert-message"
+              type="default"
+              style={styles.alertMessage}
+            >
               {alertMessage}
             </ThemedText>
             <Pressable
@@ -5330,6 +5620,87 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: Spacing.three,
+  },
+  reviewOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.48)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.three,
+  },
+  reviewCard: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 18,
+    padding: Spacing.three,
+    gap: Spacing.two,
+    backgroundColor: "#FFFFFF",
+  },
+  reviewTitle: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  reviewRouteText: {
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  reviewStarsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.two,
+  },
+  reviewStarButton: {
+    padding: Spacing.one,
+  },
+  reviewStarText: {
+    color: "#D1D5DB",
+    fontSize: 32,
+  },
+  reviewStarTextActive: {
+    color: "#FACC15",
+  },
+  reviewCommentInput: {
+    minHeight: 104,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: Spacing.two,
+    color: "#111827",
+    textAlignVertical: "top",
+  },
+  reviewErrorText: {
+    color: "#DC2626",
+  },
+  reviewButtonRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  reviewCancelButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FFD2AE",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewCancelText: {
+    color: "#C75B00",
+  },
+  reviewSubmitButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewSubmitText: {
+    color: "#FFFFFF",
   },
   alertCard: {
     width: "100%",
@@ -6152,6 +6523,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  completedReviewButtonDisabled: {
+    backgroundColor: "#9CA3AF",
+  },
   completedReviewText: {
     color: "#FFFFFF",
   },
@@ -6516,9 +6890,6 @@ const styles = StyleSheet.create({
   rideOptionName: {
     color: "#111827",
     fontSize: 16,
-  },
-  rideOptionEta: {
-    color: "#6B7280",
   },
   rideOptionPrice: {
     color: "#111827",

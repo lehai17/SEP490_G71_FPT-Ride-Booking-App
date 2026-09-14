@@ -1,4 +1,7 @@
-import * as SecureStore from "expo-secure-store";
+import {
+  getPersistentItem,
+  setPersistentItem,
+} from "@/services/persistent-storage";
 
 const RIDE_SHARING_CARDS_STORAGE_KEY = "fpt-ride.ride-sharing-cards";
 
@@ -15,7 +18,7 @@ function getCardKey(card) {
 }
 
 async function readRideSharingCards(userId) {
-  const rawCards = await SecureStore.getItemAsync(getStorageKey(userId));
+  const rawCards = await getPersistentItem(getStorageKey(userId));
 
   if (!rawCards) {
     return [];
@@ -30,7 +33,7 @@ async function readRideSharingCards(userId) {
 }
 
 async function writeRideSharingCards(cards, userId) {
-  await SecureStore.setItemAsync(
+  await setPersistentItem(
     getStorageKey(userId),
     JSON.stringify(cards ?? [])
   );

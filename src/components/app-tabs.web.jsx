@@ -7,11 +7,43 @@ import {
 import { SymbolView } from 'expo-symbols';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
 
-import { ExternalLink } from './external-link';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+
+const webTabs = [
+  {
+    name: 'home',
+    href: '/',
+    label: 'Trang chủ',
+    icon: { ios: 'house.fill', web: 'home' },
+  },
+  {
+    name: 'search',
+    href: '/search',
+    label: 'Tìm xe',
+    icon: { ios: 'magnifyingglass', web: 'search' },
+  },
+  {
+    name: 'trips',
+    href: '/trips',
+    label: 'Hành trình',
+    icon: { ios: 'clock.fill', web: 'history' },
+  },
+  {
+    name: 'notifications',
+    href: '/notifications',
+    label: 'Thông báo',
+    icon: { ios: 'bell.fill', web: 'bell' },
+  },
+  {
+    name: 'profile',
+    href: '/profile',
+    label: 'Cá nhân',
+    icon: { ios: 'person.circle.fill', web: 'person' },
+  },
+];
 
 export default function AppTabs() {
   return (
@@ -19,24 +51,28 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList>
-          <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
-          </TabTrigger>
-          <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Explore</TabButton>
-          </TabTrigger>
+          {webTabs.map((tab) => (
+            <TabTrigger key={tab.name} name={tab.name} href={tab.href} asChild>
+              <TabButton icon={tab.icon}>{tab.label}</TabButton>
+            </TabTrigger>
+          ))}
         </CustomTabList>
       </TabList>
     </Tabs>
   );
 }
 
-export function TabButton({ children, isFocused, ...props }) {
+export function TabButton({ children, icon, isFocused, ...props }) {
+  const scheme = useColorScheme();
+  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
+  const tintColor = isFocused ? colors.text : colors.textSecondary;
+
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
         style={styles.tabButtonView}>
+        <SymbolView tintColor={tintColor} name={icon} size={17} />
         <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
           {children}
         </ThemedText>
@@ -45,29 +81,15 @@ export function TabButton({ children, isFocused, ...props }) {
   );
 }
 
-export function CustomTabList(props) {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
+export function CustomTabList({ children, ...props }) {
   return (
     <View {...props} style={styles.tabListContainer}>
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
         <ThemedText type="smallBold" style={styles.brandText}>
-          Expo Starter
+          FPT Ride
         </ThemedText>
 
-        {props.children}
-
-        <ExternalLink href="https://docs.expo.dev" asChild>
-          <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
-            <SymbolView
-              tintColor={colors.text}
-              name={{ ios: 'arrow.up.right.square', web: 'link' }}
-              size={12}
-            />
-          </Pressable>
-        </ExternalLink>
+        {children}
       </ThemedView>
     </View>
   );
@@ -99,15 +121,11 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   tabButtonView: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
-  },
-  externalPressable: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.one,
-    marginLeft: Spacing.three,
   },
 });

@@ -36,7 +36,10 @@ import {
 } from "@/features/booking/services/trip-api";
 import {
   createReview,
+  getDriverRatingSummary,
+  getDriverReviews,
   getMyReviews,
+  getTripReviews,
 } from "@/features/trip-history/services/review-api";
 import { mapTripToHistoryItem } from "@/features/trip-history/utils/trip-history-mapper";
 
@@ -416,6 +419,32 @@ function mapTripToScheduledItem(trip) {
   });
 }
 
+async function safeLoadReviewData(loader) {
+  try {
+    return await loader();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDriverRatingSummary(summary) {
+  if (!summary) {
+    return null;
+  }
+
+  const totalReviews = Number(summary.totalReviews ?? summary.TotalReviews ?? 0);
+  const averageRating = Number(
+    summary.averageRating ?? summary.AverageRating ?? 0
+  );
+
+  return {
+    driverId: summary.driverId ?? summary.DriverId,
+    driverName: summary.driverName ?? summary.DriverName,
+    averageRating: Number.isFinite(averageRating) ? averageRating : 0,
+    totalReviews: Number.isFinite(totalReviews) ? totalReviews : 0,
+  };
+}
+
 export default function TripsScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams();
@@ -461,8 +490,17 @@ export default function TripsScreen() {
   const [cancelReason, setCancelReason] = useState("");
   const [formError, setFormError] = useState("");
   const [ratingsByTripId, setRatingsByTripId] = useState({});
+  const [tripReviewsByTripId, setTripReviewsByTripId] = useState({});
+  const [driverRatingSummariesById, setDriverRatingSummariesById] = useState({});
+  const [driverReviewsById, setDriverReviewsById] = useState({});
   const [reportsByTripId, setReportsByTripId] = useState({});
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  useEffect(() => {
+    if (params.tab === "history" || params.tab === "scheduled") {
+      setSelectedTab(params.tab);
+    }
+  }, [params.tab]);
 
   useEffect(() => {
     let isMounted = true;
@@ -564,6 +602,77 @@ export default function TripsScreen() {
           : {};
 
         setRatingsByTripId(ratingsMap);
+
+        const tripList = Array.isArray(trips) ? trips : [];
+        const tripIds = tripList
+          .map((trip) => getTripField(trip, "id", "Id"))
+          .filter(Boolean);
+        const driverIds = [
+          ...new Set(
+            tripList
+              .map((trip) => getTripField(trip, "driverId", "DriverId"))
+              .filter(Boolean)
+          ),
+        ];
+
+        const [tripReviewEntries, driverSummaryEntries, driverReviewEntries] =
+          await Promise.all([
+            Promise.all(
+              tripIds.map(async (tripId) => [
+                tripId,
+                await safeLoadReviewData(() =>
+                  getTripReviews(tripId, session.accessToken)
+                ),
+              ])
+            ),
+            Promise.all(
+              driverIds.map(async (driverId) => [
+                driverId,
+                await safeLoadReviewData(() =>
+                  getDriverRatingSummary(driverId, session.accessToken)
+                ),
+              ])
+            ),
+            Promise.all(
+              driverIds.map(async (driverId) => [
+                driverId,
+                await safeLoadReviewData(() =>
+                  getDriverReviews(driverId, session.accessToken)
+                ),
+              ])
+            ),
+          ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setTripReviewsByTripId(
+          Object.fromEntries(
+            tripReviewEntries.map(([tripId, reviews]) => [
+              tripId,
+              Array.isArray(reviews) ? reviews : [],
+            ])
+          )
+        );
+        setDriverRatingSummariesById(
+          Object.fromEntries(
+            driverSummaryEntries
+              .map(([driverId, summary]) => [
+                driverId,
+                normalizeDriverRatingSummary(summary),
+              ])
+              .filter(([, summary]) => Boolean(summary))
+          )
+        );
+        setDriverReviewsById(
+          Object.fromEntries(
+            driverReviewEntries.map(([driverId, reviews]) => [
+              driverId,
+              Array.isArray(reviews) ? reviews : [],
+            ])
+          )
+        );
 
         setTripsBySection((current) => {
           const localScheduledById = new Map(
@@ -970,6 +1079,7 @@ export default function TripsScreen() {
 
               return (
                 <Pressable
+                testID={`trips-tab-${tab.key}`}
                 key={tab.key}
                 style={[
                   styles.tabButton,
@@ -1410,6 +1520,7 @@ export default function TripsScreen() {
           ) : (
             <>
               <ThemedView
+                testID={`trips-${selectedTab}-list`}
                 style={[styles.listCard, { backgroundColor: theme.backgroundElement }]}
               >
               {items.map((item, index) => {
@@ -1417,9 +1528,21 @@ export default function TripsScreen() {
               const displayRating = savedRating ?? item.rating;
               const hasRated = typeof savedRating === "number";
               const hasReported = Boolean(reportsByTripId[item.id]);
+              const driverSummary = item.driverId
+                ? driverRatingSummariesById[item.driverId]
+                : null;
+              const tripReviewCount = tripReviewsByTripId[item.id]?.length ?? 0;
+              const driverReviewCount = item.driverId
+                ? driverReviewsById[item.driverId]?.length ?? 0
+                : 0;
+              const shouldShowDriverRating =
+                selectedTab === "history" &&
+                driverSummary &&
+                driverSummary.totalReviews > 0;
 
               return (
                 <View
+                  testID={`trips-${selectedTab}-item-${index}`}
                   key={item.id}
                   style={[
                     styles.tripRow,
@@ -1438,6 +1561,20 @@ export default function TripsScreen() {
                       <ThemedText type="small" style={styles.metaText}>
                         {item.meta}
                       </ThemedText>
+                      {shouldShowDriverRating ? (
+                        <ThemedText type="small" style={styles.driverRatingText}>
+                          {`Tài xế: ${
+                            driverSummary.driverName || item.driverName || "Tài xế"
+                          } • ${driverSummary.averageRating.toFixed(1)}★ • ${
+                            driverReviewCount || driverSummary.totalReviews
+                          } đánh giá`}
+                        </ThemedText>
+                      ) : null}
+                      {selectedTab === "history" && tripReviewCount > 0 ? (
+                        <ThemedText type="small" style={styles.tripReviewText}>
+                          {`Review chuyến: ${tripReviewCount} đánh giá`}
+                        </ThemedText>
+                      ) : null}
                     </View>
                   </View>
 
@@ -2525,6 +2662,13 @@ const styles = StyleSheet.create({
   },
   metaText: {
     color: MUTED,
+  },
+  driverRatingText: {
+    color: "#0F766E",
+    fontWeight: "700",
+  },
+  tripReviewText: {
+    color: "#8B5CF6",
   },
   tripRight: {
     alignItems: "flex-end",
