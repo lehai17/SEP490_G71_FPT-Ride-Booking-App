@@ -224,6 +224,8 @@ function PasswordInput({
   theme,
   visible,
   onToggle,
+  inputTestID,
+  toggleTestID,
 }) {
   return (
     <View style={styles.passwordFieldBlock}>
@@ -238,6 +240,7 @@ function PasswordInput({
         ]}
       >
         <BasicInput
+          testID={inputTestID}
           style={[styles.passwordInput, { color: theme.text }]}
           value={value}
           onChangeText={onChangeText}
@@ -247,6 +250,7 @@ function PasswordInput({
           autoCapitalize="none"
         />
         <Pressable
+          testID={toggleTestID}
           style={styles.passwordToggle}
           onPress={onToggle}
           hitSlop={8}
@@ -604,7 +608,7 @@ export default function ProfileScreen() {
           </ThemedText>
 
           {errorMessage ? (
-            <View style={styles.messageError}>
+            <View testID="auth-error-message" style={styles.messageError}>
               <ThemedText type="smallBold" style={styles.messageErrorText}>
                 {errorMessage}
               </ThemedText>
@@ -632,7 +636,9 @@ export default function ProfileScreen() {
                     <ThemedText type="subtitle">{displayInitial}</ThemedText>
                   </View>
                   <View style={styles.headerText}>
-                    <ThemedText type="subtitle">{session.fullName}</ThemedText>
+                    <ThemedText testID="profile-full-name" type="subtitle">
+                      {session.fullName}
+                    </ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">
                       {getDisplayRole(session.role) || "Khách hàng"}
                     </ThemedText>
@@ -652,7 +658,11 @@ export default function ProfileScreen() {
                 <ThemedText type="smallBold">Thông tin liên hệ</ThemedText>
                 <View style={styles.infoRow}>
                   <ThemedText type="small">Email</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
+                  <ThemedText
+                    testID="profile-email"
+                    type="small"
+                    themeColor="textSecondary"
+                  >
                     {session.email}
                   </ThemedText>
                 </View>
@@ -695,7 +705,11 @@ export default function ProfileScreen() {
                   </ThemedText>
                 </Pressable>
 
-                <Pressable style={styles.logoutButton} onPress={handleLogout}>
+                <Pressable
+                  testID="logout-button"
+                  style={styles.logoutButton}
+                  onPress={handleLogout}
+                >
                   <ThemedText type="smallBold" style={styles.logoutText}>
                     Đăng xuất
                   </ThemedText>
@@ -962,6 +976,7 @@ export default function ProfileScreen() {
                 <View style={styles.formBlock}>
                   <ThemedText type="small">Email</ThemedText>
                   <BasicInput
+                    testID="login-email-input"
                     style={[
                       styles.input,
                       { color: theme.text, backgroundColor: theme.background },
@@ -977,6 +992,8 @@ export default function ProfileScreen() {
                   />
 
                   <PasswordInput
+                    inputTestID="login-password-input"
+                    toggleTestID="login-password-toggle"
                     label="Mật khẩu"
                     value={loginForm.password}
                     onChangeText={(value) =>
@@ -1007,6 +1024,7 @@ export default function ProfileScreen() {
                   </Pressable>
 
                   <Pressable
+                    testID="login-submit-button"
                     style={styles.primaryButton}
                     onPress={handleLogin}
                     disabled={isSubmitting || isRestoringSession}

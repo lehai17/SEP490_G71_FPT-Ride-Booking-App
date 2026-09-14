@@ -1,7 +1,11 @@
-import * as SecureStore from "expo-secure-store";
 import { createContext, useContext, useEffect, useState } from "react";
 
 import * as authApi from "@/features/auth/services/auth-api";
+import {
+  deletePersistentItem,
+  getPersistentItem,
+  setPersistentItem,
+} from "@/services/persistent-storage";
 
 const AuthContext = createContext(null);
 
@@ -23,14 +27,14 @@ function buildSession(loginResponse, profileResponse) {
 }
 
 async function persistSession(session) {
-  await SecureStore.setItemAsync(
+  await setPersistentItem(
     SESSION_STORAGE_KEY,
     JSON.stringify(session ?? null)
   );
 }
 
 async function clearPersistedSession() {
-  await SecureStore.deleteItemAsync(SESSION_STORAGE_KEY);
+  await deletePersistentItem(SESSION_STORAGE_KEY);
 }
 
 export function AuthProvider({ children }) {
@@ -45,7 +49,7 @@ export function AuthProvider({ children }) {
 
     async function restoreSession() {
       try {
-        const storedSession = await SecureStore.getItemAsync(SESSION_STORAGE_KEY);
+        const storedSession = await getPersistentItem(SESSION_STORAGE_KEY);
 
         if (!storedSession) {
           if (isMounted) {

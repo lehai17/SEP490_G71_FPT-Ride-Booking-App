@@ -1127,6 +1127,7 @@ export default function SharedRideDetailScreen() {
 
               {!isJoinedGroup && (
                 <Pressable
+                  testID="shared-ride-join-button"
                   style={[
                     styles.primaryButton,
                     (pendingRequest || isJoiningGroup) && styles.pendingButton,
@@ -1182,6 +1183,7 @@ export default function SharedRideDetailScreen() {
       >
         <View style={styles.modalOverlay}>
           <View
+            testID="shared-ride-join-modal"
             style={[
               styles.joinCard,
               { backgroundColor: theme.backgroundElement },
@@ -1210,6 +1212,7 @@ export default function SharedRideDetailScreen() {
                 ]}
               >
                 <TextInput
+                  testID="shared-ride-pickup-input"
                   placeholder="VD: Cổng chính, trạm xe, đường XYZ..."
                   placeholderTextColor="#9CA3AF"
                   style={[
@@ -1255,6 +1258,7 @@ export default function SharedRideDetailScreen() {
 
                       return (
                         <Pressable
+                          testID={`shared-ride-pickup-suggestion-${index}`}
                           key={`${suggestion.refId || suggestion.placeId || suggestionLabel}-${index}`}
                           style={styles.pickupSuggestionItem}
                           onPress={() => handleSelectPickupSuggestion(suggestion)}
@@ -1319,6 +1323,7 @@ export default function SharedRideDetailScreen() {
                 <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
               <Pressable
+                testID="shared-ride-submit-join-button"
                 style={[
                   styles.modalPrimaryButton,
                   isJoiningGroup && styles.pendingButton,

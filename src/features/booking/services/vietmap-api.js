@@ -65,6 +65,24 @@ function normalizeVietMapError(message) {
   return "";
 }
 
+function createVietMapNetworkError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  const isDnsError =
+    message.includes("unknownhostexception") ||
+    message.includes("unable to resolve host") ||
+    message.includes("no address associated with hostname");
+
+  if (isDnsError) {
+    return new Error(
+      "Không thể kết nối VietMap. Vui lòng kiểm tra mạng hoặc DNS trên thiết bị."
+    );
+  }
+
+  return new Error(
+    "Không thể kết nối VietMap. Vui lòng kiểm tra kết nối mạng và thử lại."
+  );
+}
+
 function normalizeLocation(item) {
   const data = item?.properties ?? item ?? {};
   const geometry = item?.geometry ?? data?.geometry;
@@ -403,13 +421,19 @@ export async function getVietMapPlaceSuggestions(input) {
     return [];
   }
 
-  const response = await fetch(
-    buildVietMapUrl("/autocomplete/v3", {
-      text: trimmedInput,
-      size: "6",
-      focus: "21.028511,105.804817",
-    })
-  );
+  let response;
+
+  try {
+    response = await fetch(
+      buildVietMapUrl("/autocomplete/v3", {
+        text: trimmedInput,
+        size: "6",
+        focus: "21.028511,105.804817",
+      })
+    );
+  } catch (error) {
+    throw createVietMapNetworkError(error);
+  }
   const payload = await response.json();
 
   if (!response.ok) {

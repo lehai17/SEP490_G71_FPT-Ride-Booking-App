@@ -62,6 +62,10 @@ function getTripFare(trip) {
   );
 }
 
+function getTripField(source, camelKey, pascalKey) {
+  return source?.[camelKey] ?? source?.[pascalKey] ?? null;
+}
+
 function getTripDistance(trip) {
   return (
     trip?.estimatedDistanceKm ??
@@ -122,6 +126,8 @@ export function mapTripToHistoryItem(trip, localTrip = null) {
 
   return {
     id: trip.id,
+    driverId: getTripField(trip, "driverId", "DriverId"),
+    driverName: getTripField(trip, "driverName", "DriverName"),
     icon: getTripIcon(trip.vehicleType),
     route: `${trip.pickupAddress || "Điểm đón"} → ${
       trip.destinationAddress || "Điểm đến"

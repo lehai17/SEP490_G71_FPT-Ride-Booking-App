@@ -20,3 +20,24 @@ export function getMyReviews(accessToken) {
     headers: getAuthHeaders(accessToken),
   });
 }
+
+export function getTripReviews(tripId, accessToken) {
+  return apiRequest(`/reviews/trip/${tripId}`, {
+    method: "GET",
+    headers: getAuthHeaders(accessToken),
+  });
+}
+
+export function getDriverReviews(driverId, accessToken) {
+  return apiRequest(`/reviews/driver/${driverId}`, {
+    method: "GET",
+    headers: getAuthHeaders(accessToken),
+  });
+}
+
+export function getDriverRatingSummary(driverId, accessToken) {
+  return apiRequest(`/reviews/driver/${driverId}/summary`, {
+    method: "GET",
+    headers: getAuthHeaders(accessToken),
+  });
+}
