@@ -336,7 +336,22 @@ function normalizeRouteCoordinates(route) {
   return [];
 }
 
-function createApproximateRoute(origin, destination) {
+export function getVietMapVehicleProfile(vehicleType) {
+  const normalizedVehicleType = String(vehicleType ?? "").trim().toLowerCase();
+
+  if (
+    normalizedVehicleType === "1" ||
+    normalizedVehicleType === "bike" ||
+    normalizedVehicleType === "motorbike" ||
+    normalizedVehicleType === "motorcycle"
+  ) {
+    return "motorcycle";
+  }
+
+  return "car";
+}
+
+function createApproximateRoute(origin, destination, vehicleProfile = "car") {
   const distanceKm = haversineDistanceKm(origin.location, destination.location);
   const distanceMeters = distanceKm * 1000;
 
@@ -365,14 +380,15 @@ function createApproximateRoute(origin, destination) {
     startAddress: origin.formattedAddress,
     endAddress: destination.formattedAddress,
     isFallbackRoute: true,
+    vehicleProfile,
   };
 }
 
-function mapVietMapRoute(payload, origin, destination) {
+function mapVietMapRoute(payload, origin, destination, vehicleProfile = "car") {
   const route = payload?.paths?.[0] ?? payload?.routes?.[0] ?? payload?.data?.paths?.[0];
 
   if (!route) {
-    return createApproximateRoute(origin, destination);
+    return createApproximateRoute(origin, destination, vehicleProfile);
   }
 
   const distanceMeters = Number(route.distance ?? route.summary?.lengthInMeters);
@@ -392,6 +408,7 @@ function mapVietMapRoute(payload, origin, destination) {
     durationText: formatDuration(effectiveDurationSeconds),
     congestionSummary,
     source: "vietmap-route-v3",
+    vehicleProfile,
     routeGeometry: {
       type: "Feature",
       properties: {
@@ -537,11 +554,13 @@ export async function reverseVietMapPlaceLocation(location) {
   };
 }
 
-export async function getVietMapDirections(origin, destination) {
+export async function getVietMapDirections(origin, destination, vehicleType = "car") {
+  const vehicleProfile = getVietMapVehicleProfile(vehicleType);
+
   try {
     const params = new URLSearchParams({
       apikey: VIETMAP_API_KEY,
-      vehicle: "car",
+      vehicle: vehicleProfile,
       points_encoded: "false",
       locale: "vi",
       time: getCurrentUtcIsoString(),
@@ -557,7 +576,7 @@ export async function getVietMapDirections(origin, destination) {
       const fallbackParams = new URLSearchParams({
         "api-version": "1.1",
         apikey: VIETMAP_API_KEY,
-        vehicle: "car",
+        vehicle: vehicleProfile,
         locale: "vi",
         points_encoded: "false",
       });
@@ -570,15 +589,15 @@ export async function getVietMapDirections(origin, destination) {
       const fallbackPayload = await fallbackResponse.json();
 
       if (!fallbackResponse.ok) {
-        return createApproximateRoute(origin, destination);
+        return createApproximateRoute(origin, destination, vehicleProfile);
       }
 
-      return mapVietMapRoute(fallbackPayload, origin, destination);
+      return mapVietMapRoute(fallbackPayload, origin, destination, vehicleProfile);
     }
 
-    return mapVietMapRoute(payload, origin, destination);
+    return mapVietMapRoute(payload, origin, destination, vehicleProfile);
   } catch {
-    return createApproximateRoute(origin, destination);
+    return createApproximateRoute(origin, destination, vehicleProfile);
   }
 }
 

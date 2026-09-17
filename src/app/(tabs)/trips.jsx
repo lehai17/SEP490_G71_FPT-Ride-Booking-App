@@ -1580,6 +1580,7 @@ export default function TripsScreen() {
 
                   <View style={styles.tripRight}>
                     <Pressable
+                      testID={`trips-${selectedTab}-primary-${index}`}
                       style={[
                         styles.outlineAction,
                         hasRated && selectedTab === "history" && styles.outlineActionDisabled,
@@ -1709,6 +1710,7 @@ export default function TripsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View
+            testID="trips-rating-modal"
             style={[
               styles.chatCard,
               { backgroundColor: theme.backgroundElement },
@@ -1816,6 +1818,7 @@ export default function TripsScreen() {
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <Pressable
+                  testID={`trips-rating-star-${star}`}
                   key={star}
                   style={styles.starButton}
                   onPress={() => setRatingDraft(star)}
@@ -1834,6 +1837,7 @@ export default function TripsScreen() {
             </View>
 
             <TextInput
+              testID="trips-rating-comment-input"
               multiline
               placeholder={"Nhận xét chuyến đi"}
               placeholderTextColor={MUTED}
@@ -1859,6 +1863,7 @@ export default function TripsScreen() {
                 <ThemedText type="smallBold">{"Hủy"}</ThemedText>
               </Pressable>
               <Pressable
+                testID="trips-rating-submit-button"
                 style={[
                   styles.modalPrimaryButton,
                   isSubmittingReview && styles.modalButtonDisabled,

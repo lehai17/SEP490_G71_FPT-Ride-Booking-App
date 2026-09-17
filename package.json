@@ -45,6 +45,9 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test:e2e": "playwright test",
+    "test:system": "playwright test e2e/system",
+    "test:system:headed": "playwright test e2e/system --headed",
+    "test:integration": "playwright test e2e/integration",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui"
   },

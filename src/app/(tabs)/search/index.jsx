@@ -31,6 +31,7 @@ import {
   getVietMapPlaceSuggestions as getMapPlaceSuggestions,
   getVietMapPlaceMapUrl as getMapPlaceMapUrl,
   getVietMapStaticMapUrl as getMapStaticMapUrl,
+  getVietMapVehicleProfile,
   reverseVietMapPlaceLocation as reverseMapPlaceLocation,
   isVietMapConfigured as isMapConfigured,
 } from "@/features/booking/services/vietmap-api";
@@ -2387,14 +2388,19 @@ export default function SearchScreen() {
     }
   };
 
-  const createVerifiedTripMap = async (origin, destination) => {
-    const directions = await getMapDirections(origin, destination);
-    const driverDirections = await getMapDirections(MOCK_DRIVER_POINT, origin);
+  const createVerifiedTripMap = async (
+    origin,
+    destination,
+    vehicleType = selectedRideOption.vehicleType
+  ) => {
+    const directions = await getMapDirections(origin, destination, vehicleType);
+    const driverDirections = await getMapDirections(MOCK_DRIVER_POINT, origin, vehicleType);
 
     return {
       origin,
       destination,
       driverOrigin: MOCK_DRIVER_POINT,
+      vehicleProfile: directions.vehicleProfile,
       directions,
       driverDirections,
       mapImageUrl: getMapStaticMapUrl({
@@ -2411,6 +2417,44 @@ export default function SearchScreen() {
         routeGeometry: driverDirections.routeGeometry,
       }),
     };
+  };
+
+  const selectRideOption = async (option) => {
+    setSelectedRideId(option.id);
+
+    if (
+      mode === "shared" ||
+      !["confirm", "rideOptions"].includes(bookingStep) ||
+      !verifiedTripMap?.origin ||
+      !verifiedTripMap?.destination
+    ) {
+      return;
+    }
+
+    const expectedVehicleProfile = getVietMapVehicleProfile(option.vehicleType);
+    const currentVehicleProfile =
+      verifiedTripMap.vehicleProfile ?? verifiedTripMap.directions?.vehicleProfile;
+
+    if (currentVehicleProfile === expectedVehicleProfile) {
+      return;
+    }
+
+    setIsVerifyingMap(true);
+
+    try {
+      const nextVerifiedTripMap = await createVerifiedTripMap(
+        verifiedTripMap.origin,
+        verifiedTripMap.destination,
+        option.vehicleType
+      );
+
+      setVerifiedTripMap(nextVerifiedTripMap);
+      setAlertMessage("");
+    } catch (error) {
+      setAlertMessage(error.message || "KhÃ´ng thá»ƒ cáº­p nháº­t tuyáº¿n Ä‘Æ°á»ng cho loáº¡i xe Ä‘ang chá»n.");
+    } finally {
+      setIsVerifyingMap(false);
+    }
   };
 
   const handleBookRideLegacy = async () => {
@@ -2494,8 +2538,22 @@ export default function SearchScreen() {
       return;
     }
 
+    if (isVerifyingMap) {
+      setAlertMessage("Tuyáº¿n Ä‘Æ°á»ng Ä‘ang Ä‘Æ°á»£c cáº­p nháº­t. Vui lÃ²ng Ä‘á»£i trong giÃ¢y lÃ¡t.");
+      return;
+    }
+
     if (!selectedRideOption) {
       setAlertMessage("Vui lòng chọn loại xe.");
+      return;
+    }
+
+    const expectedVehicleProfile = getVietMapVehicleProfile(selectedRideOption.vehicleType);
+    const currentVehicleProfile =
+      verifiedTripMap.vehicleProfile ?? verifiedTripMap.directions?.vehicleProfile;
+
+    if (currentVehicleProfile !== expectedVehicleProfile) {
+      setAlertMessage("Tuyáº¿n Ä‘Æ°á»ng chÆ°a khá»›p vá»›i loáº¡i xe Ä‘ang chá»n. Vui lÃ²ng chá»n láº¡i loáº¡i xe hoáº·c thá»­ láº¡i.");
       return;
     }
 
@@ -3105,7 +3163,7 @@ export default function SearchScreen() {
     let sharedDirections = null;
 
     try {
-      sharedDirections = await getMapDirections(pickupPlace, destinationPlace);
+      sharedDirections = await getMapDirections(pickupPlace, destinationPlace, 2);
     } catch {
       sharedDirections = null;
     }
@@ -3874,7 +3932,7 @@ export default function SearchScreen() {
                         { backgroundColor: theme.backgroundElement },
                         isSelected && styles.rideOptionActive,
                       ]}
-                      onPress={() => setSelectedRideId(option.id)}
+                      onPress={() => selectRideOption(option)}
                       >
                       <View>
                         <ThemedText type="smallBold" style={styles.rideOptionName}>
@@ -3892,9 +3950,12 @@ export default function SearchScreen() {
               )}
               <Pressable
                 testID="booking-book-button"
-                style={[styles.bookButton, isBookingRide && styles.bookButtonDisabled]}
+                style={[
+                  styles.bookButton,
+                  (isBookingRide || isVerifyingMap) && styles.bookButtonDisabled,
+                ]}
                 onPress={handleBookRide}
-                disabled={isBookingRide}
+                disabled={isBookingRide || isVerifyingMap}
               >
                 <ThemedText type="smallBold" style={styles.bookButtonText}>
                   {isBookingRide ? "Đang đặt..." : "Đặt xe"}
