@@ -5,7 +5,7 @@ const {
   requireCustomerCredentials,
   typeIntoInput,
   waitForAuthRestore,
-} = require("./helpers/customer-real-backend");
+} = require("../helpers/customer-real-backend");
 
 test("customer sees login validation when submitting empty form", async ({
   page,

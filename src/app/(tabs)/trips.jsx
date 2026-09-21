@@ -36,9 +36,11 @@ import {
 } from "@/features/booking/services/trip-api";
 import {
   createReview,
+  createTripReport,
   getDriverRatingSummary,
   getDriverReviews,
   getMyReviews,
+  getMyTripReports,
   getTripReviews,
 } from "@/features/trip-history/services/review-api";
 import { mapTripToHistoryItem } from "@/features/trip-history/utils/trip-history-mapper";
@@ -495,10 +497,13 @@ export default function TripsScreen() {
   const [driverReviewsById, setDriverReviewsById] = useState({});
   const [reportsByTripId, setReportsByTripId] = useState({});
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   useEffect(() => {
     if (params.tab === "history" || params.tab === "scheduled") {
-      setSelectedTab(params.tab);
+      Promise.resolve().then(() => {
+        setSelectedTab(params.tab);
+      });
     }
   }, [params.tab]);
 
@@ -576,11 +581,12 @@ export default function TripsScreen() {
         const localHistoryById = new Map(
           (localBookedTrips ?? []).map((trip) => [trip.id, trip])
         );
-        const [trips, myReviews] = await Promise.all([
+        const [trips, myReviews, myReports] = await Promise.all([
           role === "driver"
             ? getDriverTrips(session.accessToken)
             : getPassengerTrips(session.accessToken),
           role === "driver" ? Promise.resolve([]) : getMyReviews(session.accessToken),
+          role === "driver" ? Promise.resolve([]) : getMyTripReports(session.accessToken),
         ]);
 
         if (!isMounted) {
@@ -602,6 +608,22 @@ export default function TripsScreen() {
           : {};
 
         setRatingsByTripId(ratingsMap);
+
+        const reportsMap = Array.isArray(myReports)
+          ? myReports.reduce((accumulator, report) => {
+              if (report?.tripId) {
+                accumulator[report.tripId] = {
+                  reason: report.reason ?? "",
+                  submittedAt: report.createdAt,
+                  isResolved: Boolean(report.isResolved),
+                };
+              }
+
+              return accumulator;
+            }, {})
+          : {};
+
+        setReportsByTripId(reportsMap);
 
         const tripList = Array.isArray(trips) ? trips : [];
         const tripIds = tripList
@@ -995,12 +1017,12 @@ export default function TripsScreen() {
     }
   }
 
-  function handleSubmitReport() {
+  async function handleSubmitReport() {
     if (!requireLogin()) {
       return;
     }
 
-    if (!selectedTrip) {
+    if (!selectedTrip?.id || !session?.accessToken || isSubmittingReport) {
       return;
     }
 
@@ -1009,17 +1031,47 @@ export default function TripsScreen() {
       return;
     }
 
-    setReportsByTripId((current) => ({
-      ...current,
-      [selectedTrip.id]: {
-        reason: reportReason.trim(),
-        submittedAt: new Date().toISOString(),
-      },
-    }));
-    setReportModalVisible(false);
-    setSelectedTrip(null);
-    setReportReason("");
     setFormError("");
+    setIsSubmittingReport(true);
+
+    const payload = {
+      tripId: selectedTrip.id,
+      reason: reportReason.trim(),
+    };
+
+    try {
+      let reportResponse;
+
+      try {
+        reportResponse = await createTripReport(payload, session.accessToken);
+      } catch (error) {
+        if (error?.status !== 401) {
+          throw error;
+        }
+
+        const nextSession = await refreshSession();
+        reportResponse = await createTripReport(payload, nextSession.accessToken);
+      }
+
+      setReportsByTripId((current) => ({
+        ...current,
+        [selectedTrip.id]: {
+          reason: reportResponse?.reason ?? payload.reason,
+          submittedAt: reportResponse?.createdAt ?? new Date().toISOString(),
+          isResolved: Boolean(reportResponse?.isResolved),
+        },
+      }));
+      setReportModalVisible(false);
+      setSelectedTrip(null);
+      setReportReason("");
+      setFormError("");
+    } catch (error) {
+      setFormError(
+        error?.message || "Không thể gửi báo cáo. Vui lòng thử lại."
+      );
+    } finally {
+      setIsSubmittingReport(false);
+    }
   }
 
   function handleSendChatMessage() {
@@ -1580,6 +1632,7 @@ export default function TripsScreen() {
 
                   <View style={styles.tripRight}>
                     <Pressable
+                      testID={`trips-${selectedTab}-primary-${index}`}
                       style={[
                         styles.outlineAction,
                         hasRated && selectedTab === "history" && styles.outlineActionDisabled,
@@ -1709,6 +1762,7 @@ export default function TripsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View
+            testID="trips-rating-modal"
             style={[
               styles.chatCard,
               { backgroundColor: theme.backgroundElement },
@@ -1816,6 +1870,7 @@ export default function TripsScreen() {
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <Pressable
+                  testID={`trips-rating-star-${star}`}
                   key={star}
                   style={styles.starButton}
                   onPress={() => setRatingDraft(star)}
@@ -1834,6 +1889,7 @@ export default function TripsScreen() {
             </View>
 
             <TextInput
+              testID="trips-rating-comment-input"
               multiline
               placeholder={"Nhận xét chuyến đi"}
               placeholderTextColor={MUTED}
@@ -1859,6 +1915,7 @@ export default function TripsScreen() {
                 <ThemedText type="smallBold">{"Hủy"}</ThemedText>
               </Pressable>
               <Pressable
+                testID="trips-rating-submit-button"
                 style={[
                   styles.modalPrimaryButton,
                   isSubmittingReview && styles.modalButtonDisabled,
@@ -1937,9 +1994,16 @@ export default function TripsScreen() {
               >
                 <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
-              <Pressable style={styles.modalDangerButton} onPress={handleSubmitReport}>
+              <Pressable
+                style={[
+                  styles.modalDangerButton,
+                  isSubmittingReport && styles.modalButtonDisabled,
+                ]}
+                disabled={isSubmittingReport}
+                onPress={handleSubmitReport}
+              >
                 <ThemedText type="smallBold" style={styles.modalPrimaryButtonText}>
-                  Gửi báo cáo
+                  {isSubmittingReport ? "Đang gửi..." : "Gửi báo cáo"}
                 </ThemedText>
               </Pressable>
             </View>

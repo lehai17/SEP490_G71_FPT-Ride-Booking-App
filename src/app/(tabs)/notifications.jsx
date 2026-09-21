@@ -1,4 +1,13 @@
-import { FlatList, StyleSheet, View } from "react-native";
+import { useCallback } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  View,
+} from "react-native";
+import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
@@ -10,56 +19,256 @@ import {
   ScreenTitleStyle,
   Spacing,
 } from "@/constants/theme";
+import { useAuth } from "@/contexts/auth-context";
+import { useNotifications } from "@/contexts/notification-context";
 import { useTheme } from "@/hooks/use-theme";
+
+const TITLE_TRANSLATIONS = {
+  "Trip created": "Đã tạo chuyến",
+  "Scheduled trip created": "Đã đặt lịch chuyến",
+  "Trip cancelled": "Chuyến đi đã hủy",
+  "Looking for a driver": "Đang tìm tài xế",
+  "Driver accepted your trip": "Tài xế đã nhận chuyến",
+  "Driver has arrived": "Tài xế đã đến điểm đón",
+  "Trip started": "Chuyến đi đã bắt đầu",
+  "Trip completed": "Chuyến đi hoàn thành",
+  "Scheduled trip reminder": "Nhắc chuyến đặt lịch",
+  "No driver found": "Không tìm được tài xế",
+  "Ride sharing request created": "Đã tạo yêu cầu đi ghép",
+  "Ride sharing request cancelled": "Yêu cầu đi ghép đã hủy",
+  "Ride sharing group found": "Đã tìm được nhóm ghép",
+  "Joined ride sharing group": "Đã tham gia nhóm ghép",
+  "Left ride sharing group": "Đã rời nhóm ghép",
+  "Driver accepted shared ride": "Tài xế đã nhận chuyến ghép",
+  "Driver cancelled shared ride": "Tài xế đã hủy chuyến ghép",
+  "Shared ride cancelled": "Chuyến ghép đã hủy",
+  "Driver is heading to pickup": "Tài xế đang đến điểm đón",
+  "You have been picked up": "Bạn đã được đón",
+  "Shared ride started": "Chuyến ghép đã bắt đầu",
+  "Shared ride completed": "Chuyến ghép hoàn thành",
+};
+
+function getDisplayTitle(title) {
+  return TITLE_TRANSLATIONS[title] ?? title ?? "Thông báo";
+}
+
+function formatNotificationTime(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+
+  if (diffMinutes < 1) {
+    return "Vừa xong";
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes} phút`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+
+  if (diffHours < 24) {
+    return `${diffHours} giờ`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays < 7) {
+    return `${diffDays} ngày`;
+  }
+
+  return date.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
 
 export default function NotificationsScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
-  const items = [];
+  const { isAuthenticated } = useAuth();
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    isRefreshing,
+    error,
+    refreshNotifications,
+    markAsRead,
+  } = useNotifications();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated) {
+        void refreshNotifications({ silent: true });
+      }
+    }, [isAuthenticated, refreshNotifications])
+  );
+
+  const handleRefresh = useCallback(() => {
+    void refreshNotifications({ silent: true });
+  }, [refreshNotifications]);
+
+  const handlePressNotification = useCallback(
+    (notification) => {
+      if (!notification.isRead) {
+        void markAsRead(notification.id);
+      }
+    },
+    [markAsRead]
+  );
+
+  const renderNotification = useCallback(
+    ({ item }) => (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${getDisplayTitle(item.title)}. ${
+          item.isRead ? "Đã đọc" : "Chưa đọc"
+        }`}
+        onPress={() => handlePressNotification(item)}
+        style={({ pressed }) => [
+          styles.item,
+          {
+            backgroundColor: item.isRead ? "#FFFFFF" : "#FFF7ED",
+            borderColor: item.isRead ? "#E5E7EB" : "#FDBA74",
+            opacity: pressed ? 0.76 : 1,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.dot,
+            { opacity: item.isRead ? 0 : 1 },
+          ]}
+        />
+        <View style={styles.itemBody}>
+          <View style={styles.itemHeader}>
+            <ThemedText type="smallBold" style={styles.itemTitle}>
+              {getDisplayTitle(item.title)}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {formatNotificationTime(item.createdAt)}
+            </ThemedText>
+          </View>
+          <ThemedText type="small" themeColor="textSecondary">
+            {item.message}
+          </ThemedText>
+        </View>
+      </Pressable>
+    ),
+    [handlePressNotification]
+  );
 
   return (
     <ThemedView
       style={[styles.container, { backgroundColor: theme.background }]}
     >
       <View style={styles.content}>
-        <ThemedText type="default" style={styles.screenTitle}>
-          Thông báo
-        </ThemedText>
+        <View style={styles.header}>
+          <View>
+            <ThemedText type="default" style={styles.screenTitle}>
+              Thông báo
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {unreadCount > 0
+                ? `${unreadCount} thông báo chưa đọc`
+                : "Bạn đã đọc hết thông báo"}
+            </ThemedText>
+          </View>
+        </View>
+
         <FlatList
-          data={items}
+          data={notifications}
           keyExtractor={(item) => item.id}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor="#FF7A00"
+            />
+          }
           contentContainerStyle={{
             flexGrow: 1,
-            paddingTop: Spacing.two,
+            gap: Spacing.two,
+            paddingTop: Spacing.three,
             paddingBottom: safeAreaInsets.bottom + BottomTabInset + Spacing.four,
           }}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <ThemedText type="smallBold" style={styles.emptyTitle}>
-                Chưa có thông báo
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                Các cập nhật về chuyến đi sẽ xuất hiện tại đây.
-              </ThemedText>
-            </View>
+            <NotificationState
+              error={error}
+              isAuthenticated={isAuthenticated}
+              isLoading={isLoading}
+              onRetry={handleRefresh}
+            />
           }
-          renderItem={({ item }) => (
-            <View style={styles.item}>
-              <View style={styles.dot} />
-              <View style={{ flex: 1 }}>
-                <ThemedText type="smallBold">{item.title}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {item.body}
-                </ThemedText>
-              </View>
-              <ThemedText type="small" themeColor="textSecondary">
-                {item.date}
-              </ThemedText>
-            </View>
-          )}
+          renderItem={renderNotification}
         />
       </View>
     </ThemedView>
+  );
+}
+
+function NotificationState({ error, isAuthenticated, isLoading, onRetry }) {
+  if (isLoading) {
+    return (
+      <View style={styles.emptyState}>
+        <ActivityIndicator color="#FF7A00" />
+        <ThemedText type="small" themeColor="textSecondary">
+          Đang tải thông báo...
+        </ThemedText>
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.emptyState}>
+        <ThemedText type="smallBold" style={styles.emptyTitle}>
+          Cần đăng nhập
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          Đăng nhập để xem cập nhật về chuyến đi của bạn.
+        </ThemedText>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.emptyState}>
+        <ThemedText type="smallBold" style={styles.emptyTitle}>
+          Chưa tải được thông báo
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {error}
+        </ThemedText>
+        <Pressable onPress={onRetry} style={styles.retryButton}>
+          <ThemedText type="smallBold" style={styles.retryButtonText}>
+            Thử lại
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.emptyState}>
+      <ThemedText type="smallBold" style={styles.emptyTitle}>
+        Chưa có thông báo
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Các cập nhật về chuyến đi sẽ xuất hiện tại đây.
+      </ThemedText>
+    </View>
   );
 }
 
@@ -73,6 +282,13 @@ const styles = StyleSheet.create({
     paddingTop: ScreenHeaderTop,
     maxWidth: MaxContentWidth,
     width: "100%",
+    alignSelf: "center",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.three,
   },
   screenTitle: {
     ...ScreenTitleStyle,
@@ -86,21 +302,48 @@ const styles = StyleSheet.create({
     borderColor: "#D8DDE6",
     backgroundColor: "#FFFFFF",
     gap: Spacing.one,
+    alignItems: "flex-start",
   },
   emptyTitle: {
     color: "#374151",
   },
+  retryButton: {
+    marginTop: Spacing.one,
+    borderRadius: 999,
+    backgroundColor: "#FF7A00",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+  },
   item: {
     flexDirection: "row",
-    gap: Spacing.three,
-    paddingVertical: Spacing.two,
-    alignItems: "center",
+    gap: Spacing.two,
+    padding: Spacing.three,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "flex-start",
   },
   dot: {
     width: 10,
     height: 10,
-    borderRadius: 6,
+    borderRadius: 5,
     backgroundColor: "#FF7A00",
-    marginRight: Spacing.two,
+    marginTop: 5,
+  },
+  itemBody: {
+    flex: 1,
+    gap: Spacing.one,
+  },
+  itemHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  itemTitle: {
+    flex: 1,
+    color: "#111827",
   },
 });

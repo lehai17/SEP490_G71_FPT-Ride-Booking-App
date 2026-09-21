@@ -17,8 +17,8 @@ function requireCustomerCredentials(test) {
   return { email, password };
 }
 
-async function createCustomerSession(test, request) {
-  const { email, password } = requireCustomerCredentials(test);
+async function createCustomerSession(test, request, credentials = null) {
+  const { email, password } = credentials ?? requireCustomerCredentials(test);
 
   const loginResponse = await request.post(`${API_BASE_URL}/auth/login`, {
     data: { email, password },
@@ -109,10 +109,10 @@ async function cancelTripByApi(request, tripId, accessToken) {
 
 async function cancelRideSharingByApi(request, requestId, accessToken) {
   if (!requestId) {
-    return;
+    return null;
   }
 
-  await request.post(`${API_BASE_URL}/ride-sharing/requests/${requestId}/cancel`, {
+  return request.post(`${API_BASE_URL}/ride-sharing/requests/${requestId}/cancel`, {
     data: { cancelReason: 4 },
     headers: { Authorization: `Bearer ${accessToken}` },
   });
