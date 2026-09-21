@@ -2,10 +2,21 @@ import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { useColorScheme } from "react-native";
 
 import { Colors } from "@/constants/theme";
+import { useNotifications } from "@/contexts/notification-context";
+
+function formatBadgeCount(count) {
+  if (!count) {
+    return "";
+  }
+
+  return count > 99 ? "99+" : String(count);
+}
 
 export default function AppTabs() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === "unspecified" ? "light" : scheme];
+  const { unreadCount } = useNotifications();
+  const notificationBadge = formatBadgeCount(unreadCount);
 
   return (
     <NativeTabs
@@ -23,10 +34,7 @@ export default function AppTabs() {
 
       <NativeTabs.Trigger name="search">
         <NativeTabs.Trigger.Label>Tìm xe</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf="magnifyingglass"
-          md="search"
-        />
+        <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="trips">
@@ -43,6 +51,9 @@ export default function AppTabs() {
           sf={{ default: "bell", selected: "bell.fill" }}
           md={{ default: "notifications", selected: "notifications_active" }}
         />
+        <NativeTabs.Trigger.Badge hidden={!notificationBadge}>
+          {notificationBadge}
+        </NativeTabs.Trigger.Badge>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="profile">

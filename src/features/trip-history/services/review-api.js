@@ -41,3 +41,18 @@ export function getDriverRatingSummary(driverId, accessToken) {
     headers: getAuthHeaders(accessToken),
   });
 }
+
+export function createTripReport(payload, accessToken) {
+  return apiRequest("/reports", {
+    method: "POST",
+    headers: getAuthHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getMyTripReports(accessToken) {
+  return apiRequest("/reports/my", {
+    method: "GET",
+    headers: getAuthHeaders(accessToken),
+  });
+}

@@ -11,6 +11,7 @@ import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useNotifications } from '@/contexts/notification-context';
 
 const webTabs = [
   {
@@ -46,6 +47,8 @@ const webTabs = [
 ];
 
 export default function AppTabs() {
+  const { unreadCount } = useNotifications();
+
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
@@ -53,7 +56,9 @@ export default function AppTabs() {
         <CustomTabList>
           {webTabs.map((tab) => (
             <TabTrigger key={tab.name} name={tab.name} href={tab.href} asChild>
-              <TabButton icon={tab.icon}>{tab.label}</TabButton>
+              <TabButton icon={tab.icon} badgeCount={tab.name === 'notifications' ? unreadCount : 0}>
+                {tab.label}
+              </TabButton>
             </TabTrigger>
           ))}
         </CustomTabList>
@@ -62,17 +67,27 @@ export default function AppTabs() {
   );
 }
 
-export function TabButton({ children, icon, isFocused, ...props }) {
+export function TabButton({ children, icon, isFocused, badgeCount = 0, ...props }) {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
   const tintColor = isFocused ? colors.text : colors.textSecondary;
+  const badgeText = badgeCount > 99 ? '99+' : String(badgeCount || '');
 
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
         style={styles.tabButtonView}>
-        <SymbolView tintColor={tintColor} name={icon} size={17} />
+        <View style={styles.iconWrap}>
+          <SymbolView tintColor={tintColor} name={icon} size={17} />
+          {Boolean(badgeText) && (
+            <View style={styles.badge}>
+              <ThemedText type="smallBold" style={styles.badgeText}>
+                {badgeText}
+              </ThemedText>
+            </View>
+          )}
+        </View>
         <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
           {children}
         </ThemedText>
@@ -127,5 +142,29 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.three,
+  },
+  iconWrap: {
+    position: 'relative',
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: -8,
+    right: -12,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF7A00',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    lineHeight: 12,
   },
 });
