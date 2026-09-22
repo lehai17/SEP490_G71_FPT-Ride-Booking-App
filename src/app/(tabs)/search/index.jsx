@@ -54,6 +54,7 @@ import {
   getMyRideSharingRequest,
   getRideSharingGroup,
   getRideSharingRequest,
+  joinRideSharingGroup,
 } from "@/features/ride-sharing/services/ride-sharing-api";
 import {
   loadStoredRideSharingCards,
@@ -578,6 +579,10 @@ function mapRideSharingGroupToCard(group, { previewJoinFare = false } = {}) {
     firstMember.destinationAddress ||
     group.destinationAddress ||
     "Điểm đến";
+  const destinationLatitude =
+    firstMember.destinationLatitude ?? group.destinationLatitude ?? null;
+  const destinationLongitude =
+    firstMember.destinationLongitude ?? group.destinationLongitude ?? null;
   const baseFare = calculateAverageGroupFare(members, group.finalFare);
   const fare = previewJoinFare
     ? calculateProjectedJoinFare(
@@ -606,12 +611,16 @@ function mapRideSharingGroupToCard(group, { previewJoinFare = false } = {}) {
     statusLabel: normalizeSharedStatusLabelClean(groupStatus),
     driver: group.driverName || "Chưa có tài xế",
     destination,
+    destinationLatitude,
+    destinationLongitude,
+    destinationAddress: destination,
     participantCount: group.currentPassengers ?? members.length,
     capacity: group.maxPassengers ?? 3,
     perPersonPrice: formatCurrencyVnd(fare),
     priceLabel: previewJoinFare ? "Giá khi tham gia" : "Giá mỗi người",
     createdAt: group.createdAt,
     canCancel: false,
+    rawGroup: group,
   };
 }
 
@@ -973,6 +982,28 @@ async function refreshStoredRideSharingCard(card, accessToken) {
   return card;
 }
 
+async function getRideSharingGroupForRequest(request, currentGroup, accessToken) {
+  const requestGroupId = String(request?.groupId ?? "").trim();
+  const currentGroupId = String(currentGroup?.id ?? "").trim();
+
+  if (!requestGroupId || !accessToken) {
+    return currentGroup ?? null;
+  }
+
+  if (
+    currentGroup &&
+    currentGroupId.toLowerCase() === requestGroupId.toLowerCase()
+  ) {
+    return currentGroup;
+  }
+
+  try {
+    return await getRideSharingGroup(requestGroupId, accessToken);
+  } catch {
+    return currentGroup ?? null;
+  }
+}
+
 async function refreshStoredRideSharingCards(cards, accessToken) {
   const storedCards = (cards ?? []).filter(Boolean).slice(0, 50);
 
@@ -1172,7 +1203,10 @@ function mapAvailableRideSharingGroupToCard(group) {
     groupStatus: group.status,
     statusLabel: normalizeSharedStatusLabelClean(group.status),
     driver: "Chưa có tài xế",
-    destination: scheduleText,
+    destination: group.destinationAddress || scheduleText,
+    destinationLatitude: group.destinationLatitude ?? null,
+    destinationLongitude: group.destinationLongitude ?? null,
+    destinationAddress: group.destinationAddress || "",
     participantCount,
     capacity,
     perPersonPrice: "--",
@@ -1180,6 +1214,78 @@ function mapAvailableRideSharingGroupToCard(group) {
     availableSeats,
     rawGroup: group,
   };
+}
+
+function getRideSharingJoinErrorMessage(error) {
+  const rawMessage =
+    error?.payload?.message ||
+    error?.payload?.detail ||
+    error?.payload?.title ||
+    error?.payload?.error ||
+    error?.message ||
+    "";
+  const cleanedMessage = String(rawMessage)
+    .replace(/^HTTP\s+\d+\s+\/ride-sharing\/groups\/[^:]+\/join:\s*/i, "")
+    .trim();
+
+  return (
+    cleanedMessage ||
+    "Không đủ điều kiện tham gia nhóm xe ghép. Vui lòng thử nhóm khác."
+  );
+}
+
+function getJoinDestinationFromGroupCard(groupCard) {
+  const rawGroup = groupCard?.rawGroup ?? {};
+  const groupLatitude = Number(
+    rawGroup.destinationLatitude ?? groupCard?.destinationLatitude
+  );
+  const groupLongitude = Number(
+    rawGroup.destinationLongitude ?? groupCard?.destinationLongitude
+  );
+
+  if (Number.isFinite(groupLatitude) && Number.isFinite(groupLongitude)) {
+    return {
+      formattedAddress:
+        rawGroup.destinationAddress ||
+        groupCard?.destinationAddress ||
+        groupCard?.destination ||
+        "Điểm đến nhóm xe ghép",
+      location: {
+        lat: groupLatitude,
+        lng: groupLongitude,
+      },
+    };
+  }
+
+  const members = Array.isArray(rawGroup.members) ? rawGroup.members : [];
+  const destinationMember = members.find((member) => {
+    const latitude = Number(member?.destinationLatitude);
+    const longitude = Number(member?.destinationLongitude);
+    return Number.isFinite(latitude) && Number.isFinite(longitude);
+  });
+
+  if (destinationMember) {
+    return {
+      formattedAddress:
+        destinationMember.destinationAddress ||
+        groupCard?.destination ||
+        "Điểm đến nhóm xe ghép",
+      location: {
+        lat: Number(destinationMember.destinationLatitude),
+        lng: Number(destinationMember.destinationLongitude),
+      },
+    };
+  }
+
+  const groupDirection = String(
+    rawGroup.direction ?? groupCard?.rawGroup?.Direction ?? ""
+  ).toLowerCase();
+
+  if (Number(rawGroup.direction) === 1 || groupDirection === "outbound") {
+    return FPT_HOLA_PLACE;
+  }
+
+  return null;
 }
 
 const initialSavedAddresses = [
@@ -1407,6 +1513,7 @@ export default function SearchScreen() {
   const fromInputRef = useRef(null);
   const toInputRef = useRef(null);
   const sharedLocationPickedRef = useRef("");
+  const joinSharedLocationPickedRef = useRef("");
   const sharedRefreshSequenceRef = useRef(0);
   const hasEditedFromInputRef = useRef(false);
   const [isVerifyingMap, setIsVerifyingMap] = useState(false);
@@ -1440,6 +1547,13 @@ export default function SearchScreen() {
   const [sharedLocationLoading, setSharedLocationLoading] = useState(false);
   const [sharedLocationError, setSharedLocationError] = useState("");
   const [selectedSharedPlace, setSelectedSharedPlace] = useState(null);
+  const [joinSharedGroup, setJoinSharedGroup] = useState(null);
+  const [joinSharedPickup, setJoinSharedPickup] = useState("");
+  const [joinSharedPlace, setJoinSharedPlace] = useState(null);
+  const [joinSharedSuggestions, setJoinSharedSuggestions] = useState([]);
+  const [joinSharedLocationLoading, setJoinSharedLocationLoading] = useState(false);
+  const [joinSharedError, setJoinSharedError] = useState("");
+  const [isJoiningSharedGroup, setIsJoiningSharedGroup] = useState(false);
   const [isLoadingSharedState, setIsLoadingSharedState] = useState(false);
   const [isCreatingSharedRequest, setIsCreatingSharedRequest] = useState(false);
   const [cancellingSharedRequestId, setCancellingSharedRequestId] = useState("");
@@ -1545,30 +1659,43 @@ export default function SearchScreen() {
       }
 
       try {
-        const direction =
-          sharedDirectionByTripType[sharedForm.tripType] ??
-          sharedDirectionByTripType[sharedTripTypes[0]];
-
         const [
           requestResult,
           groupResult,
-          availableGroupsResult,
+          outboundGroupsResult,
+          inboundGroupsResult,
           storedCardsResult,
         ] =
           await Promise.allSettled([
           getMyRideSharingRequest(session.accessToken),
           getMyRideSharingGroup(session.accessToken),
-          getAvailableRideSharingGroups(direction, session.accessToken),
+          getAvailableRideSharingGroups(1, session.accessToken),
+          getAvailableRideSharingGroups(2, session.accessToken),
           loadStoredRideSharingCards(session.userId),
         ]);
 
         const request =
           requestResult.status === "fulfilled" ? requestResult.value : null;
-        const group = groupResult.status === "fulfilled" ? groupResult.value : null;
-        const availableGroups =
-          availableGroupsResult.status === "fulfilled"
-            ? availableGroupsResult.value
-            : [];
+        const group =
+          groupResult.status === "fulfilled" ? groupResult.value : null;
+        const requestGroup = await getRideSharingGroupForRequest(
+          request,
+          group,
+          session.accessToken
+        );
+        const availableGroups = [
+          ...(outboundGroupsResult.status === "fulfilled"
+            ? outboundGroupsResult.value
+            : []),
+          ...(inboundGroupsResult.status === "fulfilled"
+            ? inboundGroupsResult.value
+            : []),
+        ].filter(
+          (group, index, groups) =>
+            group?.id &&
+            groups.findIndex((item) => String(item?.id) === String(group.id)) ===
+              index
+        );
         const storedCards =
           storedCardsResult.status === "fulfilled"
             ? storedCardsResult.value.filter((card) =>
@@ -1583,17 +1710,24 @@ export default function SearchScreen() {
             getRideSharingGroup(item.id, session.accessToken)
           )
         );
-        const mappedRequest = mapRideSharingRequestToCardClean(request, group);
-        const mappedGroup = mapRideSharingGroupToCard(group);
-        const currentGroupId = String(group?.id ?? request?.groupId ?? "").toLowerCase();
+        const mappedRequest = mapRideSharingRequestToCardClean(
+          request,
+          requestGroup
+        );
+        const mappedGroup = mapRideSharingGroupToCard(requestGroup);
+        const currentGroupId = String(
+          requestGroup?.id ?? request?.groupId ?? ""
+        ).toLowerCase();
         const mappedAvailableGroups = availableGroups
           .map((item, index) => {
             const detailedGroup = availableGroupDetails[index];
 
             if (detailedGroup?.status === "fulfilled" && detailedGroup.value?.id) {
-              return mapRideSharingGroupToCard(detailedGroup.value, {
-                previewJoinFare: true,
-              });
+              return (
+                mapRideSharingGroupToCard(detailedGroup.value, {
+                  previewJoinFare: true,
+                }) ?? mapAvailableRideSharingGroupToCard(item)
+              );
             }
 
             return mapAvailableRideSharingGroupToCard(item);
@@ -1637,7 +1771,7 @@ export default function SearchScreen() {
         }
       }
     },
-    [mode, session?.accessToken, session?.userId, sharedForm.tripType]
+    [mode, session?.accessToken, session?.userId]
   );
 
   useEffect(() => {
@@ -1882,6 +2016,63 @@ export default function SearchScreen() {
       clearTimeout(timeoutId);
     };
   }, [createSharedVisible, sharedForm.location]);
+
+  useEffect(() => {
+    if (!joinSharedGroup) {
+      return undefined;
+    }
+
+    const query = joinSharedPickup.trim();
+
+    if (query && query === joinSharedLocationPickedRef.current) {
+      return undefined;
+    }
+
+    if (query.length < 2) {
+      setJoinSharedSuggestions([]);
+      setJoinSharedError("");
+      setJoinSharedLocationLoading(false);
+      return undefined;
+    }
+
+    let isActive = true;
+    const timeoutId = setTimeout(async () => {
+      if (!isMapConfigured()) {
+        return;
+      }
+
+      setJoinSharedLocationLoading(true);
+
+      try {
+        const suggestions = await getMapPlaceSuggestions(query);
+
+        if (isActive) {
+          setJoinSharedSuggestions(suggestions);
+          setJoinSharedError(
+            suggestions.length
+              ? ""
+              : "Chưa có gợi ý phù hợp, thử nhập rõ hơn tên đường/quận."
+          );
+        }
+      } catch (error) {
+        if (isActive) {
+          setJoinSharedSuggestions([]);
+          setJoinSharedError(
+            error.message || "Không tải được gợi ý. Kiểm tra API bản đồ trong VietMap."
+          );
+        }
+      } finally {
+        if (isActive) {
+          setJoinSharedLocationLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
+  }, [joinSharedGroup, joinSharedPickup]);
 
   useEffect(() => {
     if (mode !== "shared" || !session?.accessToken) {
@@ -3096,6 +3287,210 @@ export default function SearchScreen() {
     }
   };
 
+  const closeJoinSharedModal = () => {
+    if (isJoiningSharedGroup) {
+      return;
+    }
+
+    setJoinSharedGroup(null);
+    setJoinSharedPickup("");
+    setJoinSharedPlace(null);
+    setJoinSharedSuggestions([]);
+    setJoinSharedLocationLoading(false);
+    setJoinSharedError("");
+    joinSharedLocationPickedRef.current = "";
+  };
+
+  const openJoinSharedModal = (groupCard) => {
+    if (!requireLogin()) {
+      return;
+    }
+
+    setJoinSharedGroup(groupCard);
+    setJoinSharedPickup("");
+    setJoinSharedPlace(null);
+    setJoinSharedSuggestions([]);
+    setJoinSharedLocationLoading(false);
+    setJoinSharedError("");
+    joinSharedLocationPickedRef.current = "";
+  };
+
+  const updateJoinSharedPickup = (value) => {
+    setJoinSharedPickup(value);
+    setJoinSharedError("");
+
+    if (value.trim() !== joinSharedLocationPickedRef.current) {
+      joinSharedLocationPickedRef.current = "";
+      setJoinSharedPlace(null);
+    }
+  };
+
+  const clearJoinSharedPickup = () => {
+    joinSharedLocationPickedRef.current = "";
+    setJoinSharedPickup("");
+    setJoinSharedPlace(null);
+    setJoinSharedSuggestions([]);
+    setJoinSharedError("");
+  };
+
+  const selectJoinSharedLocationSuggestion = async (suggestion) => {
+    const formattedAddress =
+      suggestion.formattedAddress || suggestion.description || suggestion.mainText || "";
+
+    setJoinSharedLocationLoading(true);
+
+    try {
+      const resolvedPlace = suggestion.location
+        ? suggestion
+        : await getMapPlaceDetails(suggestion.refId || suggestion.placeId);
+
+      const resolvedAddress =
+        resolvedPlace.formattedAddress ||
+        resolvedPlace.description ||
+        resolvedPlace.mainText ||
+        formattedAddress;
+
+      joinSharedLocationPickedRef.current = resolvedAddress.trim();
+      setJoinSharedPlace({
+        ...resolvedPlace,
+        formattedAddress: resolvedAddress,
+      });
+      setJoinSharedPickup(resolvedAddress);
+      setJoinSharedSuggestions([]);
+      setJoinSharedError("");
+    } catch (error) {
+      setJoinSharedPlace(null);
+      setJoinSharedError(
+        error.message || "Không thể lấy tọa độ điểm đón từ VietMap."
+      );
+    } finally {
+      setJoinSharedLocationLoading(false);
+    }
+  };
+
+  const joinSuggestedSharedGroup = async () => {
+    if (!requireLogin() || !joinSharedGroup?.groupId || isJoiningSharedGroup) {
+      return;
+    }
+
+    if (!joinSharedPickup.trim()) {
+      setJoinSharedError("Vui lòng nhập điểm đón.");
+      return;
+    }
+
+    if (!joinSharedPlace?.location) {
+      setJoinSharedError("Vui lòng chọn điểm đón từ gợi ý VietMap.");
+      return;
+    }
+
+    const destinationPlace = getJoinDestinationFromGroupCard(joinSharedGroup);
+    if (!destinationPlace?.location) {
+      setJoinSharedError(
+        "Không xác định được điểm đến của nhóm xe ghép. Vui lòng xem chi tiết nhóm và thử lại."
+      );
+      return;
+    }
+
+    setIsJoiningSharedGroup(true);
+    setJoinSharedError("");
+
+    try {
+      const activeRequest = await getMyRideSharingRequest(
+        session.accessToken
+      ).catch((error) => {
+        if (error?.status === 404) {
+          return null;
+        }
+
+        throw error;
+      });
+
+      if (activeRequest && isSharedRideActive(activeRequest.status)) {
+        setJoinSharedError(
+          "Bạn đang có yêu cầu xe ghép đang hoạt động. Vui lòng hủy yêu cầu hiện tại trước khi tham gia nhóm khác."
+        );
+        return;
+      }
+
+      let joinDirections = null;
+      try {
+        joinDirections = await getMapDirections(
+          joinSharedPlace,
+          destinationPlace,
+          2
+        );
+      } catch {
+        joinDirections = null;
+      }
+
+      const routeMetrics =
+        getBackendTripMetrics({
+          origin: joinSharedPlace,
+          destination: destinationPlace,
+          directions: joinDirections,
+        }) ?? {
+          distanceKm: Math.max(
+            calculateBackendDistanceKm(joinSharedPlace, destinationPlace),
+            MIN_BOOKING_DISTANCE_KM
+          ),
+          durationMinute: 1,
+        };
+
+      const minimumDistanceValidationMessage = getMinimumDistanceValidationMessage(
+        joinSharedPlace,
+        destinationPlace,
+        routeMetrics
+      );
+
+      if (minimumDistanceValidationMessage) {
+        setJoinSharedError(minimumDistanceValidationMessage);
+        return;
+      }
+
+      const joinedGroup = await joinRideSharingGroup(
+        joinSharedGroup.groupId,
+        {
+          pickupLatitude: Number(joinSharedPlace.location.lat),
+          pickupLongitude: Number(joinSharedPlace.location.lng),
+          pickupAddress:
+            joinSharedPlace.formattedAddress || joinSharedPickup.trim(),
+          destinationLatitude: Number(destinationPlace.location.lat),
+          destinationLongitude: Number(destinationPlace.location.lng),
+          destinationAddress:
+            destinationPlace.formattedAddress || "Điểm đến nhóm xe ghép",
+          estimatedDistanceKm: Number(routeMetrics.distanceKm.toFixed(2)),
+          estimatedDurationMinutes: Math.max(
+            1,
+            Math.round(routeMetrics.durationMinute)
+          ),
+        },
+        session.accessToken
+      );
+
+      const mappedGroup = mapRideSharingGroupToCard(joinedGroup);
+      if (mappedGroup) {
+        setPendingSharedRequests((current) =>
+          mergeSharedRequestCards([mappedGroup], current)
+        );
+        persistRideSharingCards([mappedGroup], session.userId).catch(() => {});
+      }
+
+      setAvailableSharedGroups((current) =>
+        current.filter((group) => group.groupId !== joinSharedGroup.groupId)
+      );
+      setJoinSharedGroup(null);
+      setJoinSharedPickup("");
+      setJoinSharedPlace(null);
+      setJoinSharedSuggestions([]);
+      joinSharedLocationPickedRef.current = "";
+      await refreshSharedState();
+    } catch (error) {
+      setJoinSharedError(getRideSharingJoinErrorMessage(error));
+    } finally {
+      setIsJoiningSharedGroup(false);
+    }
+  };
+
   const closeCreateSharedModal = () => {
     setCreateSharedVisible(false);
     setOpenSharedDropdown("");
@@ -3243,8 +3638,13 @@ export default function SearchScreen() {
       logRideSharingCreateDebug("latest active request", latestActiveRequest);
 
       if (latestActiveRequest && isSharedRideActive(latestActiveRequest.status)) {
-        const latestGroup = await getMyRideSharingGroup(session.accessToken).catch(
-          () => null
+        const latestMyGroup = await getMyRideSharingGroup(
+          session.accessToken
+        ).catch(() => null);
+        const latestGroup = await getRideSharingGroupForRequest(
+          latestActiveRequest,
+          latestMyGroup,
+          session.accessToken
         );
         logRideSharingCreateDebug("latest active group", latestGroup);
 
@@ -3300,8 +3700,13 @@ export default function SearchScreen() {
         }
       }
 
-      const latestGroup = await getMyRideSharingGroup(session.accessToken).catch(
+      const latestMyGroup = await getMyRideSharingGroup(session.accessToken).catch(
         () => null
+      );
+      const latestGroup = await getRideSharingGroupForRequest(
+        latestRequest,
+        latestMyGroup,
+        session.accessToken
       );
       const mappedRequest = mapRideSharingRequestToCardClean(
         latestRequest,
@@ -4645,11 +5050,7 @@ export default function SearchScreen() {
                       <Pressable
                         testID={`ride-sharing-suggested-join-${index}`}
                         style={styles.suggestedGroupPrimaryButton}
-                        onPress={() => {
-                          if (requireLogin()) {
-                            router.push(`/search/shared-ride/${ride.id}`);
-                          }
-                        }}
+                        onPress={() => openJoinSharedModal(ride)}
                       >
                         <ThemedText
                           type="smallBold"
@@ -4906,6 +5307,167 @@ export default function SearchScreen() {
                     {"Xác nhận"}
                   </ThemedText>
           </Pressable>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(joinSharedGroup)}
+        transparent
+        animationType="fade"
+        onRequestClose={closeJoinSharedModal}
+      >
+        <View style={styles.createSharedOverlay}>
+          <View testID="ride-sharing-join-modal" style={styles.createSharedCard}>
+            <View style={styles.createSharedHeader}>
+              <ThemedText type="default" style={styles.createSharedTitle}>
+                {"Tham gia nhóm xe ghép"}
+              </ThemedText>
+              <Pressable
+                style={styles.createSharedClose}
+                onPress={closeJoinSharedModal}
+                disabled={isJoiningSharedGroup}
+              >
+                <ThemedText type="default" style={styles.createSharedCloseText}>
+                  {"x"}
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.createSharedBody}
+              contentContainerStyle={styles.createSharedBodyContent}
+              showsVerticalScrollIndicator
+            >
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  {"Nhóm đã chọn"}
+                </ThemedText>
+                <View style={styles.joinGroupSummary}>
+                  <ThemedText type="smallBold" style={styles.joinGroupSummaryTitle}>
+                    {joinSharedGroup?.route || "Nhóm xe ghép"}
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.joinGroupSummaryMeta}>
+                    {joinSharedGroup?.scheduleText || "Chưa có lịch"}{" • "}
+                    {joinSharedGroup?.seats || "--"}
+                  </ThemedText>
+                </View>
+              </View>
+
+              <View style={styles.createField}>
+                <ThemedText type="small" style={styles.createLabel}>
+                  {"Điểm đón của bạn"}
+                  <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
+                </ThemedText>
+                <View style={styles.createLocationInputWrap}>
+                  <TextInput
+                    testID="ride-sharing-join-location-input"
+                    {...vietnameseTextInputProps}
+                    placeholder="Nhập điểm đón để kiểm tra điều kiện tham gia"
+                    placeholderTextColor="#A1A1AA"
+                    style={styles.createInput}
+                    value={joinSharedPickup}
+                    onChangeText={updateJoinSharedPickup}
+                  />
+                  {Boolean(joinSharedPickup) && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Xóa điểm đón"
+                      style={styles.createInputClearButton}
+                      onPress={clearJoinSharedPickup}
+                    >
+                      <ThemedText type="smallBold" style={styles.createInputClearText}>
+                        {"×"}
+                      </ThemedText>
+                    </Pressable>
+                  )}
+                </View>
+
+                {(joinSharedLocationLoading ||
+                  joinSharedError ||
+                  joinSharedSuggestions.length > 0) && (
+                  <View style={styles.sharedSuggestionCard}>
+                    {joinSharedLocationLoading ? (
+                      <ThemedText type="small" style={styles.suggestionLoading}>
+                        {"Đang tải gợi ý..."}
+                      </ThemedText>
+                    ) : joinSharedSuggestions.length > 0 ? (
+                      joinSharedSuggestions.map((suggestion, index) => (
+                        <Pressable
+                          testID={`ride-sharing-join-location-suggestion-${index}`}
+                          key={suggestion.placeId || suggestion.description}
+                          style={styles.suggestionItem}
+                          onPress={() => selectJoinSharedLocationSuggestion(suggestion)}
+                        >
+                          <View style={styles.suggestionIcon}>
+                            <ThemedText type="smallBold" style={styles.suggestionIconText}>
+                              {"•"}
+                            </ThemedText>
+                          </View>
+                          <View style={styles.suggestionContent}>
+                            <ThemedText
+                              type="smallBold"
+                              style={styles.suggestionTitle}
+                              numberOfLines={1}
+                            >
+                              {suggestion.mainText || suggestion.description}
+                            </ThemedText>
+                            <ThemedText
+                              type="small"
+                              style={styles.suggestionSubtitle}
+                              numberOfLines={2}
+                            >
+                              {suggestion.secondaryText ||
+                                suggestion.formattedAddress ||
+                                suggestion.description}
+                            </ThemedText>
+                          </View>
+                        </Pressable>
+                      ))
+                    ) : (
+                      <ThemedText type="small" style={styles.suggestionError}>
+                        {joinSharedError}
+                      </ThemedText>
+                    )}
+                  </View>
+                )}
+              </View>
+
+              {Boolean(joinSharedError) && joinSharedSuggestions.length > 0 && (
+                <ThemedText
+                  testID="ride-sharing-join-error"
+                  type="smallBold"
+                  style={styles.createError}
+                >
+                  {joinSharedError}
+                </ThemedText>
+              )}
+            </ScrollView>
+
+            <View style={styles.createSharedFooter}>
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={closeJoinSharedModal}
+                disabled={isJoiningSharedGroup}
+              >
+                <ThemedText type="smallBold" style={styles.secondaryButtonText}>
+                  {"Đóng"}
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                testID="ride-sharing-join-submit-button"
+                style={[
+                  styles.primaryButton,
+                  isJoiningSharedGroup && styles.buttonDisabled,
+                ]}
+                onPress={joinSuggestedSharedGroup}
+                disabled={isJoiningSharedGroup}
+              >
+                <ThemedText type="smallBold" style={styles.primaryButtonText}>
+                  {isJoiningSharedGroup ? "Đang kiểm tra..." : "Kiểm tra và tham gia"}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -5583,7 +6145,15 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 16,
   },
+  suggestionTitle: {
+    color: "#111827",
+    fontSize: 15,
+  },
   suggestionSecondaryText: {
+    color: "#6B7280",
+    lineHeight: 18,
+  },
+  suggestionSubtitle: {
     color: "#6B7280",
     lineHeight: 18,
   },
@@ -5930,8 +6500,30 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     gap: Spacing.three,
   },
+  createSharedFooter: {
+    padding: Spacing.three,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
   createField: {
     gap: Spacing.one,
+  },
+  joinGroupSummary: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    gap: 4,
+  },
+  joinGroupSummaryTitle: {
+    color: "#111827",
+  },
+  joinGroupSummaryMeta: {
+    color: "#7C2D12",
   },
   createLabel: {
     color: "#4B5563",

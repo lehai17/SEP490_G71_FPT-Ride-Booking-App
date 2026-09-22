@@ -29,6 +29,7 @@ function getErrorMessage(payload, fallbackMessage) {
 
   return (
     payload?.message ||
+    payload?.detail ||
     payload?.title ||
     payload?.error ||
     fallbackMessage

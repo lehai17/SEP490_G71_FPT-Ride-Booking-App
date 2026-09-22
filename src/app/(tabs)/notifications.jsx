@@ -52,6 +52,68 @@ function getDisplayTitle(title) {
   return TITLE_TRANSLATIONS[title] ?? title ?? "Thông báo";
 }
 
+const MESSAGE_TRANSLATIONS = {
+  "Ride sharing request created":
+    "Yêu cầu đi ghép đã được tạo. Hệ thống đang tìm nhóm phù hợp cho bạn.",
+  "Ride sharing request cancelled": "Yêu cầu đi ghép của bạn đã được hủy.",
+  "Ride sharing group found":
+    "Yêu cầu đi ghép của bạn đã được ghép vào một nhóm phù hợp.",
+  "Joined ride sharing group": "Bạn đã tham gia nhóm xe ghép thành công.",
+  "Left ride sharing group": "Bạn đã rời khỏi nhóm xe ghép.",
+  "Driver accepted shared ride": "Tài xế đã nhận chuyến xe ghép của bạn.",
+  "Driver cancelled shared ride":
+    "Tài xế đã hủy chuyến xe ghép. Hệ thống đang tìm tài xế khác.",
+  "Shared ride cancelled":
+    "Chuyến xe ghép đã bị hủy vì không còn đủ hành khách.",
+  "Driver is heading to pickup": "Tài xế đang di chuyển đến điểm đón.",
+  "You have been picked up": "Bạn đã được tài xế đón.",
+  "Shared ride started": "Chuyến xe ghép đã bắt đầu.",
+  "Shared ride completed": "Chuyến xe ghép đã hoàn thành.",
+};
+
+function getDisplayMessage(notification) {
+  const title = notification?.title ?? "";
+  const message = notification?.message ?? "";
+
+  if (MESSAGE_TRANSLATIONS[title]) {
+    return MESSAGE_TRANSLATIONS[title];
+  }
+
+  if (/ride sharing request .* has been cancelled/i.test(message)) {
+    return "Yêu cầu đi ghép của bạn đã được hủy.";
+  }
+
+  if (/ride sharing request .* has been created/i.test(message)) {
+    return "Yêu cầu đi ghép đã được tạo. Hệ thống đang tìm nhóm phù hợp cho bạn.";
+  }
+
+  if (/has been matched into group/i.test(message)) {
+    return "Yêu cầu đi ghép của bạn đã được ghép vào một nhóm phù hợp.";
+  }
+
+  if (/you have joined ride sharing group/i.test(message)) {
+    return "Bạn đã tham gia nhóm xe ghép thành công.";
+  }
+
+  if (/you have left ride sharing group/i.test(message)) {
+    return "Bạn đã rời khỏi nhóm xe ghép.";
+  }
+
+  if (/driver has accepted ride sharing group/i.test(message)) {
+    return "Tài xế đã nhận chuyến xe ghép của bạn.";
+  }
+
+  if (/driver cancelled ride sharing group/i.test(message)) {
+    return "Tài xế đã hủy chuyến xe ghép. Hệ thống đang tìm tài xế khác.";
+  }
+
+  if (/ride sharing group .* was cancelled because/i.test(message)) {
+    return "Chuyến xe ghép đã bị hủy vì không còn đủ hành khách.";
+  }
+
+  return message || "Bạn có cập nhật mới.";
+}
+
 function formatNotificationTime(value) {
   if (!value) {
     return "";
@@ -118,7 +180,7 @@ export default function NotificationsScreen() {
     void refreshNotifications({ silent: true });
   }, [refreshNotifications]);
 
-  const handlePressNotification = useCallback(
+  const handleMarkAsRead = useCallback(
     (notification) => {
       if (!notification.isRead) {
         void markAsRead(notification.id);
@@ -134,7 +196,7 @@ export default function NotificationsScreen() {
         accessibilityLabel={`${getDisplayTitle(item.title)}. ${
           item.isRead ? "Đã đọc" : "Chưa đọc"
         }`}
-        onPress={() => handlePressNotification(item)}
+        onPress={() => handleMarkAsRead(item)}
         style={({ pressed }) => [
           styles.item,
           {
@@ -160,12 +222,23 @@ export default function NotificationsScreen() {
             </ThemedText>
           </View>
           <ThemedText type="small" themeColor="textSecondary">
-            {item.message}
+            {getDisplayMessage(item)}
           </ThemedText>
+          <View style={styles.readAction}>
+            <ThemedText
+              type="smallBold"
+              style={[
+                styles.readActionText,
+                { color: item.isRead ? "#6B7280" : "#FF7A00" },
+              ]}
+            >
+              {item.isRead ? "Đã đọc" : "Đánh dấu là đã đọc"}
+            </ThemedText>
+          </View>
         </View>
       </Pressable>
     ),
-    [handlePressNotification]
+    [handleMarkAsRead]
   );
 
   return (
@@ -345,5 +418,12 @@ const styles = StyleSheet.create({
   itemTitle: {
     flex: 1,
     color: "#111827",
+  },
+  readAction: {
+    paddingTop: Spacing.one,
+    alignItems: "flex-start",
+  },
+  readActionText: {
+    fontSize: 13,
   },
 });

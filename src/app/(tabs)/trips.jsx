@@ -21,7 +21,6 @@ import {
   Spacing,
 } from "@/constants/theme";
 import { useAuth } from "@/contexts/auth-context";
-import { tripSections } from "@/constants/ride-data";
 import { useTheme } from "@/hooks/use-theme";
 import {
   loadBookedTrips,
@@ -51,6 +50,11 @@ const MUTED = "#6B7280";
 const HISTORY_PAGE_SIZE = 3;
 const SCHEDULED_PAGE_SIZE = 3;
 const PASSENGER_CANCEL_REASON_OTHER = 5;
+const EMPTY_TRIP_SECTIONS = {
+  active: [],
+  scheduled: [],
+  history: [],
+};
 
 const tabs = [
   { key: "scheduled", label: "Đã đặt trước" },
@@ -454,10 +458,7 @@ export default function TripsScreen() {
   const safeAreaInsets = useSafeAreaInsets();
   const { isAuthenticated, session, refreshSession } = useAuth();
   const [selectedTab, setSelectedTab] = useState("scheduled");
-  const [tripsBySection, setTripsBySection] = useState({
-    ...tripSections,
-    history: [],
-  });
+  const [tripsBySection, setTripsBySection] = useState(EMPTY_TRIP_SECTIONS);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [scheduledSortOrder, setScheduledSortOrder] = useState("newest");
@@ -508,6 +509,10 @@ export default function TripsScreen() {
   }, [params.tab]);
 
   useEffect(() => {
+    if (!isAuthenticated || !session?.accessToken) {
+      return undefined;
+    }
+
     let isMounted = true;
 
     async function restoreBookedTrips() {
@@ -557,15 +562,18 @@ export default function TripsScreen() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthenticated, session?.accessToken]);
 
   useEffect(() => {
     if (!isAuthenticated || !session?.accessToken) {
       Promise.resolve().then(() => {
-        setTripsBySection((current) => ({
-          ...current,
-          history: [],
-        }));
+        setTripsBySection(EMPTY_TRIP_SECTIONS);
+        setRatingsByTripId({});
+        setTripReviewsByTripId({});
+        setDriverRatingSummariesById({});
+        setDriverReviewsById({});
+        setReportsByTripId({});
+        setIsHistoryLoading(false);
       });
       return;
     }
@@ -1228,7 +1236,21 @@ export default function TripsScreen() {
             </View>
           ) : null}
 
-          {selectedTab === "active" ? (
+          {!isAuthenticated ? (
+            <View
+              style={[
+                styles.emptyActiveCard,
+                { backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <ThemedText type="default" style={styles.emptyActiveTitle}>
+                Vui lòng đăng nhập
+              </ThemedText>
+              <ThemedText type="small" style={styles.emptyActiveText}>
+                Vui lòng đăng nhập để hiển thị hành trình và lịch sử chuyến đi của bạn.
+              </ThemedText>
+            </View>
+          ) : selectedTab === "active" ? (
             <View style={styles.activeJourney}>
               {hasActiveRide ? (
                 <>
