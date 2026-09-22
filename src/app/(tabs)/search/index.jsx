@@ -757,6 +757,10 @@ function getMinimumDistanceValidationMessage(
     return "";
   }
 
+  if (areSameBookingPlaces(origin, destination)) {
+    return "Điểm đón và điểm đến không được trùng nhau.";
+  }
+
   const routeDistanceKm = Number(routeMetrics?.distanceKm);
   const directDistanceKm = calculateBackendDistanceKm(origin, destination);
   const distanceKm =
@@ -764,10 +768,7 @@ function getMinimumDistanceValidationMessage(
       ? routeDistanceKm
       : directDistanceKm;
 
-  if (
-    areSameBookingPlaces(origin, destination) ||
-    distanceKm < MIN_BOOKING_DISTANCE_KM
-  ) {
+  if (distanceKm < MIN_BOOKING_DISTANCE_KM) {
     return `Điểm đón và điểm đến quá gần nhau. Vui lòng chọn lộ trình cách nhau tối thiểu ${MIN_BOOKING_DISTANCE_METERS}m.`;
   }
 

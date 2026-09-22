@@ -67,8 +67,11 @@ const LOGIN_MESSAGES = {
   passwordRequired: "Vui lòng nhập mật khẩu.",
   passwordTooShort:
     "Mật khẩu phải có ít nhất 6 ký tự.",
+  emailNotFound: "Email chưa được đăng ký.",
+  incorrectPassword: "Mật khẩu không chính xác.",
+  emailNotVerified: "Tài khoản chưa xác minh email.",
   invalidCredentials:
-    "Email hoặc mật khẩu không đúng, hoặc tài khoản chưa xác minh email.",
+    "Email hoặc mật khẩu không chính xác.",
   loginFailed:
     "Đăng nhập không thành công. Vui lòng thử lại.",
 };
@@ -115,11 +118,48 @@ function validateLoginForm(form) {
 function getLoginErrorMessage(error) {
   const message = String(error?.message || "");
   const normalizedMessage = message.toLowerCase();
+  const isAmbiguousLoginError =
+    normalizedMessage.includes("invalid email or password") &&
+    normalizedMessage.includes("not verified");
+
+  if (isAmbiguousLoginError) {
+    return LOGIN_MESSAGES.invalidCredentials;
+  }
+
+  if (
+    normalizedMessage.includes("email not found") ||
+    normalizedMessage.includes("user not found") ||
+    normalizedMessage.includes("email does not exist") ||
+    normalizedMessage.includes("email is not registered") ||
+    normalizedMessage.includes("email chưa được đăng ký") ||
+    normalizedMessage.includes("email không tồn tại")
+  ) {
+    return LOGIN_MESSAGES.emailNotFound;
+  }
+
+  if (
+    normalizedMessage.includes("incorrect password") ||
+    normalizedMessage.includes("wrong password") ||
+    normalizedMessage.includes("invalid password") ||
+    normalizedMessage.includes("mật khẩu không chính xác") ||
+    normalizedMessage.includes("sai mật khẩu")
+  ) {
+    return LOGIN_MESSAGES.incorrectPassword;
+  }
+
+  if (
+    normalizedMessage.includes("email not verified") ||
+    normalizedMessage.includes("not verified") ||
+    normalizedMessage.includes("not confirmed") ||
+    normalizedMessage.includes("chưa xác minh")
+  ) {
+    return LOGIN_MESSAGES.emailNotVerified;
+  }
 
   if (
     error?.status === 401 ||
     normalizedMessage.includes("invalid email or password") ||
-    normalizedMessage.includes("email not verified")
+    normalizedMessage.includes("invalid credentials")
   ) {
     return LOGIN_MESSAGES.invalidCredentials;
   }
@@ -169,8 +209,66 @@ function getRegisterErrorMessage(error) {
   const normalizedMessage = message.toLowerCase();
 
   if (
+    normalizedMessage.includes("full name is required") ||
+    normalizedMessage.includes("full name:") ||
+    normalizedMessage.includes("họ và tên")
+  ) {
+    return REGISTER_MESSAGES.fullNameRequired;
+  }
+
+  if (
+    normalizedMessage.includes("email is required") ||
+    normalizedMessage.includes("email required") ||
+    normalizedMessage.includes("vui lòng nhập email")
+  ) {
+    return REGISTER_MESSAGES.emailRequired;
+  }
+
+  if (
+    normalizedMessage.includes("invalid email format") ||
+    normalizedMessage.includes("email is not a valid email address") ||
+    normalizedMessage.includes("email chưa đúng định dạng")
+  ) {
+    return REGISTER_MESSAGES.emailInvalid;
+  }
+
+  if (
+    normalizedMessage.includes("password is required") ||
+    normalizedMessage.includes("password required") ||
+    normalizedMessage.includes("vui lòng nhập mật khẩu")
+  ) {
+    return REGISTER_MESSAGES.passwordRequired;
+  }
+
+  if (
+    normalizedMessage.includes("password must be at least 6 characters") ||
+    normalizedMessage.includes("password too short") ||
+    normalizedMessage.includes("mật khẩu phải có ít nhất 6 ký tự")
+  ) {
+    return REGISTER_MESSAGES.passwordTooShort;
+  }
+
+  if (
+    normalizedMessage.includes("confirm password is required") ||
+    normalizedMessage.includes("confirm password required") ||
+    normalizedMessage.includes("vui lòng nhập lại mật khẩu")
+  ) {
+    return REGISTER_MESSAGES.confirmPasswordRequired;
+  }
+
+  if (
+    normalizedMessage.includes("password and confirm password do not match") ||
+    normalizedMessage.includes("confirm password does not match") ||
+    normalizedMessage.includes("password mismatch") ||
+    normalizedMessage.includes("mật khẩu nhập lại không khớp")
+  ) {
+    return REGISTER_MESSAGES.passwordMismatch;
+  }
+
+  if (
     normalizedMessage.includes("already") ||
     normalizedMessage.includes("duplicate") ||
+    normalizedMessage.includes("email exists") ||
     normalizedMessage.includes("đã tồn tại")
   ) {
     return REGISTER_MESSAGES.emailExists;
@@ -392,7 +490,9 @@ export default function ProfileScreen() {
         normalizedMessage.includes("invalid email or password") &&
         normalizedMessage.includes("not verified");
       const isNotVerified =
-        normalizedMessage.includes("not verified") && !isAmbiguousLoginError;
+        (normalizedMessage.includes("not verified") ||
+          normalizedMessage.includes("chưa xác minh")) &&
+        !isAmbiguousLoginError;
 
       if (isNotVerified) {
         openVerificationStep({
