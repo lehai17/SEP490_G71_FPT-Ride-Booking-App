@@ -1,15 +1,30 @@
-import { NativeTabs } from "expo-router/unstable-native-tabs";
-import { useColorScheme } from "react-native";
+import { Tabs } from "expo-router";
+import { Text, useColorScheme } from "react-native";
 
 import { Colors } from "@/constants/theme";
 import { useNotifications } from "@/contexts/notification-context";
 
 function formatBadgeCount(count) {
   if (!count) {
-    return "";
+    return undefined;
   }
 
   return count > 99 ? "99+" : String(count);
+}
+
+function TabIcon({ children, color }) {
+  return (
+    <Text
+      style={{
+        color,
+        fontSize: 22,
+        lineHeight: 24,
+        fontWeight: "700",
+      }}
+    >
+      {children}
+    </Text>
+  );
 }
 
 export default function AppTabs() {
@@ -19,50 +34,60 @@ export default function AppTabs() {
   const notificationBadge = formatBadgeCount(unreadCount);
 
   return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: "#FF7A00",
+        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: "600",
+        },
+        tabBarStyle: {
+          height: 72,
+          paddingTop: 8,
+          paddingBottom: 10,
+          backgroundColor: colors.background,
+          borderTopColor: "#E5E7EB",
+        },
+      }}
     >
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Trang chủ</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf={{ default: "house", selected: "house.fill" }}
-          md={{ default: "home", selected: "home_filled" }}
-        />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="search">
-        <NativeTabs.Trigger.Label>Tìm xe</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="trips">
-        <NativeTabs.Trigger.Label>Hành trình</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf={{ default: "clock", selected: "clock.fill" }}
-          md="history"
-        />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="notifications">
-        <NativeTabs.Trigger.Label>Thông báo</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf={{ default: "bell", selected: "bell.fill" }}
-          md={{ default: "notifications", selected: "notifications_active" }}
-        />
-        <NativeTabs.Trigger.Badge hidden={!notificationBadge}>
-          {notificationBadge}
-        </NativeTabs.Trigger.Badge>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Label>Cá nhân</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          sf={{ default: "person.circle", selected: "person.circle.fill" }}
-          md={{ default: "account_circle", selected: "account_circle" }}
-        />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Trang chủ",
+          tabBarIcon: ({ color }) => <TabIcon color={color}>⌂</TabIcon>,
+        }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          title: "Tìm xe",
+          tabBarIcon: ({ color }) => <TabIcon color={color}>⌕</TabIcon>,
+        }}
+      />
+      <Tabs.Screen
+        name="trips"
+        options={{
+          title: "Hành trình",
+          tabBarIcon: ({ color }) => <TabIcon color={color}>◷</TabIcon>,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: "Thông báo",
+          tabBarBadge: notificationBadge,
+          tabBarIcon: ({ color }) => <TabIcon color={color}>!</TabIcon>,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Cá nhân",
+          tabBarIcon: ({ color }) => <TabIcon color={color}>◉</TabIcon>,
+        }}
+      />
+    </Tabs>
   );
 }

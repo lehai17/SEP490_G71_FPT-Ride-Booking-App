@@ -9,6 +9,29 @@ function trimTrailingSlash(value) {
   return value?.replace(/\/+$/, "");
 }
 
-export const API_BASE_URL =
-  trimTrailingSlash(process.env.EXPO_PUBLIC_API_URL) ?? DEFAULT_API_URL;
+function getPlatformApiUrl() {
+  const platformSpecificUrl = Platform.select({
+    android: process.env.EXPO_PUBLIC_API_URL_ANDROID,
+    ios: process.env.EXPO_PUBLIC_API_URL_IOS,
+    web: process.env.EXPO_PUBLIC_API_URL_WEB,
+    default: undefined,
+  });
+  const configuredUrl = trimTrailingSlash(
+    platformSpecificUrl || process.env.EXPO_PUBLIC_API_URL
+  );
 
+  if (!configuredUrl) {
+    return DEFAULT_API_URL;
+  }
+
+  if (Platform.OS === "android") {
+    return configuredUrl.replace(
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api$/i,
+      (_, __, port = ":5228") => `http://10.0.2.2${port}/api`
+    );
+  }
+
+  return configuredUrl;
+}
+
+export const API_BASE_URL = getPlatformApiUrl();

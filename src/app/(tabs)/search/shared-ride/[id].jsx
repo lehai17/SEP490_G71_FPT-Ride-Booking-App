@@ -45,6 +45,41 @@ function getRideDestinationLabel(ride) {
   return to.includes("FPT") ? to : "Đại học FPT";
 }
 
+function getGroupJoinDestination(...groups) {
+  for (const group of groups) {
+    const members = Array.isArray(group?.members) ? group.members : [];
+    const memberWithDestination = members.find(
+      (member) =>
+        Number.isFinite(Number(member?.destinationLatitude)) &&
+        Number.isFinite(Number(member?.destinationLongitude))
+    );
+
+    if (memberWithDestination) {
+      return {
+        address:
+          memberWithDestination.destinationAddress ||
+          group?.destinationAddress ||
+          getRideDestinationLabel(group),
+        latitude: Number(memberWithDestination.destinationLatitude),
+        longitude: Number(memberWithDestination.destinationLongitude),
+      };
+    }
+
+    if (
+      Number.isFinite(Number(group?.destinationLatitude)) &&
+      Number.isFinite(Number(group?.destinationLongitude))
+    ) {
+      return {
+        address: group.destinationAddress || getRideDestinationLabel(group),
+        latitude: Number(group.destinationLatitude),
+        longitude: Number(group.destinationLongitude),
+      };
+    }
+  }
+
+  return null;
+}
+
 function formatDistanceKm(value) {
   const distanceKm = Number(value ?? 0);
 
@@ -141,7 +176,14 @@ function calculateProjectedJoinFare(members, currentPassengers) {
 }
 
 function getReadableApiErrorMessage(error, fallbackMessage) {
-  const rawMessage = String(error?.message ?? "").trim();
+  const rawMessage = String(
+    error?.payload?.message ??
+      error?.payload?.detail ??
+      error?.payload?.title ??
+      error?.payload?.error ??
+      error?.message ??
+      ""
+  ).trim();
 
   if (!rawMessage) {
     return fallbackMessage;
@@ -793,16 +835,20 @@ export default function SharedRideDetailScreen() {
     }
 
     if (query.length < 2) {
-      setPickupSuggestions([]);
-      setPickupSuggestionError("");
-      setIsLoadingPickupSuggestions(false);
+      Promise.resolve().then(() => {
+        setPickupSuggestions([]);
+        setPickupSuggestionError("");
+        setIsLoadingPickupSuggestions(false);
+      });
       return undefined;
     }
 
     if (!isVietMapConfigured()) {
-      setPickupSuggestions([]);
-      setPickupSuggestionError("");
-      setIsLoadingPickupSuggestions(false);
+      Promise.resolve().then(() => {
+        setPickupSuggestions([]);
+        setPickupSuggestionError("");
+        setIsLoadingPickupSuggestions(false);
+      });
       return undefined;
     }
 
@@ -899,18 +945,28 @@ export default function SharedRideDetailScreen() {
 
     try {
       const verifiedPickup = selectedPickupPlace;
+      const joinDestination = getGroupJoinDestination(ride, apiRide);
+      if (!joinDestination) {
+        setJoinError(
+          "Không xác định được điểm đến của nhóm xe ghép. Vui lòng tải lại nhóm và thử lại."
+        );
+        return;
+      }
+
       const expectedDestinationAddress =
+        joinDestination?.address ||
         ride?.members?.[0]?.destinationAddress ||
         apiRide?.members?.[0]?.destinationAddress ||
         defaultDestination;
-      const destinationLat =
-        Number(ride?.members?.[0]?.destinationLatitude) ||
-        Number(apiRide?.members?.[0]?.destinationLatitude) ||
-        Number(verifiedPickup.location?.lat);
       const pickupLat = Number(verifiedPickup.location?.lat);
       const pickupLng = Number(verifiedPickup.location?.lng);
+      const destinationLat = Number(joinDestination.latitude);
+      const destinationLng = Number(joinDestination.longitude);
       const estimatedDistanceKm = Math.max(
-        Math.abs(destinationLat - pickupLat) * 111,
+        calculateDistanceKmBetweenPoints(
+          { lat: pickupLat, lng: pickupLng },
+          { lat: destinationLat, lng: destinationLng }
+        ),
         0.1
       );
       const estimatedDurationMinutes = Math.max(
@@ -923,6 +979,9 @@ export default function SharedRideDetailScreen() {
           pickupLatitude: pickupLat,
           pickupLongitude: pickupLng,
           pickupAddress: verifiedPickup.formattedAddress || pickupPoint.trim(),
+          destinationLatitude: destinationLat,
+          destinationLongitude: destinationLng,
+          destinationAddress: expectedDestinationAddress,
           estimatedDistanceKm,
           estimatedDurationMinutes,
         },
