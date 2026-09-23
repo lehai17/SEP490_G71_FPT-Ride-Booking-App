@@ -77,6 +77,9 @@ const PICKUP_BLUE = "#2563EB";
 // Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const DESTINATION_GREEN = "#16A34A";
 // Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
+const NO_DRIVER_PROMPT_DELAY_MS = 5 * 60 * 1000;
+const API_DATE_TIME_ZONE_PATTERN = /(z|[+-]\d{2}:?\d{2})$/i;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MOCK_DRIVER_POINT = {
   placeId: "",
   formattedAddress: "Cổng chính Đại học FPT, Thạch Hòa, Hà Nội",
@@ -244,6 +247,47 @@ function formatDurationMinute(value) {
   }
 
   return `${Math.max(1, Math.round(numberValue))} phút`;
+}
+
+function parseApiDateTime(value) {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return new Date(value);
+  }
+
+  const trimmedValue = value.trim();
+  const normalizedValue = API_DATE_TIME_ZONE_PATTERN.test(trimmedValue)
+    ? trimmedValue
+    : `${trimmedValue}Z`;
+
+  return new Date(normalizedValue);
+}
+
+function hasWaitedLongerThanPromptDelay(createdAt, nowMs) {
+  if (!createdAt) {
+    return false;
+  }
+
+  const createdDate = parseApiDateTime(createdAt);
+
+  if (Number.isNaN(createdDate.getTime())) {
+    return false;
+  }
+
+  return nowMs - createdDate.getTime() >= NO_DRIVER_PROMPT_DELAY_MS;
+}
+
+function isImmediateTripType(tripType) {
+  if (tripType == null || tripType === "") {
+    return true;
+  }
+
+  const normalizedTripType = String(tripType).replace(/\s+/g, "").toLowerCase();
+
+  return normalizedTripType === "1" || normalizedTripType === "immediate";
 }
 
 // getTripEstimatedFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
@@ -548,6 +592,7 @@ function mapRideSharingRequestToCardClean(request, group = null) {
     groupId: shouldIgnoreGroup ? "" : request.groupId ?? effectiveGroup?.id ?? "",
     route: `${pickup} → ${destination}`,
     vehicle: "Xe ghép",
+    tripType: request.tripType ?? effectiveGroup?.tripType ?? "",
     price: formatCurrencyVnd(fare),
     distance: formatDistanceKm(request.estimatedDistanceKm),
     duration: formatDurationMinute(request.estimatedDurationMinutes),
@@ -857,6 +902,22 @@ function getBackendTripMetrics(verifiedMap) {
 
 // normalizeTripStatus: Chuẩn hóa status chuyến từ số hoặc text về một dạng thống nhất
 function normalizeTripStatus(status) {
+  const numericStatus = Number(status);
+  const statusNameByValue = {
+    1: "pending",
+    2: "accepted",
+    3: "driverarrived",
+    4: "inprogress",
+    5: "completed",
+    6: "cancelled",
+    7: "pendingdriverassignment",
+    8: "nodriverfound",
+  };
+
+  if (Number.isInteger(numericStatus) && statusNameByValue[numericStatus]) {
+    return statusNameByValue[numericStatus];
+  }
+
   return String(status ?? "pending").replace(/\s+/g, "").toLowerCase();
 }
 
@@ -1142,7 +1203,15 @@ function getRideSharingCreateReadableErrorMessage(error) {
 // isTerminalTripStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isTerminalTripStatus(status) {
   const normalizedStatus = normalizeTripStatus(status);
-  return normalizedStatus === "completed" || normalizedStatus === "cancelled";
+  return (
+    normalizedStatus === "completed" ||
+    normalizedStatus === "cancelled" ||
+    normalizedStatus === "nodriverfound"
+  );
+}
+
+function isNoDriverFoundTripStatus(status) {
+  return normalizeTripStatus(status) === "nodriverfound";
 }
 
 // getTripStatusView: Quy đổi status chuyến thành label và màu hiển thị
@@ -1181,6 +1250,15 @@ function getTripStatusView(status, hasDriver) {
       title: "Chuyến đi đã bị hủy",
       subtitle: "Yêu cầu chuyến đi này đã kết thúc. Bạn có thể quay lại đặt chuyến mới.",
       label: "Đã hủy",
+      icon: "!",
+    };
+  }
+
+  if (normalizedStatus === "nodriverfound") {
+    return {
+      title: "Không tìm thấy tài xế",
+      subtitle: "Hiện chưa có tài xế phù hợp nhận chuyến này. Bạn có thể quay lại và đặt chuyến mới.",
+      label: "Không tìm thấy tài xế",
       icon: "!",
     };
   }
@@ -1654,6 +1732,12 @@ export default function SearchScreen() {
   const [isCancellingRide, setIsCancellingRide] = useState(false);
   const [activeBookedRide, setActiveBookedRide] = useState(null);
   const [acceptedTrip, setAcceptedTrip] = useState(null);
+  const [noDriverPromptNowMs, setNoDriverPromptNowMs] = useState(() =>
+    Date.now()
+  );
+  const [dismissedNoDriverPromptIds, setDismissedNoDriverPromptIds] = useState(
+    {}
+  );
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
@@ -1686,6 +1770,7 @@ export default function SearchScreen() {
     acceptedTrip?.driverId ?? activeBookedRide?.driverId
   );
   const tripStatusView = getTripStatusView(trackedTripStatus, hasAssignedDriver);
+  const isNoDriverFoundTrip = isNoDriverFoundTripStatus(trackedTripStatus);
   const shouldShowTripStatusCard =
     hasAssignedDriver || isTerminalTripStatus(trackedTripStatus);
   const canCancelTrackedTrip =
@@ -1696,7 +1781,7 @@ export default function SearchScreen() {
   const isSoloRideTrackingLocked =
     mode !== "shared" &&
     bookingStep === "findingDriver" &&
-    ["pending", "accepted", "driverarrived", "inprogress"].includes(
+    ["pending", "pendingdriverassignment", "accepted", "driverarrived", "inprogress"].includes(
       trackedTripStatus
     );
   const isSoloRideInProgress =
@@ -1717,6 +1802,50 @@ export default function SearchScreen() {
   const hasReviewedCompletedTrip = Boolean(
     completedTripId && reviewedTripIds[completedTripId]
   );
+  const activeRidePromptId = activeBookedRide?.id
+    ? `solo:${activeBookedRide.id}`
+    : "";
+  const shouldShowSoloNoDriverPrompt =
+    Boolean(activeRidePromptId) &&
+    bookingStep === "findingDriver" &&
+    mode !== "shared" &&
+    !hasAssignedDriver &&
+    !activeBookedRide?.scheduledAt &&
+    ["pending", "pendingdriverassignment"].includes(trackedTripStatus) &&
+    hasWaitedLongerThanPromptDelay(
+      activeBookedRide?.createdAt,
+      noDriverPromptNowMs
+    ) &&
+    !dismissedNoDriverPromptIds[activeRidePromptId];
+  const shouldShowSharedNoDriverPrompt = useCallback(
+    (request) => {
+      const requestId = request?.requestId || request?.id;
+      const promptId = requestId ? `shared:${requestId}` : "";
+
+      return (
+        Boolean(promptId) &&
+        isImmediateTripType(request?.tripType) &&
+        isSharedRideActive(getSharedRequestEffectiveStatus(request)) &&
+        !request?.driverId &&
+        hasWaitedLongerThanPromptDelay(
+          request?.createdAt,
+          noDriverPromptNowMs
+        ) &&
+        !dismissedNoDriverPromptIds[promptId]
+      );
+    },
+    [dismissedNoDriverPromptIds, noDriverPromptNowMs]
+  );
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setNoDriverPromptNowMs(Date.now());
+    }, 30000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     if (isHomeBookingFlow && selectedRideId !== initialRideId) {
@@ -1960,8 +2089,8 @@ export default function SearchScreen() {
 
         if (isActive && shouldUpdateTrip) {
           setAcceptedTrip(trip);
-          setActiveBookedRide((current) =>
-            mergeBookedRideWithTrip(
+          setActiveBookedRide((current) => {
+            const nextBookedRide = mergeBookedRideWithTrip(
               {
                 ...(current ?? {}),
                 tripDistance:
@@ -1970,8 +2099,11 @@ export default function SearchScreen() {
                   current?.tripDuration ?? fallbackTrackedTripDurationText,
               },
               trip
-            )
-          );
+            );
+
+            void persistBookedTrip(nextBookedRide);
+            return nextBookedRide;
+          });
         }
       } catch {
         // Bo qua loi tam thoi trong luc BE/driver chua cap nhat trang thai.
@@ -4255,6 +4387,7 @@ export default function SearchScreen() {
                       styles.driverAvatar,
                       trackedTripStatus === "completed" && styles.completedAvatar,
                       trackedTripStatus === "cancelled" && styles.cancelledAvatar,
+                      isNoDriverFoundTrip && styles.noDriverFoundAvatar,
                     ]}
                   >
                     <ThemedText type="subtitle" style={styles.driverAvatarText}>
@@ -4407,7 +4540,10 @@ export default function SearchScreen() {
                   onPress={() => {
                     if (canCancelTrackedTrip) {
                       handleCancelBookedRide();
-                    } else if (trackedTripStatus === "cancelled") {
+                    } else if (
+                      trackedTripStatus === "cancelled" ||
+                      isNoDriverFoundTrip
+                    ) {
                       resetSingleRideBookingForm();
                     } else {
                       setBookingStep("rideOptions");
@@ -4425,6 +4561,8 @@ export default function SearchScreen() {
                       ? "Đang hủy..."
                       : canCancelTrackedTrip
                         ? "Hủy chuyến"
+                        : isNoDriverFoundTrip
+                          ? "Đặt lại"
                         : "Quay lại"}
                   </ThemedText>
                 </Pressable>
@@ -7440,6 +7578,10 @@ const styles = StyleSheet.create({
   cancelledAvatar: {
     backgroundColor: "#EF4444",
     shadowColor: "#EF4444",
+  },
+  noDriverFoundAvatar: {
+    backgroundColor: "#F97316",
+    shadowColor: "#F97316",
   },
   driverAvatarText: {
     color: "#FFFFFF",
