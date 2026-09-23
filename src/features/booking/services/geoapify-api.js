@@ -1,10 +1,22 @@
+// GEOAPIFY API - Tìm địa điểm, chỉ đường và dựng bản đồ Geoapify
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_API_KEY;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const GEOAPIFY_GEOCODE_BASE_URL = "https://api.geoapify.com/v1/geocode";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const GEOAPIFY_PLACE_DETAILS_BASE_URL = "https://api.geoapify.com/v2/place-details";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const GEOAPIFY_ROUTING_BASE_URL = "https://api.geoapify.com/v1/routing";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const GEOAPIFY_STATIC_MAP_BASE_URL = "https://maps.geoapify.com/v1/staticmap";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const XANH_STYLE_AVERAGE_SPEED_KMH = 30;
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const ADDRESS_COORDINATE_FALLBACKS = {
   "Đại học FPT, Thạch Hòa": {
     formattedAddress: "Đại học FPT, Khu công nghệ cao Hòa Lạc, Hà Nội",
@@ -24,12 +36,14 @@ const ADDRESS_COORDINATE_FALLBACKS = {
   },
 };
 
+// assertGeoapifyKey: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function assertGeoapifyKey() {
   if (!GEOAPIFY_API_KEY) {
     throw new Error("Thiếu EXPO_PUBLIC_GEOAPIFY_API_KEY trong .env của FE.");
   }
 }
 
+// buildGeoapifyUrl: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function buildGeoapifyUrl(baseUrl, params) {
   assertGeoapifyKey();
 
@@ -41,6 +55,7 @@ function buildGeoapifyUrl(baseUrl, params) {
   return `${baseUrl}?${searchParams.toString()}`;
 }
 
+// normalizeGeoapifyError: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeGeoapifyError(message) {
   const lowerMessage = message.toLowerCase();
 
@@ -59,6 +74,7 @@ function normalizeGeoapifyError(message) {
   return "";
 }
 
+// getResultItems: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getResultItems(payload) {
   if (Array.isArray(payload?.results)) {
     return payload.results;
@@ -71,6 +87,7 @@ function getResultItems(payload) {
   return [];
 }
 
+// getResultFeature: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getResultFeature(payload) {
   if (Array.isArray(payload?.features) && payload.features.length > 0) {
     return payload.features[0];
@@ -79,6 +96,7 @@ function getResultFeature(payload) {
   return null;
 }
 
+// normalizeLocation: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeLocation(result) {
   const data = result?.properties ?? result ?? {};
   const geometry = result?.geometry ?? data?.geometry;
@@ -92,6 +110,7 @@ function normalizeLocation(result) {
   return { lat, lng };
 }
 
+// normalizeFormattedAddress: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeFormattedAddress(result) {
   const data = result?.properties ?? result ?? {};
   const parts = [
@@ -109,6 +128,7 @@ function normalizeFormattedAddress(result) {
   return locationParts.join(", ");
 }
 
+// mapGeoapifyPlace: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapGeoapifyPlace(result) {
   const data = result?.properties ?? result ?? {};
   const formattedAddress = normalizeFormattedAddress(result);
@@ -127,10 +147,12 @@ function mapGeoapifyPlace(result) {
   };
 }
 
+// getFallbackGeocode: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getFallbackGeocode(address) {
   return ADDRESS_COORDINATE_FALLBACKS[address.trim()] ?? null;
 }
 
+// haversineDistanceKm: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function haversineDistanceKm(origin, destination) {
   const toRadians = (value) => (value * Math.PI) / 180;
   const earthRadiusKm = 6371;
@@ -146,6 +168,7 @@ function haversineDistanceKm(origin, destination) {
   return earthRadiusKm * c;
 }
 
+// formatDistance: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatDistance(distance, units) {
   if (!Number.isFinite(distance)) {
     return "";
@@ -163,6 +186,7 @@ function formatDistance(distance, units) {
   return `${Math.round(distance)} m`;
 }
 
+// formatDuration: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatDuration(seconds) {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return "";
@@ -180,6 +204,7 @@ function formatDuration(seconds) {
   return minutes === 0 ? `${hours} giờ` : `${hours} giờ ${minutes} phút`;
 }
 
+// estimateRideDurationSeconds: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function estimateRideDurationSeconds(distanceKm) {
   if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
     return 0;
@@ -188,6 +213,7 @@ function estimateRideDurationSeconds(distanceKm) {
   return (distanceKm / XANH_STYLE_AVERAGE_SPEED_KMH) * 3600;
 }
 
+// getRouteDistanceKm: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getRouteDistanceKm(route) {
   const distanceMeters = Number(route?.distance);
 
@@ -198,6 +224,7 @@ function getRouteDistanceKm(route) {
   return 0;
 }
 
+// createApproximateRoute: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createApproximateRoute(origin, destination) {
   const distanceKm = haversineDistanceKm(origin.location, destination.location);
   const routeGeometry = {
@@ -223,6 +250,7 @@ function createApproximateRoute(origin, destination) {
   };
 }
 
+// normalizeRouteGeometry: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRouteGeometry(geometry) {
   if (!geometry) {
     return {
@@ -234,6 +262,7 @@ function normalizeRouteGeometry(geometry) {
   return geometry;
 }
 
+// mapGeoapifyRoute: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapGeoapifyRoute(payload, origin, destination) {
   const feature = getResultFeature(payload);
 
@@ -263,14 +292,17 @@ function mapGeoapifyRoute(payload, origin, destination) {
   };
 }
 
+// createGeoapifyMarker: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createGeoapifyMarker(point, color, label) {
   return `lonlat:${point.location.lng},${point.location.lat};color:${color};size:48;text:${label}`;
 }
 
+// isGeoapifyConfigured: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function isGeoapifyConfigured() {
   return Boolean(GEOAPIFY_API_KEY);
 }
 
+// getGeoapifyPlaceSuggestions: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function getGeoapifyPlaceSuggestions(input) {
   const trimmedInput = input.trim();
 
@@ -304,6 +336,7 @@ export async function getGeoapifyPlaceSuggestions(input) {
     .slice(0, 5);
 }
 
+// getGeoapifyPlaceDetails: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function getGeoapifyPlaceDetails(placeId) {
   assertGeoapifyKey();
 
@@ -332,6 +365,7 @@ export async function getGeoapifyPlaceDetails(placeId) {
   return mapGeoapifyPlace(result);
 }
 
+// verifyGeoapifyAddress: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function verifyGeoapifyAddress(address) {
   if (!address.trim()) {
     throw new Error("Vui lòng nhập địa chỉ cần xác minh.");
@@ -356,6 +390,7 @@ export async function verifyGeoapifyAddress(address) {
   throw new Error(`Không tìm thấy địa chỉ "${address}" trên Geoapify.`);
 }
 
+// verifyGeoapifyPlaceId: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function verifyGeoapifyPlaceId(placeId, fallbackAddress) {
   if (!placeId) {
     return verifyGeoapifyAddress(fallbackAddress);
@@ -390,6 +425,7 @@ export async function verifyGeoapifyPlaceId(placeId, fallbackAddress) {
   return verifyGeoapifyAddress(fallbackAddress);
 }
 
+// getGeoapifyDirections: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function getGeoapifyDirections(origin, destination) {
   try {
     const response = await fetch(
@@ -414,6 +450,7 @@ export async function getGeoapifyDirections(origin, destination) {
   }
 }
 
+// reverseGeoapifyPlaceLocation: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function reverseGeoapifyPlaceLocation(location) {
   assertGeoapifyKey();
 
@@ -443,6 +480,7 @@ export async function reverseGeoapifyPlaceLocation(location) {
   };
 }
 
+// getGeoapifyStaticMapUrl: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function getGeoapifyStaticMapUrl({
   origin,
   destination,
@@ -477,6 +515,7 @@ export function getGeoapifyStaticMapUrl({
   return `${GEOAPIFY_STATIC_MAP_BASE_URL}?${params.toString()}`;
 }
 
+// getGeoapifyPlaceMapUrl: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function getGeoapifyPlaceMapUrl({ point, width = 640, height = 720, zoom = 16 }) {
   assertGeoapifyKey();
 
@@ -497,6 +536,7 @@ export function getGeoapifyPlaceMapUrl({ point, width = 640, height = 720, zoom 
   return `${GEOAPIFY_STATIC_MAP_BASE_URL}?${params.toString()}`;
 }
 
+// buildGeoapifyInteractiveMapHtml: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function buildGeoapifyInteractiveMapHtml({
   center,
   markers = [],

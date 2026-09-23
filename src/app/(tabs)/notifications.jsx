@@ -1,3 +1,9 @@
+// NOTIFICATIONS SCREEN - Màn danh sách thông báo của khách
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import { useCallback } from "react";
 import {
   ActivityIndicator,
@@ -23,6 +29,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useNotifications } from "@/contexts/notification-context";
 import { useTheme } from "@/hooks/use-theme";
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const TITLE_TRANSLATIONS = {
   "Trip created": "Đã tạo chuyến",
   "Scheduled trip created": "Đã đặt lịch chuyến",
@@ -48,10 +55,12 @@ const TITLE_TRANSLATIONS = {
   "Shared ride completed": "Chuyến ghép hoàn thành",
 };
 
+// getDisplayTitle: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDisplayTitle(title) {
   return TITLE_TRANSLATIONS[title] ?? title ?? "Thông báo";
 }
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MESSAGE_TRANSLATIONS = {
   "Ride sharing request created":
     "Yêu cầu đi ghép đã được tạo. Hệ thống đang tìm nhóm phù hợp cho bạn.",
@@ -71,6 +80,7 @@ const MESSAGE_TRANSLATIONS = {
   "Shared ride completed": "Chuyến xe ghép đã hoàn thành.",
 };
 
+// getDisplayMessage: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDisplayMessage(notification) {
   const title = notification?.title ?? "";
   const message = notification?.message ?? "";
@@ -114,6 +124,7 @@ function getDisplayMessage(notification) {
   return message || "Bạn có cập nhật mới.";
 }
 
+// formatNotificationTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatNotificationTime(value) {
   if (!value) {
     return "";
@@ -154,6 +165,7 @@ function formatNotificationTime(value) {
   });
 }
 
+// NotificationsScreen: Component chính của tab Thông báo
 export default function NotificationsScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
@@ -171,18 +183,21 @@ export default function NotificationsScreen() {
   useFocusEffect(
     useCallback(() => {
       if (isAuthenticated) {
+        // Khi tab Notifications được focus: gọi API silent refresh để nhận danh sách mới nhất từ BE.
         void refreshNotifications({ silent: true });
       }
     }, [isAuthenticated, refreshNotifications])
   );
 
   const handleRefresh = useCallback(() => {
+    // Pull-to-refresh/nút retry: gọi lại getMyNotifications qua NotificationContext.
     void refreshNotifications({ silent: true });
   }, [refreshNotifications]);
 
   const handleMarkAsRead = useCallback(
     (notification) => {
       if (!notification.isRead) {
+        // Gửi notification.id đã normalize vào context; context dùng rawId để gọi BE mark-read.
         void markAsRead(notification.id);
       }
     },
@@ -191,6 +206,7 @@ export default function NotificationsScreen() {
 
   const renderNotification = useCallback(
     ({ item }) => (
+      /* Bấm notification: nếu chưa đọc thì gọi handleMarkAsRead, context optimistic update rồi gửi API mark-read. */
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${getDisplayTitle(item.title)}. ${
@@ -206,13 +222,16 @@ export default function NotificationsScreen() {
           },
         ]}
       >
+        {/* Khối dot: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
         <View
           style={[
             styles.dot,
             { opacity: item.isRead ? 0 : 1 },
           ]}
         />
+        {/* Khối item body: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
         <View style={styles.itemBody}>
+          {/* Khối item header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
           <View style={styles.itemHeader}>
             <ThemedText type="smallBold" style={styles.itemTitle}>
               {getDisplayTitle(item.title)}
@@ -224,6 +243,7 @@ export default function NotificationsScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             {getDisplayMessage(item)}
           </ThemedText>
+          {/* Khối read action: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
           <View style={styles.readAction}>
             <ThemedText
               type="smallBold"
@@ -242,11 +262,15 @@ export default function NotificationsScreen() {
   );
 
   return (
+    /* Khối container: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */
     <ThemedView
       style={[styles.container, { backgroundColor: theme.background }]}
     >
+      {/* Khối content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
       <View style={styles.content}>
+        {/* Khối header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
         <View style={styles.header}>
+          {/* Khối screen title: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
           <View>
             <ThemedText type="default" style={styles.screenTitle}>
               Thông báo
@@ -290,9 +314,11 @@ export default function NotificationsScreen() {
   );
 }
 
+// NotificationState: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function NotificationState({ error, isAuthenticated, isLoading, onRetry }) {
   if (isLoading) {
     return (
+      /* Khối empty state: Trạng thái rỗng khi chưa có dữ liệu để hiển thị. */
       <View style={styles.emptyState}>
         <ActivityIndicator color="#FF7A00" />
         <ThemedText type="small" themeColor="textSecondary">
@@ -304,6 +330,7 @@ function NotificationState({ error, isAuthenticated, isLoading, onRetry }) {
 
   if (!isAuthenticated) {
     return (
+      /* Khối empty state: Trạng thái rỗng khi chưa có dữ liệu để hiển thị. */
       <View style={styles.emptyState}>
         <ThemedText type="smallBold" style={styles.emptyTitle}>
           Cần đăng nhập
@@ -317,6 +344,7 @@ function NotificationState({ error, isAuthenticated, isLoading, onRetry }) {
 
   if (error) {
     return (
+      /* Khối empty state: Trạng thái rỗng khi chưa có dữ liệu để hiển thị. */
       <View style={styles.emptyState}>
         <ThemedText type="smallBold" style={styles.emptyTitle}>
           Chưa tải được thông báo
@@ -324,6 +352,7 @@ function NotificationState({ error, isAuthenticated, isLoading, onRetry }) {
         <ThemedText type="small" themeColor="textSecondary">
           {error}
         </ThemedText>
+        {/* Retry notification API: gọi onRetry -> refreshNotifications({ silent: true }) để lấy lại dữ liệu từ BE. */}
         <Pressable onPress={onRetry} style={styles.retryButton}>
           <ThemedText type="smallBold" style={styles.retryButtonText}>
             Thử lại
@@ -334,6 +363,7 @@ function NotificationState({ error, isAuthenticated, isLoading, onRetry }) {
   }
 
   return (
+    /* Khối empty state: Trạng thái rỗng khi chưa có dữ liệu để hiển thị. */
     <View style={styles.emptyState}>
       <ThemedText type="smallBold" style={styles.emptyTitle}>
         Chưa có thông báo
@@ -345,6 +375,7 @@ function NotificationState({ error, isAuthenticated, isLoading, onRetry }) {
   );
 }
 
+// styles: Gom toàn bộ style của màn hình/component ở cuối file
 const styles = StyleSheet.create({
   container: {
     flex: 1,

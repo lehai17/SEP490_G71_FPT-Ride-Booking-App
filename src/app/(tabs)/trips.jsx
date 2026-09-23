@@ -1,3 +1,9 @@
+// TRIPS SCREEN - Màn quản lý chuyến đặt trước và lịch sử chuyến
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -44,12 +50,19 @@ import {
 } from "@/features/trip-history/services/review-api";
 import { mapTripToHistoryItem } from "@/features/trip-history/utils/trip-history-mapper";
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const BRAND = "#FF7A00";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const BORDER = "#E9E9E9";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MUTED = "#6B7280";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const HISTORY_PAGE_SIZE = 3;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const SCHEDULED_PAGE_SIZE = 3;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const PASSENGER_CANCEL_REASON_OTHER = 5;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const EMPTY_TRIP_SECTIONS = {
   active: [],
   scheduled: [],
@@ -61,24 +74,31 @@ const tabs = [
   { key: "history", label: "Lịch sử", minWidth: 88 },
 ];
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MAX_SCHEDULE_DAYS = 7;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MIN_PICKUP_BUFFER_MINUTES = 30;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MINUTE_STEP = 5;
 
+// pad: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function pad(value) {
   return String(value).padStart(2, "0");
 }
 
+// addMinutes: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function addMinutes(date, minutes) {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
+// addDays: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function addDays(date, days) {
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
 }
 
+// roundUpToStep: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function roundUpToStep(date, step) {
   const rounded = new Date(date);
   rounded.setSeconds(0, 0);
@@ -91,6 +111,7 @@ function roundUpToStep(date, step) {
   return rounded;
 }
 
+// getScheduleBounds: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getScheduleBounds() {
   const now = new Date();
   return {
@@ -99,19 +120,23 @@ function getScheduleBounds() {
   };
 }
 
+// formatDateValue: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatDateValue(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+// formatDateDisplay: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatDateDisplay(date) {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
+// parseDateValue: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function parseDateValue(value) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
+// getDateLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDateLabel(date, index) {
   if (index === 0) {
     return "Hôm nay";
@@ -124,6 +149,7 @@ function getDateLabel(date, index) {
   return formatDateDisplay(date);
 }
 
+// createDateOptions: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createDateOptions() {
   const { max } = getScheduleBounds();
   const today = new Date();
@@ -151,17 +177,20 @@ function createDateOptions() {
   return options;
 }
 
+// createScheduleDate: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createScheduleDate(dateValue, hour, minute) {
   const date = parseDateValue(dateValue);
   date.setHours(Number(hour), Number(minute), 0, 0);
   return date;
 }
 
+// isWithinScheduleRange: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isWithinScheduleRange(date) {
   const { min, max } = getScheduleBounds();
   return date >= min && date <= max;
 }
 
+// createHourOptions: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createHourOptions(dateValue) {
   return Array.from({ length: 24 }, (_, hour) => pad(hour)).filter((hour) =>
     Array.from({ length: 60 / MINUTE_STEP }, (_, index) =>
@@ -170,12 +199,14 @@ function createHourOptions(dateValue) {
   );
 }
 
+// createMinuteOptions: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createMinuteOptions(dateValue, hour) {
   return Array.from({ length: 60 / MINUTE_STEP }, (_, index) =>
     pad(index * MINUTE_STEP)
   ).filter((minute) => isWithinScheduleRange(createScheduleDate(dateValue, hour, minute)));
 }
 
+// normalizeScheduleDraft: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeScheduleDraft(draft) {
   const dateOptions = createDateOptions();
   const selectedDate = dateOptions.find((option) => option.value === draft.date);
@@ -198,6 +229,7 @@ function normalizeScheduleDraft(draft) {
   };
 }
 
+// getDefaultScheduleDraft: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDefaultScheduleDraft() {
   const { min } = getScheduleBounds();
   const dateValue = formatDateValue(min);
@@ -208,6 +240,7 @@ function getDefaultScheduleDraft() {
   });
 }
 
+// getTripDraft: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripDraft(item) {
   const [from = "", to = ""] = item.route.split(/\s*(?:→|->|➝)\s*/);
   const [schedule = "", price = ""] = item.meta.split(/\s*[·•]\s*/);
@@ -235,6 +268,7 @@ function getTripDraft(item) {
   };
 }
 
+// getScheduledTripView: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getScheduledTripView(item) {
   const [destination = item.route, pickup = "Vị trí hiện tại"] = item.route.split(/\s*(?:→|->|➝)\s*/);
   const [time = "", price = ""] = item.meta.split(/\s*[·•]\s*/);
@@ -257,6 +291,7 @@ function getScheduledTripView(item) {
   };
 }
 
+// isScheduledTrip: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isScheduledTrip(trip) {
   const tripType = String(trip?.tripType ?? "").toLowerCase();
   const status = String(trip?.status ?? "").toLowerCase();
@@ -269,6 +304,7 @@ function isScheduledTrip(trip) {
   );
 }
 
+// getTripFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripFare(trip) {
   return (
     trip?.pricing?.estimatedFare ??
@@ -283,6 +319,7 @@ function getTripFare(trip) {
   );
 }
 
+// formatCurrencyVnd: Định dạng số tiền sang VND để hiển thị
 function formatCurrencyVnd(value) {
   const numberValue = Number(value);
 
@@ -293,6 +330,7 @@ function formatCurrencyVnd(value) {
   return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
 }
 
+// formatDistanceKm: Định dạng khoảng cách theo km
 function formatDistanceKm(value) {
   const numberValue = Number(value);
 
@@ -308,6 +346,7 @@ function formatDistanceKm(value) {
   return `${roundedValue.toLocaleString("vi-VN")} km`;
 }
 
+// formatDurationMinute: Định dạng thời gian di chuyển theo phút
 function formatDurationMinute(value) {
   const numberValue = Number(value);
 
@@ -318,10 +357,12 @@ function formatDurationMinute(value) {
   return `${Math.max(1, Math.round(numberValue))} phút`;
 }
 
+// getTripField: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripField(source, camelKey, pascalKey) {
   return source?.[camelKey] ?? source?.[pascalKey];
 }
 
+// normalizeTripStatus: Chuẩn hóa status chuyến từ số hoặc text về một dạng thống nhất
 function normalizeTripStatus(status) {
   const rawStatus = String(status ?? "").trim().toLowerCase();
 
@@ -349,6 +390,7 @@ function normalizeTripStatus(status) {
   return normalizedStatus;
 }
 
+// getScheduledStatusLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getScheduledStatusLabel(status) {
   switch (normalizeTripStatus(status)) {
     case "pending":
@@ -372,6 +414,7 @@ function getScheduledStatusLabel(status) {
   }
 }
 
+// formatScheduledPickupText: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatScheduledPickupText(value) {
   const rawValue = String(value ?? "").trim();
   const normalizedValue =
@@ -395,10 +438,12 @@ function formatScheduledPickupText(value) {
   return `${date} ${time}`;
 }
 
+// isSchedulePlaceholder: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isSchedulePlaceholder(value) {
   return String(value ?? "").trim() === "Đã hẹn lịch";
 }
 
+// mapTripToScheduledItem: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapTripToScheduledItem(trip) {
   const scheduledAt = getTripField(trip, "scheduledAt", "ScheduledAt");
   const status = getTripField(trip, "status", "Status");
@@ -433,6 +478,7 @@ async function safeLoadReviewData(loader) {
   }
 }
 
+// normalizeDriverRatingSummary: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeDriverRatingSummary(summary) {
   if (!summary) {
     return null;
@@ -451,6 +497,7 @@ function normalizeDriverRatingSummary(summary) {
   };
 }
 
+// TripsScreen: Component chính của tab Chuyến đi
 export default function TripsScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams();
@@ -516,6 +563,9 @@ export default function TripsScreen() {
     let isMounted = true;
 
     async function restoreBookedTrips() {
+      // restoreBookedTrips: NHẬN dữ liệu local cache để tab Trips có card ngay sau khi đặt xe.
+      // Nguồn dữ liệu: persistent storage do SearchScreen ghi bằng persistBookedTrip.
+      // Chỉ đưa chuyến chưa completed/cancelled vào active hoặc scheduled.
       const bookedTrips = await loadBookedTrips();
 
       if (!isMounted || !bookedTrips.length) {
@@ -536,6 +586,7 @@ export default function TripsScreen() {
           }
 
           const isScheduled = isScheduledTrip(trip);
+          // Map trip local thành item UI đúng section.
           const item = isScheduled
             ? toScheduledTripSectionItem(trip)
             : toActiveTripSectionItem(trip);
@@ -584,11 +635,18 @@ export default function TripsScreen() {
       setIsHistoryLoading(true);
 
       try {
+        // loadTripHistoryFromDb: LUỒNG ĐỒNG BỘ TRIPS TỪ BE
+        // 1. Đọc local cache để bổ sung field UI như scheduledPickupText/estimatedFare nếu BE thiếu.
+        // 2. Gọi BE lấy trips theo role passenger/driver.
+        // 3. Gọi thêm review/report để biết chuyến nào đã đánh giá hoặc báo cáo.
+        // 4. Gọi review summary của driver để hiển thị thông tin rating tài xế.
+        // 5. Map dữ liệu BE/local vào tripsBySection.scheduled và tripsBySection.history.
         const role = String(session.role ?? "").toLowerCase();
         const localBookedTrips = await loadBookedTrips();
         const localHistoryById = new Map(
           (localBookedTrips ?? []).map((trip) => [trip.id, trip])
         );
+        // Gửi accessToken cho các API cá nhân; passenger lấy passenger trips, driver lấy driver trips.
         const [trips, myReviews, myReports] = await Promise.all([
           role === "driver"
             ? getDriverTrips(session.accessToken)
@@ -601,6 +659,7 @@ export default function TripsScreen() {
           return;
         }
 
+        // Chuyển array review của tôi thành map theo tripId để UI biết chuyến nào đã đánh giá.
         const ratingsMap = Array.isArray(myReviews)
           ? myReviews.reduce((accumulator, review) => {
               if (review?.tripId) {
@@ -617,6 +676,7 @@ export default function TripsScreen() {
 
         setRatingsByTripId(ratingsMap);
 
+        // Chuyển array report của tôi thành map theo tripId để UI biết chuyến nào đã gửi báo cáo.
         const reportsMap = Array.isArray(myReports)
           ? myReports.reduce((accumulator, report) => {
               if (report?.tripId) {
@@ -645,6 +705,7 @@ export default function TripsScreen() {
           ),
         ];
 
+        // Lấy thêm review theo trip và rating tài xế để modal chi tiết có dữ liệu đầy đủ.
         const [tripReviewEntries, driverSummaryEntries, driverReviewEntries] =
           await Promise.all([
             Promise.all(
@@ -704,6 +765,7 @@ export default function TripsScreen() {
           )
         );
 
+        // Đưa dữ liệu đã chuẩn hóa vào state chính của màn Trips.
         setTripsBySection((current) => {
           const localScheduledById = new Map(
             (current.scheduled ?? []).map((trip) => [trip.id, trip])
@@ -820,6 +882,10 @@ export default function TripsScreen() {
     typeof params.destination === "string" && params.destination
       ? params.destination
       : "Vị trí của bạn";
+  // NHẬN ROUTE PARAMS TỪ LEGACY BOOKING FLOW
+  // SearchScreen có thể router.push({ pathname: "/trips", params: {...} }) sau khi đặt xe.
+  // Các params pickup/destination/mapImageUrl/duration/distance giúp TripsScreen dựng nhanh active ride
+  // trước khi dữ liệu BE/local cache được đồng bộ lại.
   const activeMapImageUrl =
     typeof params.mapImageUrl === "string" ? params.mapImageUrl : "";
   const activeDuration =
@@ -842,6 +908,7 @@ export default function TripsScreen() {
       return true;
     }
 
+    // Nếu user chưa đăng nhập mà bấm action chuyến đi, chuyển sang /profile để login trước.
     router.push("/profile");
     return false;
   }
@@ -852,6 +919,7 @@ export default function TripsScreen() {
     }
 
     if (selectedTab === "scheduled") {
+      // Action chính ở tab scheduled là chỉnh sửa: đưa item vào selectedTrip, map thành editDraft rồi mở modal.
       setSelectedTrip(item);
       setEditDraft(getTripDraft(item));
       setFormError("");
@@ -863,6 +931,7 @@ export default function TripsScreen() {
       return;
     }
 
+    // Action chính ở history là đánh giá: lưu item đang chọn và mở rating modal.
     setSelectedTrip(item);
     setRatingDraft(item.rating ?? 5);
     setReviewDraft("");
@@ -875,6 +944,7 @@ export default function TripsScreen() {
     }
 
     if (selectedTab === "scheduled" || selectedTab === "active") {
+      // Action phụ ở scheduled/active là hủy: lưu selectedTrip và mở cancel modal để nhập lý do.
       setSelectedTrip(item);
       setCancelReason("");
       setFormError("");
@@ -939,10 +1009,15 @@ export default function TripsScreen() {
       return;
     }
 
+    // handleCancelTrip: GỬI yêu cầu hủy chuyến đặt trước/đang active.
+    // Input: selectedTrip.id từ card người dùng chọn + cancelReason trên form.
+    // Gửi: PUT /trips/{id}/cancel/passenger với cancelReason.
+    // Nhận: BE đổi status; FE xóa cache local, remove card khỏi section, refresh history.
     setIsCancellingTrip(true);
 
     try {
       try {
+        // Gửi hủy bằng accessToken hiện tại.
         await cancelTrip(
           selectedTrip.id,
           { cancelReason: PASSENGER_CANCEL_REASON_OTHER },
@@ -953,6 +1028,7 @@ export default function TripsScreen() {
           throw error;
         }
 
+        // Nếu token hết hạn, refresh session rồi gửi lại request hủy.
         const nextSession = await refreshSession();
         await cancelTrip(
           selectedTrip.id,
@@ -960,6 +1036,7 @@ export default function TripsScreen() {
           nextSession.accessToken
         );
       }
+      // Xóa bản local để lần sau không hiện lại chuyến đã hủy.
       await removeBookedTrip(selectedTrip.id);
 
       setTripsBySection((current) => ({
@@ -996,6 +1073,8 @@ export default function TripsScreen() {
     setIsSubmittingReview(true);
 
     try {
+      // handleSubmitRating: GỬI đánh giá chuyến đi lên BE.
+      // Payload gồm tripId, rating, comment; response không cần reload toàn bộ, FE cập nhật ratingsByTripId tại chỗ.
       await createReview(
         {
           tripId: selectedTrip.id,
@@ -1042,6 +1121,7 @@ export default function TripsScreen() {
     setFormError("");
     setIsSubmittingReport(true);
 
+    // Payload gửi báo cáo sự cố chuyến đi lên BE.
     const payload = {
       tripId: selectedTrip.id,
       reason: reportReason.trim(),
@@ -1051,16 +1131,19 @@ export default function TripsScreen() {
       let reportResponse;
 
       try {
+        // Gửi report bằng token hiện tại.
         reportResponse = await createTripReport(payload, session.accessToken);
       } catch (error) {
         if (error?.status !== 401) {
           throw error;
         }
 
+        // Nếu 401 thì refresh session rồi gửi lại report.
         const nextSession = await refreshSession();
         reportResponse = await createTripReport(payload, nextSession.accessToken);
       }
 
+      // Lưu report response vào map theo tripId để UI khóa/hiển thị trạng thái đã báo cáo.
       setReportsByTripId((current) => ({
         ...current,
         [selectedTrip.id]: {
@@ -1117,6 +1200,7 @@ export default function TripsScreen() {
 
   return (
     <>
+      {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
       <ScrollView
         style={[styles.container, { backgroundColor: theme.background }]}
         contentContainerStyle={[
@@ -1128,16 +1212,19 @@ export default function TripsScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Khối content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
         <View style={styles.content}>
           <ThemedText type="default" style={styles.screenTitle}>
             {"Hành trình"}
           </ThemedText>
 
+          {/* Khối tab row: Nhóm lựa chọn dạng tab/segment để đổi chế độ hiển thị. */}
           <View style={styles.tabRow}>
             {tabs.map((tab) => {
               const isActive = tab.key === selectedTab;
 
               return (
+                /* Nút tab/segment để đổi nhóm nội dung đang xem. */
                 <Pressable
                 testID={`trips-tab-${tab.key}`}
                 key={tab.key}
@@ -1167,6 +1254,7 @@ export default function TripsScreen() {
           </View>
 
           {selectedTab === "history" ? (
+            /* Khối history filter row: Dàn các phần tử trên cùng một hàng. */
             <View style={styles.historyFilterRow}>
               {[
                 { key: "newest", label: "Mới nhất" },
@@ -1175,6 +1263,7 @@ export default function TripsScreen() {
                 const isActive = historySortOrder === option.key;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={option.key}
                     style={[
@@ -1202,6 +1291,7 @@ export default function TripsScreen() {
           ) : null}
 
           {selectedTab === "scheduled" ? (
+            /* Khối history filter row: Dàn các phần tử trên cùng một hàng. */
             <View style={styles.historyFilterRow}>
               {[
                 { key: "newest", label: "Mới nhất" },
@@ -1210,6 +1300,7 @@ export default function TripsScreen() {
                 const isActive = scheduledSortOrder === option.key;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={option.key}
                     style={[
@@ -1237,6 +1328,7 @@ export default function TripsScreen() {
           ) : null}
 
           {!isAuthenticated ? (
+            /* Khối empty active card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
             <View
               style={[
                 styles.emptyActiveCard,
@@ -1251,6 +1343,7 @@ export default function TripsScreen() {
               </ThemedText>
             </View>
           ) : selectedTab === "active" ? (
+            /* Khối active journey: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
             <View style={styles.activeJourney}>
               {hasActiveRide ? (
                 <>
@@ -1258,14 +1351,17 @@ export default function TripsScreen() {
                     Hành trình của bạn
                   </ThemedText>
 
+                  {/* Khối active map card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
                   <View style={styles.activeMapCard}>
                     {activeMapImageUrl ? (
+                      /* Image: Hiển thị asset hình ảnh dùng trong UI. */
                       <Image
                         source={{ uri: activeMapImageUrl }}
                         style={styles.activeMapImage}
                         resizeMode="cover"
                       />
                     ) : (
+                      /* Khối active map fallback: Khu vực bản đồ/preview tuyến đường cho chuyến đi. */
                       <View style={styles.activeMapFallback}>
                         <ThemedText type="default" style={styles.activeMapFallbackIcon}>
                           🗺️
@@ -1275,6 +1371,7 @@ export default function TripsScreen() {
                         </ThemedText>
                       </View>
                     )}
+                    {/* Khối active map badge: Khu vực bản đồ/preview tuyến đường cho chuyến đi. */}
                     <View style={styles.activeMapBadge}>
                       <ThemedText type="smallBold" style={styles.activeMapBadgeText}>
                         Google Maps • Driver → Khách
@@ -1282,6 +1379,7 @@ export default function TripsScreen() {
                     </View>
                   </View>
 
+                  {/* Khối active eta card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
                   <View style={styles.activeEtaCard}>
                     <ThemedText type="small" style={styles.activeEtaStatus}>
                       🛵 Tài xế đang đến...
@@ -1294,6 +1392,7 @@ export default function TripsScreen() {
                     </ThemedText>
                   </View>
 
+                  {/* Khối active route card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
                   <View
                     style={[
                       styles.activeRouteCard,
@@ -1320,15 +1419,18 @@ export default function TripsScreen() {
                     </ThemedText>
                   </View>
 
+                  {/* Khối active driver card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
                   <View
                     style={[
                       styles.activeDriverCard,
                       { backgroundColor: theme.backgroundElement },
                     ]}
                   >
+                    {/* Khối active driver avatar: Hiển thị avatar/chữ cái đại diện của người dùng. */}
                     <View style={styles.activeDriverAvatar}>
                       <ThemedText type="default">👨</ThemedText>
                     </View>
+                    {/* Khối active driver info: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.activeDriverInfo}>
                       <ThemedText type="default" style={styles.activeDriverName}>
                         Nguyễn Văn Tài
@@ -1340,6 +1442,7 @@ export default function TripsScreen() {
                         59-X1 234.56 · ★ 4.8
                       </ThemedText>
                     </View>
+                    {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
                     <Pressable
                       style={styles.activeMessageButton}
                       onPress={() => {
@@ -1354,6 +1457,7 @@ export default function TripsScreen() {
                     </Pressable>
                   </View>
 
+                  {/* Khối active payment card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
                   <View style={styles.activePaymentCard}>
                     <ThemedText type="small" style={styles.activePaymentText}>
                       💵 Trả tiền mặt: 25.000đ
@@ -1361,6 +1465,7 @@ export default function TripsScreen() {
                   </View>
                 </>
               ) : (
+                /* Khối empty active card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View
                   style={[
                     styles.emptyActiveCard,
@@ -1377,6 +1482,7 @@ export default function TripsScreen() {
               )}
             </View>
           ) : selectedTab === "scheduled" && items.length === 0 ? (
+            /* Khối empty active card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
             <View
               style={[
                 styles.emptyActiveCard,
@@ -1391,6 +1497,7 @@ export default function TripsScreen() {
               </ThemedText>
             </View>
           ) : selectedTab === "scheduled" ? (
+            /* Khối scheduled cards: Thông tin chuyến đã đặt trước và trạng thái xử lý. */
             <View style={styles.scheduledCards}>
               {items.map((item) => {
                 const trip = getScheduledTripView(item);
@@ -1406,6 +1513,7 @@ export default function TripsScreen() {
                 ].includes(normalizedItemStatus);
 
                 return (
+                  /* Khối scheduled journey card: Thông tin chuyến đã đặt trước và trạng thái xử lý. */
                   <View
                     key={item.id}
                     style={[
@@ -1413,7 +1521,9 @@ export default function TripsScreen() {
                       { backgroundColor: theme.backgroundElement },
                     ]}
                   >
+                    {/* Khối scheduled journey top: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
                     <View style={styles.scheduledJourneyTop}>
+                      {/* Khối scheduled journey info: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
                       <View style={styles.scheduledJourneyInfo}>
                         <ThemedText
                           type="default"
@@ -1425,6 +1535,7 @@ export default function TripsScreen() {
                           {trip.time}
                         </ThemedText>
                       </View>
+                      {/* Khối hidden schedule meta: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                       <View style={styles.hiddenScheduleMeta}>
                         <ThemedText
                           type="smallBold"
@@ -1433,6 +1544,7 @@ export default function TripsScreen() {
                           {"Chờ tài xế"}
                         </ThemedText>
                       </View>
+                      {/* Khối scheduled status badge: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
                       <View style={styles.scheduledStatusBadge}>
                         <ThemedText
                           type="smallBold"
@@ -1443,6 +1555,7 @@ export default function TripsScreen() {
                       </View>
                     </View>
 
+                    {/* Khối scheduled meta group: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
                     <View style={styles.scheduledMetaGroup}>
                       <ThemedText type="default" style={styles.scheduledMetaLine}>
                         {"📍 Điểm đón: "}
@@ -1471,11 +1584,14 @@ export default function TripsScreen() {
                       )}
                     </View>
 
+                    {/* Khối scheduled journey bottom: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
                     <View style={styles.scheduledJourneyBottom}>
                       <ThemedText type="default" style={styles.scheduledPrice}>
                         {trip.price}
                       </ThemedText>
+                      {/* Khối scheduled action column: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
                       <View style={styles.scheduledActionColumn}>
+                        {/* Nút chỉnh sửa lịch hẹn: truyền item vào handlePrimaryAction, mở edit modal với editDraft map từ trip. */}
                         <Pressable
                           style={[
                             styles.scheduledEditButton,
@@ -1491,6 +1607,7 @@ export default function TripsScreen() {
                           </ThemedText>
                         </Pressable>
                         {canCancelScheduledTrip ? (
+                          /* Nút hủy chuyến đặt trước: truyền item vào handleSecondaryAction, mở cancel modal rồi handleCancelTrip gọi BE. */
                           <Pressable
                             style={styles.scheduledCancelButton}
                             onPress={() => handleSecondaryAction(item)}
@@ -1509,7 +1626,9 @@ export default function TripsScreen() {
                 );
               })}
               {sortedScheduledItems.length > SCHEDULED_PAGE_SIZE ? (
+                /* Khối history pagination row: Dàn các phần tử trên cùng một hàng. */
                 <View style={styles.historyPaginationRow}>
+                  {/* Phân trang scheduled: chỉ đổi state scheduledPage, không gọi API. */}
                   <Pressable
                     style={[
                       styles.historyPageButton,
@@ -1536,6 +1655,7 @@ export default function TripsScreen() {
                     {`Trang ${currentScheduledPage}/${totalScheduledPages}`}
                   </ThemedText>
 
+                  {/* Phân trang scheduled: tăng scheduledPage trong giới hạn totalScheduledPages, không đổi dữ liệu gốc. */}
                   <Pressable
                     style={[
                       styles.historyPageButton,
@@ -1564,6 +1684,7 @@ export default function TripsScreen() {
               ) : null}
             </View>
           ) : selectedTab === "history" && isHistoryLoading ? (
+            /* Khối empty active card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
             <View
               style={[
                 styles.emptyActiveCard,
@@ -1578,6 +1699,7 @@ export default function TripsScreen() {
               </ThemedText>
             </View>
           ) : selectedTab === "history" && items.length === 0 ? (
+            /* Khối empty active card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
             <View
               style={[
                 styles.emptyActiveCard,
@@ -1593,6 +1715,7 @@ export default function TripsScreen() {
             </View>
           ) : (
             <>
+              {/* Khối list card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
               <ThemedView
                 testID={`trips-${selectedTab}-list`}
                 style={[styles.listCard, { backgroundColor: theme.backgroundElement }]}
@@ -1615,6 +1738,7 @@ export default function TripsScreen() {
                 driverSummary.totalReviews > 0;
 
               return (
+                /* Khối trip row: Dàn các phần tử trên cùng một hàng. */
                 <View
                   testID={`trips-${selectedTab}-item-${index}`}
                   key={item.id}
@@ -1623,11 +1747,14 @@ export default function TripsScreen() {
                     index < items.length - 1 && styles.tripRowBorder,
                   ]}
                 >
+                  {/* Khối trip left: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.tripLeft}>
+                    {/* Khối icon wrap: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.iconWrap}>
                       <ThemedText type="default">{item.icon}</ThemedText>
                     </View>
 
+                    {/* Khối trip info: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.tripInfo}>
                       <ThemedText type="default" style={styles.routeText}>
                         {item.route}
@@ -1652,7 +1779,9 @@ export default function TripsScreen() {
                     </View>
                   </View>
 
+                  {/* Khối trip right: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.tripRight}>
+                    {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
                     <Pressable
                       testID={`trips-${selectedTab}-primary-${index}`}
                       style={[
@@ -1683,6 +1812,7 @@ export default function TripsScreen() {
                       </ThemedText>
                     </Pressable>
 
+                    {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
                     <Pressable
                       style={[
                         styles.outlineAction,
@@ -1721,7 +1851,9 @@ export default function TripsScreen() {
               })}
               </ThemedView>
               {selectedTab === "history" && sortedHistoryItems.length > HISTORY_PAGE_SIZE ? (
+                /* Khối history pagination row: Dàn các phần tử trên cùng một hàng. */
                 <View style={styles.historyPaginationRow}>
+                  {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
                   <Pressable
                     style={[
                       styles.historyPageButton,
@@ -1745,6 +1877,7 @@ export default function TripsScreen() {
                     {`Trang ${currentHistoryPage}/${totalHistoryPages}`}
                   </ThemedText>
 
+                  {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
                   <Pressable
                     style={[
                       styles.historyPageButton,
@@ -1776,13 +1909,16 @@ export default function TripsScreen() {
         </View>
       </ScrollView>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={chatModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setChatModalVisible(false)}
       >
+        {/* Khối modal overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.modalOverlay}>
+          {/* Khối chat card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View
             testID="trips-rating-modal"
             style={[
@@ -1790,10 +1926,13 @@ export default function TripsScreen() {
               { backgroundColor: theme.backgroundElement },
             ]}
           >
+            {/* Khối chat header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
             <View style={styles.chatHeader}>
+              {/* Khối active driver avatar: Hiển thị avatar/chữ cái đại diện của người dùng. */}
               <View style={styles.activeDriverAvatar}>
                 <ThemedText type="default">{"👨"}</ThemedText>
               </View>
+              {/* Khối chat header info: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
               <View style={styles.chatHeaderInfo}>
                 <ThemedText type="default" style={styles.chatTitle}>
                   {"Nguyễn Văn Tài"}
@@ -1802,6 +1941,7 @@ export default function TripsScreen() {
                   {"Đang hoạt động · 0901 234 567"}
                 </ThemedText>
               </View>
+              {/* Nút đóng modal/popup đang hiển thị. */}
               <Pressable
                 style={styles.chatCloseButton}
                 onPress={() => setChatModalVisible(false)}
@@ -1812,6 +1952,7 @@ export default function TripsScreen() {
               </Pressable>
             </View>
 
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.chatMessages}
               contentContainerStyle={styles.chatMessagesContent}
@@ -1820,6 +1961,7 @@ export default function TripsScreen() {
                 const isUser = message.sender === "user";
 
                 return (
+                  /* Khối chat bubble: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                   <View
                     key={message.id}
                     style={[
@@ -1841,7 +1983,9 @@ export default function TripsScreen() {
               })}
             </ScrollView>
 
+            {/* Khối chat input row: Bao ô nhập và nút phụ như xóa nhanh hoặc chọn gợi ý. */}
             <View style={styles.chatInputRow}>
+              {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
               <TextInput
                 placeholder={"Nhắn tin với tài xế..."}
                 placeholderTextColor={MUTED}
@@ -1856,6 +2000,7 @@ export default function TripsScreen() {
                 onChangeText={setChatInput}
                 onSubmitEditing={handleSendChatMessage}
               />
+              {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
               <Pressable
                 style={styles.chatSendButton}
                 onPress={handleSendChatMessage}
@@ -1869,13 +2014,16 @@ export default function TripsScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={ratingModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setRatingModalVisible(false)}
       >
+        {/* Khối modal overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.modalOverlay}>
+          {/* Khối modal card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View
             style={[
               styles.modalCard,
@@ -1889,8 +2037,10 @@ export default function TripsScreen() {
               {selectedTrip?.route}
             </ThemedText>
 
+            {/* Khối stars row: Dàn các phần tử trên cùng một hàng. */}
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
+                /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                 <Pressable
                   testID={`trips-rating-star-${star}`}
                   key={star}
@@ -1910,6 +2060,7 @@ export default function TripsScreen() {
               ))}
             </View>
 
+            {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
             <TextInput
               testID="trips-rating-comment-input"
               multiline
@@ -1926,7 +2077,9 @@ export default function TripsScreen() {
               onChangeText={setReviewDraft}
             />
 
+            {/* Khối modal button row: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.modalButtonRow}>
+              {/* Nút hành động phụ: điều hướng hoặc đóng bước hiện tại mà không gửi form chính. */}
               <Pressable
                 style={[
                   styles.modalSecondaryButton,
@@ -1936,6 +2089,7 @@ export default function TripsScreen() {
               >
                 <ThemedText type="smallBold">{"Hủy"}</ThemedText>
               </Pressable>
+              {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
               <Pressable
                 testID="trips-rating-submit-button"
                 style={[
@@ -1957,19 +2111,23 @@ export default function TripsScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={reportModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setReportModalVisible(false)}
       >
+        {/* Khối modal overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.modalOverlay}>
+          {/* Khối modal card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View
             style={[
               styles.modalCard,
               { backgroundColor: theme.backgroundElement },
             ]}
           >
+            {/* Khối report icon: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.reportIcon}>
               <ThemedText type="default" style={styles.reportIconText}>
                 !
@@ -1982,6 +2140,7 @@ export default function TripsScreen() {
               {selectedTrip?.route}
             </ThemedText>
 
+            {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
             <TextInput
               multiline
               placeholder="Nhập lý do báo cáo, ví dụ: tài xế đến muộn, thái độ không phù hợp..."
@@ -2006,7 +2165,9 @@ export default function TripsScreen() {
               </ThemedText>
             )}
 
+            {/* Khối modal button row: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.modalButtonRow}>
+              {/* Nút hành động phụ: điều hướng hoặc đóng bước hiện tại mà không gửi form chính. */}
               <Pressable
                 style={[styles.modalSecondaryButton, { backgroundColor: theme.background }]}
                 onPress={() => {
@@ -2016,6 +2177,7 @@ export default function TripsScreen() {
               >
                 <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
+              {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
               <Pressable
                 style={[
                   styles.modalDangerButton,
@@ -2033,13 +2195,16 @@ export default function TripsScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={editModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setEditModalVisible(false)}
       >
+        {/* Khối modal overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.modalOverlay}>
+          {/* Khối modal card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View
             style={[
               styles.modalCard,
@@ -2053,6 +2218,7 @@ export default function TripsScreen() {
               Cập nhật thông tin chuyến đã hẹn trước
             </ThemedText>
 
+            {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
             <TextInput
               placeholder="Điểm đón"
               placeholderTextColor={MUTED}
@@ -2066,6 +2232,7 @@ export default function TripsScreen() {
                 setFormError("");
               }}
             />
+            {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
             <TextInput
               placeholder="Điểm đến"
               placeholderTextColor={MUTED}
@@ -2079,10 +2246,12 @@ export default function TripsScreen() {
                 setFormError("");
               }}
             />
+            {/* Nút chọn ngày đặt chuyến trong khoảng thời gian hợp lệ. */}
             <Pressable
               style={styles.scheduleSummaryButton}
               onPress={() => setSchedulePickerVisible(true)}
             >
+              {/* Khối schedule icon card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
               <View style={styles.scheduleIconCard}>
                 <ThemedText type="smallBold" style={styles.scheduleIconMonth}>
                   {selectedDateOption.monthLabel}
@@ -2091,6 +2260,7 @@ export default function TripsScreen() {
                   {selectedDateOption.dayLabel}
                 </ThemedText>
               </View>
+              {/* Khối schedule summary info: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.scheduleSummaryInfo}>
                 <ThemedText type="smallBold" style={styles.scheduleSummaryTitle}>
                   Xe đón lúc {editDraft.time}
@@ -2104,6 +2274,7 @@ export default function TripsScreen() {
               </ThemedText>
             </Pressable>
 
+            {/* Khối locked price box: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.lockedPriceBox}>
               <ThemedText type="small" style={styles.lockedPriceLabel}>
                 Giá chuyến đi
@@ -2119,13 +2290,16 @@ export default function TripsScreen() {
               </ThemedText>
             )}
 
+            {/* Khối modal button row: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.modalButtonRow}>
+              {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
               <Pressable
                 style={[styles.modalSecondaryButton, { backgroundColor: theme.background }]}
                 onPress={() => setEditModalVisible(false)}
               >
                 <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
+              {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
               <Pressable
                 style={styles.modalPrimaryButton}
                 onPress={handleUpdateScheduledTrip}
@@ -2139,11 +2313,13 @@ export default function TripsScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={schedulePickerVisible}
         animationType="slide"
         onRequestClose={() => setSchedulePickerVisible(false)}
       >
+        {/* Khối schedule screen: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
         <View
           style={[
             styles.scheduleScreen,
@@ -2153,7 +2329,9 @@ export default function TripsScreen() {
             },
           ]}
         >
+          {/* Khối schedule header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
           <View style={styles.scheduleHeader}>
+            {/* Nút quay lại màn trước trong stack điều hướng. */}
             <Pressable
               style={styles.scheduleBackButton}
               onPress={() => setSchedulePickerVisible(false)}
@@ -2165,9 +2343,11 @@ export default function TripsScreen() {
             <ThemedText type="default" style={styles.scheduleTitle}>
               Hẹn giờ
             </ThemedText>
+            {/* Khối schedule back button: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.scheduleBackButton} />
           </View>
 
+          {/* Khối schedule calendar card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View style={styles.scheduleCalendarCard}>
             <ThemedText type="default" style={styles.scheduleCalendarMonth}>
               {selectedDateOption.monthLabel}
@@ -2177,6 +2357,7 @@ export default function TripsScreen() {
             </ThemedText>
           </View>
 
+          {/* Khối schedule intro: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
           <View style={styles.scheduleIntro}>
             <ThemedText type="default" style={styles.scheduleQuestion}>
               Bạn muốn xe đón lúc nào?
@@ -2186,7 +2367,9 @@ export default function TripsScreen() {
             </ThemedText>
           </View>
 
+          {/* Khối schedule picker panel: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
           <View style={styles.schedulePickerPanel}>
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.scheduleDateColumn}
               showsVerticalScrollIndicator={false}
@@ -2195,6 +2378,7 @@ export default function TripsScreen() {
                 const isSelected = option.value === selectedDateOption.value;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={option.value}
                     style={[
@@ -2227,6 +2411,7 @@ export default function TripsScreen() {
               })}
             </ScrollView>
 
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.scheduleTimeColumn}
               showsVerticalScrollIndicator={false}
@@ -2235,6 +2420,7 @@ export default function TripsScreen() {
                 const isSelected = hour === editDraft.hour;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={hour}
                     style={[
@@ -2266,6 +2452,7 @@ export default function TripsScreen() {
               :
             </ThemedText>
 
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.scheduleTimeColumn}
               showsVerticalScrollIndicator={false}
@@ -2274,6 +2461,7 @@ export default function TripsScreen() {
                 const isSelected = minute === editDraft.minute;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={minute}
                     style={[
@@ -2302,12 +2490,14 @@ export default function TripsScreen() {
             </ScrollView>
           </View>
 
+          {/* Khối schedule result card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View style={styles.scheduleResultCard}>
             <ThemedText type="default" style={styles.scheduleResultTitle}>
               Xe đón bạn lúc {selectedScheduleText}
             </ThemedText>
           </View>
 
+          {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
           <Pressable
             style={styles.scheduleConfirmButton}
             onPress={() => setSchedulePickerVisible(false)}
@@ -2319,13 +2509,16 @@ export default function TripsScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={cancelModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setCancelModalVisible(false)}
       >
+        {/* Khối modal overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.modalOverlay}>
+          {/* Khối modal card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View
             style={[
               styles.modalCard,
@@ -2339,6 +2532,7 @@ export default function TripsScreen() {
               {selectedTrip?.route}
             </ThemedText>
 
+            {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
             <TextInput
               multiline
               placeholder={"Nhập lý do hủy yêu cầu..."}
@@ -2363,7 +2557,9 @@ export default function TripsScreen() {
               </ThemedText>
             )}
 
+            {/* Khối modal button row: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.modalButtonRow}>
+              {/* Nút hủy thao tác hiện tại và đóng form/modal liên quan. */}
               <Pressable
                 style={[styles.modalSecondaryButton, { backgroundColor: theme.background }]}
                 disabled={isCancellingTrip}
@@ -2371,6 +2567,7 @@ export default function TripsScreen() {
               >
                 <ThemedText type="smallBold">{"Đóng"}</ThemedText>
               </Pressable>
+              {/* Nút hủy thao tác hiện tại và đóng form/modal liên quan. */}
               <Pressable
                 style={[
                   styles.modalDangerButton,
@@ -2391,6 +2588,7 @@ export default function TripsScreen() {
   );
 }
 
+// styles: Gom toàn bộ style của màn hình/component ở cuối file
 const styles = StyleSheet.create({
   container: {
     flex: 1,

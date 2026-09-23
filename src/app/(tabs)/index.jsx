@@ -1,3 +1,9 @@
+// HOME SCREEN - Màn trang chủ khách, gom chuyến gần đây, chuyến đặt trước và đi ghép
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -19,11 +25,17 @@ import {
 } from "@/features/ride-sharing/services/ride-sharing-api";
 import { useTheme } from "@/hooks/use-theme";
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const BRAND = "#FF7A00";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const BRAND_DARK = "#F56A00";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const BRAND_LIGHT = "#FFF4EA";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const CARD_BORDER = "#ECEFF3";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const INK = "#111827";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const SOFT_TEXT = "#8A8F98";
 const homeRideOptions = [
   {
@@ -40,14 +52,17 @@ const homeRideOptions = [
   },
 ];
 
+// getDisplayRole: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDisplayRole(role) {
   return role === "Customer" ? "Khách hàng" : role;
 }
 
+// getTripField: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripField(source, camelKey, pascalKey) {
   return source?.[camelKey] ?? source?.[pascalKey];
 }
 
+// normalizeTripStatus: Chuẩn hóa status chuyến từ số hoặc text về một dạng thống nhất
 function normalizeTripStatus(status) {
   const rawStatus = String(status ?? "").trim().toLowerCase();
 
@@ -69,6 +84,7 @@ function normalizeTripStatus(status) {
   return statusByNumber[rawStatus] ?? rawStatus.replace(/\s+/g, "");
 }
 
+// isScheduledTrip: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isScheduledTrip(trip) {
   const tripType = String(
     getTripField(trip, "tripType", "TripType") ?? ""
@@ -81,16 +97,19 @@ function isScheduledTrip(trip) {
   );
 }
 
+// isImmediateTrip: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isImmediateTrip(trip) {
   return !isScheduledTrip(trip);
 }
 
+// isTerminalStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isTerminalStatus(status) {
   return ["completed", "cancelled", "nodriverfound"].includes(
     normalizeTripStatus(status)
   );
 }
 
+// normalizeRideSharingGroupStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRideSharingGroupStatus(status) {
   const rawStatus = String(status ?? "").trim().toLowerCase();
 
@@ -109,6 +128,7 @@ function normalizeRideSharingGroupStatus(status) {
   return statusByNumber[rawStatus] ?? rawStatus.replace(/\s+/g, "");
 }
 
+// isAvailableRideSharingGroup: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isAvailableRideSharingGroup(group) {
   const status = normalizeRideSharingGroupStatus(
     getTripField(group, "status", "Status")
@@ -117,6 +137,7 @@ function isAvailableRideSharingGroup(group) {
   return !["completed", "cancelled", "expired", "nodriverfound"].includes(status);
 }
 
+// formatCurrencyVnd: Định dạng số tiền sang VND để hiển thị
 function formatCurrencyVnd(value) {
   const numberValue = Number(value);
 
@@ -127,6 +148,7 @@ function formatCurrencyVnd(value) {
   return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
 }
 
+// formatTripDateTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatTripDateTime(value) {
   if (!value) {
     return "";
@@ -146,6 +168,7 @@ function formatTripDateTime(value) {
   });
 }
 
+// getTripSortTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripSortTime(trip) {
   const rawValue =
     getTripField(trip, "completedAt", "CompletedAt") ??
@@ -159,6 +182,7 @@ function getTripSortTime(trip) {
   return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
 }
 
+// getTripFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripFare(trip) {
   return (
     trip?.pricing?.estimatedFare ??
@@ -173,6 +197,7 @@ function getTripFare(trip) {
   );
 }
 
+// getVehicleLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getVehicleLabel(trip) {
   const vehicleType = String(
     getTripField(trip, "vehicleType", "VehicleType") ?? ""
@@ -189,10 +214,12 @@ function getVehicleLabel(trip) {
   return "Ô tô";
 }
 
+// getTripIcon: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripIcon(trip) {
   return getVehicleLabel(trip) === "Xe máy" ? "🛵" : "🚗";
 }
 
+// getScheduledStatusLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getScheduledStatusLabel(status) {
   switch (normalizeTripStatus(status)) {
     case "pending":
@@ -216,6 +243,9 @@ function getScheduledStatusLabel(status) {
   }
 }
 
+// mapTripToRecentCard: NHẬN trip thô từ BE/local và chuyển thành card "Chuyến gần đây".
+// Dữ liệu lấy: id, pickupAddress, destinationAddress, completedAt/cancelledAt/createdAt, fare.
+// Output card chỉ chứa field UI cần render: id/icon/route/meta.
 function mapTripToRecentCard(trip) {
   return {
     id: getTripField(trip, "id", "Id"),
@@ -231,6 +261,8 @@ function mapTripToRecentCard(trip) {
   };
 }
 
+// mapTripToScheduledCard: NHẬN trip đặt trước từ BE/local và chuyển thành card lịch hẹn.
+// Hiện Home tạm chưa render scheduled từ API thống kê riêng, nhưng mapper giữ sẵn cho flow sau.
 function mapTripToScheduledCard(trip) {
   return {
     id: getTripField(trip, "id", "Id"),
@@ -245,9 +277,13 @@ function mapTripToScheduledCard(trip) {
   };
 }
 
+// mapRideSharingGroupToHomeCard: NHẬN group xe ghép từ BE và map thành card ở Home.
+// Quan trọng: id của card = groupId BE. Nút "Xem chi tiết" dùng id này để push sang /search/shared-ride/[id].
+// Màn [id] sẽ nhận id qua useLocalSearchParams rồi gọi getRideSharingGroup(id) để lấy chi tiết mới nhất.
 function mapRideSharingGroupToHomeCard(group) {
   const members = Array.isArray(group?.members) ? group.members : [];
   const firstMember = members[0] ?? {};
+  // groupId là khóa liên kết giữa card Home và màn chi tiết dynamic route [id].
   const groupId = getTripField(group, "id", "Id");
   const price =
     firstMember.finalFare ??
@@ -282,8 +318,10 @@ function mapRideSharingGroupToHomeCard(group) {
   };
 }
 
+// EmptyState: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function EmptyState({ title, description }) {
   return (
+    /* Khối empty card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
     <ThemedView style={styles.emptyCard}>
       <ThemedText type="smallBold" style={styles.emptyTitle}>
         {title}
@@ -295,6 +333,7 @@ function EmptyState({ title, description }) {
   );
 }
 
+// HomeScreen: Component chính của tab Trang chủ
 export default function HomeScreen() {
   const theme = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
@@ -310,8 +349,20 @@ export default function HomeScreen() {
   const displayInitial = displayName.charAt(0)?.toUpperCase() ?? "B";
   const displayRole = getDisplayRole(session?.role) ?? "Khách";
 
+  // loadHomeTrips: LUỒNG NHẬN DỮ LIỆU CHO TRANG CHỦ
+  // ================================================================
+  // 1. Lấy accessToken từ AuthContext; không có token thì không gọi BE và clear state.
+  // 2. Gọi song song:
+  //    - getPassengerTrips(accessToken): nhận danh sách chuyến từ BE.
+  //    - loadBookedTrips(): nhận chuyến local đã cache sau khi đặt xe.
+  // 3. Gộp BE + local, bỏ trùng theo trip id để tránh hiển thị lặp.
+  // 4. Lọc chuyến đi ngay đã kết thúc/hủy, sort mới nhất, map thành card "Chuyến gần đây".
+  // 5. Gọi getAvailableRideSharingGroups + getRideSharingGroup để lấy nhóm xe ghép còn tham gia được.
+  // 6. setVisibleRecentTrips/setVisibleRideGroups đẩy dữ liệu vào UI render.
+  // ================================================================
   const loadHomeTrips = useCallback(async () => {
     if (!accessToken) {
+      // Không có session đăng nhập: xóa dữ liệu cá nhân khỏi trang chủ.
       setVisibleRecentTrips([]);
       setVisibleScheduledTrips([]);
       setVisibleRideGroups([]);
@@ -319,11 +370,13 @@ export default function HomeScreen() {
     }
 
     try {
+      // Nhận dữ liệu chuyến từ 2 nguồn: BE là dữ liệu chuẩn, local là cache để UI không bị trống.
       const [apiTrips, localTrips] = await Promise.all([
         getPassengerTrips(accessToken).catch(() => []),
         loadBookedTrips().catch(() => []),
       ]);
 
+      // Gộp dữ liệu rồi dedupe theo id; nếu cùng id thì bản local phía sau có thể bổ sung field UI đã lưu.
       const mergedTrips = [
         ...(Array.isArray(apiTrips) ? apiTrips : []),
         ...(Array.isArray(localTrips) ? localTrips : []),
@@ -337,6 +390,7 @@ export default function HomeScreen() {
         ).values()
       );
 
+      // Chỉ lấy chuyến "đi ngay" đã ở trạng thái cuối để đưa vào khu vực chuyến gần đây.
       const recentTrips = dedupedTrips
         .filter((trip) =>
           isImmediateTrip(trip) &&
@@ -349,9 +403,11 @@ export default function HomeScreen() {
       // Tam thoi an du lieu chuyen dat truoc o trang chu cho den khi co API thong ke rieng.
       const scheduledTrips = [];
 
+      // Đưa dữ liệu đã map vào state; JSX phía dưới chỉ render theo các state này.
       setVisibleRecentTrips(recentTrips);
       setVisibleScheduledTrips(scheduledTrips);
 
+      // Lấy nhóm xe ghép còn trống từ BE, sau đó gọi chi tiết từng group để có member/giá/status mới nhất.
       const availableGroups = await getAvailableRideSharingGroups(
         "",
         accessToken
@@ -376,8 +432,10 @@ export default function HomeScreen() {
         .slice(0, 3)
         .map(mapRideSharingGroupToHomeCard);
 
+      // Đưa tối đa 3 nhóm xe ghép lên trang chủ.
       setVisibleRideGroups(groups);
     } catch {
+      // Nếu API lỗi/mạng lỗi: không crash màn hình, chỉ đưa các section về trạng thái rỗng.
       setVisibleRecentTrips([]);
       setVisibleScheduledTrips([]);
       setVisibleRideGroups([]);
@@ -391,6 +449,7 @@ export default function HomeScreen() {
   );
 
   return (
+    /* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */
     <ScrollView
       style={[styles.scrollView, { backgroundColor: "#F5F6FA" }]}
       contentContainerStyle={{
@@ -400,19 +459,27 @@ export default function HomeScreen() {
       }}
       showsVerticalScrollIndicator={false}
     >
+      {/* Khối wrapper: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
       <View style={styles.wrapper}>
+        {/* Khối hero card: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
         <View style={styles.heroCard}>
+          {/* Khối hero pattern top: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
           <View style={styles.heroPatternTop} />
+          {/* Khối hero pattern bottom: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
           <View style={styles.heroPatternBottom} />
 
+          {/* Khối hero top row: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
           <View style={styles.heroTopRow}>
+            {/* Khối hero identity: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
             <View style={styles.heroIdentity}>
+              {/* Khối avatar: Hiển thị avatar/chữ cái đại diện của người dùng. */}
               <View style={styles.avatar}>
                 <ThemedText type="smallBold" style={styles.avatarText}>
                   {displayInitial}
                 </ThemedText>
               </View>
 
+              {/* Khối hero text: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
               <View style={styles.heroText}>
                 <ThemedText type="small" style={styles.heroMeta}>
                   Xin chào,
@@ -423,6 +490,7 @@ export default function HomeScreen() {
               </View>
             </View>
 
+            {/* Khối status badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
             <View style={styles.statusBadge}>
               <ThemedText type="smallBold" style={styles.statusText}>
                 {isAuthenticated ? displayRole : "KHÁCH"}
@@ -430,6 +498,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Khối hero message: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
           <View style={styles.heroMessage}>
             <ThemedText type="subtitle" style={styles.heroTitle}>
               FPT Ride
@@ -439,7 +508,9 @@ export default function HomeScreen() {
             </ThemedText>
           </View>
 
+          {/* Khối hero info row: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
           <View style={styles.heroInfoRow}>
+            {/* Khối hero info pill: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
             <View style={styles.heroInfoPill}>
               <ThemedText type="smallBold" style={styles.heroInfoIcon}>
                 ⚡
@@ -448,6 +519,7 @@ export default function HomeScreen() {
                 Nhanh chóng
               </ThemedText>
             </View>
+            {/* Khối hero info pill: Khu vực hero đầu màn hình hiển thị lời chào/trạng thái nổi bật. */}
             <View style={styles.heroInfoPill}>
               <ThemedText type="smallBold" style={styles.heroInfoIcon}>
                 🎓
@@ -459,7 +531,9 @@ export default function HomeScreen() {
           </View>
 
           {!session?.accessToken ? (
+            /* Khối auth actions: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
             <View style={styles.authActions}>
+              {/* Điều hướng đăng nhập: bấm nút này chuyển sang tab /profile, không truyền params; ProfileScreen tự hiển thị form login khi chưa có session. */}
               <Pressable
                 testID="home-login-button"
                 style={({ pressed }) => [
@@ -473,6 +547,7 @@ export default function HomeScreen() {
                 </ThemedText>
               </Pressable>
 
+              {/* Điều hướng đăng ký: cũng chuyển sang /profile; người dùng chọn tab đăng ký trong ProfileScreen. */}
               <Pressable
                 style={({ pressed }) => [
                   styles.authButtonSecondary,
@@ -491,6 +566,7 @@ export default function HomeScreen() {
           ) : null}
         </View>
 
+        {/* Khối primary card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <ThemedView
           style={[
             styles.primaryCard,
@@ -504,7 +580,9 @@ export default function HomeScreen() {
             Chọn hình thức phù hợp, sau đó chọn loại xe để tìm chuyến.
           </ThemedText>
 
+          {/* Khối toggle row: Nhóm lựa chọn dạng tab/segment để đổi chế độ hiển thị. */}
           <View style={styles.toggleRow}>
+            {/* Chọn chế độ xe lẻ: chỉ đổi state selectedMode tại Home, chưa điều hướng và chưa gửi dữ liệu sang màn khác. */}
             <Pressable
               style={({ pressed }) => [
                 styles.modeBtn,
@@ -515,12 +593,15 @@ export default function HomeScreen() {
                 setSelectedMode("now");
               }}
             >
+              {/* Khối mode content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
               <View style={styles.modeContent}>
+                {/* Khối mode icon badge: Gom icon và text của một lựa chọn chế độ đặt xe. */}
                 <View style={styles.modeIconBadge}>
                   <ThemedText type="default" style={styles.modeIcon}>
                     🚕
                   </ThemedText>
                 </View>
+                {/* Khối mode copy: Gom icon và text của một lựa chọn chế độ đặt xe. */}
                 <View style={styles.modeCopy}>
                   <ThemedText
                     type="smallBold"
@@ -538,6 +619,8 @@ export default function HomeScreen() {
               </View>
             </Pressable>
 
+            {/* Chọn chế độ xe ghép: set selectedMode để active UI, rồi điều hướng sang /search với query mode=shared&when=any. */}
+            {/* SearchScreen đọc query này bằng useLocalSearchParams để mở đúng tab xe ghép ngay khi vào màn. */}
             <Pressable
               style={({ pressed }) => [
                 styles.modeBtn,
@@ -549,12 +632,15 @@ export default function HomeScreen() {
                 router.push("/search?mode=shared&when=any");
               }}
             >
+              {/* Khối mode content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
               <View style={styles.modeContent}>
+                {/* Khối mode icon badge: Gom icon và text của một lựa chọn chế độ đặt xe. */}
                 <View style={styles.modeIconBadge}>
                   <ThemedText type="default" style={styles.modeIcon}>
                     👥
                   </ThemedText>
                 </View>
+                {/* Khối mode copy: Gom icon và text của một lựa chọn chế độ đặt xe. */}
                 <View style={styles.modeCopy}>
                   <ThemedText
                     type="smallBold"
@@ -574,12 +660,16 @@ export default function HomeScreen() {
           </View>
 
           {selectedMode === "now" ? (
+            /* Khối home vehicle block: Hiển thị lựa chọn loại xe và mô tả cho người dùng. */
             <View style={styles.homeVehicleBlock}>
               <ThemedText type="smallBold" style={styles.homeVehicleLabel}>
                 Chọn loại xe
               </ThemedText>
+              {/* Khối home vehicle row: Hiển thị lựa chọn loại xe và mô tả cho người dùng. */}
               <View testID="home-vehicle-selector" style={styles.homeVehicleRow}>
                 {homeRideOptions.map((option) => (
+                  /* Điều hướng chọn loại xe: gửi mode=now, when=now, source=home và vehicle=option.id qua URL query. */
+                  /* SearchScreen nhận các params này để preselect loại xe và biết flow bắt đầu từ Home. */
                   <Pressable
                     key={option.id}
                     testID={`home-vehicle-option-${option.id}`}
@@ -593,11 +683,13 @@ export default function HomeScreen() {
                       )
                     }
                   >
+                    {/* Khối vehicle icon badge: Hiển thị lựa chọn loại xe và mô tả cho người dùng. */}
                     <View style={styles.vehicleIconBadge}>
                       <ThemedText type="default" style={styles.homeVehicleIcon}>
                         {option.icon}
                       </ThemedText>
                     </View>
+                    {/* Khối vehicle copy: Hiển thị lựa chọn loại xe và mô tả cho người dùng. */}
                     <View style={styles.vehicleCopy}>
                       <ThemedText
                         type="smallBold"
@@ -616,6 +708,7 @@ export default function HomeScreen() {
           ) : null}
         </ThemedView>
 
+        {/* Header section: Tiêu đề cho một nhóm nội dung trong màn hình. */}
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
             Chuyến gần đây
@@ -624,6 +717,7 @@ export default function HomeScreen() {
 
         {visibleRecentTrips.length > 0 ? (
           visibleRecentTrips.map((trip) => (
+            /* Khối recent card: Card/chỉ mục chuyến gần đây để người dùng xem nhanh. */
             <ThemedView
               key={trip.id}
               style={[
@@ -631,9 +725,11 @@ export default function HomeScreen() {
                 { backgroundColor: theme.backgroundElement },
               ]}
             >
+              {/* Khối recent icon wrap: Card/chỉ mục chuyến gần đây để người dùng xem nhanh. */}
               <View style={styles.recentIconWrap}>
                 <ThemedText type="smallBold">{trip.icon}</ThemedText>
               </View>
+              {/* Khối recent content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
               <View style={styles.recentContent}>
                 <ThemedText type="smallBold" style={styles.recentRoute}>
                   {trip.route}
@@ -655,6 +751,7 @@ export default function HomeScreen() {
           />
         )}
 
+        {/* Header section: Tiêu đề cho một nhóm nội dung trong màn hình. */}
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
             Chuyến đã đặt trước
@@ -663,6 +760,7 @@ export default function HomeScreen() {
 
         {visibleScheduledTrips.length > 0 ? (
           visibleScheduledTrips.map((trip) => (
+            /* Khối scheduled card: Thông tin chuyến đã đặt trước và trạng thái xử lý. */
             <ThemedView
               key={trip.id}
               style={[
@@ -670,7 +768,9 @@ export default function HomeScreen() {
                 { backgroundColor: theme.backgroundElement },
               ]}
             >
+              {/* Khối scheduled top row: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
               <View style={styles.scheduledTopRow}>
+                {/* Khối waiting badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
                 <View style={styles.waitingBadge}>
                   <ThemedText type="smallBold" style={styles.waitingText}>
                     {trip.status}
@@ -681,6 +781,7 @@ export default function HomeScreen() {
                 </ThemedText>
               </View>
 
+              {/* Khối scheduled body: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
               <View style={styles.scheduledBody}>
                 <ThemedText type="default" style={styles.scheduledFrom}>
                   {trip.from}
@@ -688,6 +789,7 @@ export default function HomeScreen() {
                 <ThemedText type="small" style={styles.mutedText}>
                   {trip.to}
                 </ThemedText>
+                {/* Khối scheduled bottom row: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
                 <View style={styles.scheduledBottomRow}>
                   <ThemedText type="small" style={styles.mutedText}>
                     {trip.vehicle}
@@ -710,6 +812,7 @@ export default function HomeScreen() {
           />
         )}
 
+        {/* Header section: Tiêu đề cho một nhóm nội dung trong màn hình. */}
         <View style={styles.sectionHeader}>
           <ThemedText type="default" style={styles.sectionTitle}>
             Nhóm xe ghép sẵn có
@@ -721,6 +824,7 @@ export default function HomeScreen() {
 
         {visibleRideGroups.length > 0 ? (
           visibleRideGroups.map((ride) => (
+            /* Khối ride card: Thông tin nhóm/chuyến xe ghép đang hiển thị. */
             <ThemedView
               key={ride.id}
               style={[
@@ -728,6 +832,7 @@ export default function HomeScreen() {
                 { backgroundColor: theme.backgroundElement },
               ]}
             >
+              {/* Khối ride title row: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
               <View style={styles.rideTitleRow}>
                 <ThemedText type="smallBold" style={styles.vehiclePill}>
                   {ride.vehicle.toUpperCase()}
@@ -737,12 +842,14 @@ export default function HomeScreen() {
                 </ThemedText>
               </View>
 
+              {/* Khối ride route row: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
               <View style={styles.rideRouteRow}>
                 <ThemedText type="default" style={styles.rideRoute}>
                   {ride.route}
                 </ThemedText>
               </View>
 
+              {/* Khối ride driver row: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
               <View style={styles.rideDriverRow}>
                 <ThemedText type="small" style={styles.mutedText}>
                   {ride.driver}
@@ -756,6 +863,8 @@ export default function HomeScreen() {
                 {`"${ride.note}"`}
               </ThemedText>
 
+              {/* Điều hướng xem chi tiết xe ghép: ride.id chính là groupId BE đã map ở mapRideSharingGroupToHomeCard. */}
+              {/* Dynamic route /search/shared-ride/[id] nhận id này, gọi getRideSharingGroup(id) để lấy chi tiết group/members/status. */}
               <Pressable
                 style={({ pressed }) => [
                   styles.joinButton,
@@ -780,6 +889,7 @@ export default function HomeScreen() {
   );
 }
 
+// styles: Gom toàn bộ style của màn hình/component ở cuối file
 const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   wrapper: {
