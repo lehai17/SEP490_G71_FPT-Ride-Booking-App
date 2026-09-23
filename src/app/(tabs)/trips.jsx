@@ -287,7 +287,7 @@ function getScheduledTripView(item) {
           : "",
     price,
     vehicle,
-    statusLabel: item.statusLabel || getScheduledStatusLabel(item.status),
+    statusLabel: getScheduledStatusLabel(item.status),
   };
 }
 
@@ -390,9 +390,61 @@ function normalizeTripStatus(status) {
   return normalizedStatus;
 }
 
+function getTripStatus(trip) {
+  return normalizeTripStatus(getTripField(trip, "status", "Status"));
+}
+
+function isTerminalTripStatus(status) {
+  const normalizedStatus = normalizeTripStatus(status);
+
+  return (
+    normalizedStatus === "completed" ||
+    normalizedStatus === "cancelled" ||
+    normalizedStatus === "nodriverfound"
+  );
+}
+
+function isHistoryTrip(trip) {
+  return isTerminalTripStatus(getTripStatus(trip));
+}
+
+function parseSortableTime(value) {
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) {
+    return 0;
+  }
+
+  const normalizedValue = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawValue)
+    ? rawValue
+    : `${rawValue}Z`;
+  const date = new Date(normalizedValue);
+
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function getScheduledSortTime(item) {
+  return (
+    item?.sortTimestamp ||
+    parseSortableTime(item?.scheduledAt) ||
+    parseSortableTime(item?.createdAt) ||
+    0
+  );
+}
+
+function getHistorySortTime(item) {
+  return item?.sortTimestamp || parseSortableTime(item?.createdAt) || 0;
+}
+
 // getScheduledStatusLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getScheduledStatusLabel(status) {
-  switch (normalizeTripStatus(status)) {
+  const normalizedStatus = normalizeTripStatus(status);
+
+  if (normalizedStatus === "pending" || normalizedStatus === "pendingdriverassignment") {
+    return "Chờ tài xế";
+  }
+
+  switch (normalizedStatus) {
     case "pending":
       return "Đang tìm tài xế";
     case "pendingdriverassignment":
@@ -448,6 +500,7 @@ function mapTripToScheduledItem(trip) {
   const scheduledAt = getTripField(trip, "scheduledAt", "ScheduledAt");
   const status = getTripField(trip, "status", "Status");
   const vehicleType = getTripField(trip, "vehicleType", "VehicleType");
+  const createdAt = getTripField(trip, "createdAt", "CreatedAt");
 
   return toScheduledTripSectionItem({
     id: getTripField(trip, "id", "Id"),
@@ -465,6 +518,7 @@ function mapTripToScheduledItem(trip) {
     scheduledAt,
     scheduledPickupText: formatScheduledPickupText(scheduledAt),
     status,
+    createdAt,
     distanceText: formatDistanceKm(getTripField(trip, "estimatedDistanceKm", "EstimatedDistanceKm")),
     durationText: formatDurationMinute(getTripField(trip, "estimatedDurationMinute", "EstimatedDurationMinute")),
   });
@@ -577,11 +631,7 @@ export default function TripsScreen() {
         const nextScheduled = [...(current.scheduled ?? [])];
 
         bookedTrips.forEach((trip) => {
-          if (
-            trip.status === "completed" ||
-            trip.status === "history" ||
-            trip.status === "cancelled"
-          ) {
+          if (isTerminalTripStatus(trip.status) || trip.status === "history") {
             return;
           }
 
@@ -771,7 +821,7 @@ export default function TripsScreen() {
             (current.scheduled ?? []).map((trip) => [trip.id, trip])
           );
           const scheduled = Array.isArray(trips)
-            ? trips.filter(isScheduledTrip).map((trip) => {
+            ? trips.filter((trip) => isScheduledTrip(trip) && !isHistoryTrip(trip)).map((trip) => {
                 const item = mapTripToScheduledItem(trip);
                 const localItem = localScheduledById.get(item.id);
 
@@ -788,6 +838,10 @@ export default function TripsScreen() {
                     (!isSchedulePlaceholder(localScheduleText) &&
                       localScheduleText) ||
                     "",
+                  sortTimestamp:
+                    getScheduledSortTime(item) ||
+                    getScheduledSortTime(localItem) ||
+                    0,
                 };
               })
             : current.scheduled;
@@ -796,9 +850,11 @@ export default function TripsScreen() {
             ...current,
             scheduled,
             history: Array.isArray(trips)
-              ? trips.map((trip) =>
-                  mapTripToHistoryItem(trip, localHistoryById.get(trip.id))
-                )
+              ? trips
+                  .filter(isHistoryTrip)
+                  .map((trip) =>
+                    mapTripToHistoryItem(trip, localHistoryById.get(trip.id))
+                  )
               : [],
           };
         });
@@ -828,8 +884,8 @@ export default function TripsScreen() {
   const sortedScheduledItems =
     selectedTab === "scheduled"
       ? [...rawItems].sort((firstTrip, secondTrip) => {
-          const firstTime = firstTrip.sortTimestamp ?? 0;
-          const secondTime = secondTrip.sortTimestamp ?? 0;
+          const firstTime = getScheduledSortTime(firstTrip);
+          const secondTime = getScheduledSortTime(secondTrip);
 
           return scheduledSortOrder === "newest"
             ? secondTime - firstTime
@@ -839,8 +895,8 @@ export default function TripsScreen() {
   const sortedHistoryItems =
     selectedTab === "history"
       ? [...rawItems].sort((firstTrip, secondTrip) => {
-          const firstTime = firstTrip.sortTimestamp ?? 0;
-          const secondTime = secondTrip.sortTimestamp ?? 0;
+          const firstTime = getHistorySortTime(firstTrip);
+          const secondTime = getHistorySortTime(secondTrip);
 
           return historySortOrder === "newest"
             ? secondTime - firstTime

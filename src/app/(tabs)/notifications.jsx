@@ -62,6 +62,21 @@ function getDisplayTitle(title) {
 
 // Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MESSAGE_TRANSLATIONS = {
+  "Trip created":
+    "Đã tạo chuyến xe lẻ tức thì. Hệ thống đang tìm tài xế cho bạn.",
+  "Scheduled trip created": "Đã đặt chuyến xe lẻ hẹn lịch thành công.",
+  "Trip cancelled": "Chuyến đi đã được hủy.",
+  "Looking for a driver":
+    "Chuyến xe lẻ hẹn lịch của bạn đã đến giờ tìm tài xế.",
+  "Driver accepted your trip":
+    "Tài xế đã nhận chuyến xe lẻ của bạn và đang di chuyển.",
+  "Driver has arrived": "Tài xế đã đến điểm đón cho chuyến xe lẻ của bạn.",
+  "Trip started": "Chuyến xe lẻ của bạn đã bắt đầu.",
+  "Trip completed": "Chuyến xe lẻ của bạn đã hoàn thành.",
+  "Scheduled trip reminder":
+    "Chuyến xe lẻ hẹn lịch của bạn sắp đến giờ khởi hành.",
+  "No driver found":
+    "Không tìm thấy tài xế cho chuyến xe lẻ của bạn. Bạn có thể đặt lại chuyến khác.",
   "Ride sharing request created":
     "Yêu cầu đi ghép đã được tạo. Hệ thống đang tìm nhóm phù hợp cho bạn.",
   "Ride sharing request cancelled": "Yêu cầu đi ghép của bạn đã được hủy.",
@@ -80,10 +95,37 @@ const MESSAGE_TRANSLATIONS = {
   "Shared ride completed": "Chuyến xe ghép đã hoàn thành.",
 };
 
+const EXPLICIT_TRIP_LABEL_PATTERN = /chuyến xe (lẻ|ghép) (tức thì|hẹn lịch)/i;
+const GUID_PATTERN =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
+const TIME_ZONE_PATTERN = /(z|[+-]\d{2}:?\d{2})$/i;
+
+function parseApiDate(value) {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return new Date(value);
+  }
+
+  const trimmedValue = value.trim();
+  const normalizedValue = TIME_ZONE_PATTERN.test(trimmedValue)
+    ? trimmedValue
+    : `${trimmedValue}Z`;
+
+  return new Date(normalizedValue);
+}
+
 // getDisplayMessage: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDisplayMessage(notification) {
   const title = notification?.title ?? "";
   const message = notification?.message ?? "";
+
+  if (EXPLICIT_TRIP_LABEL_PATTERN.test(message) && !GUID_PATTERN.test(message)) {
+    return message;
+  }
 
   if (MESSAGE_TRANSLATIONS[title]) {
     return MESSAGE_TRANSLATIONS[title];
@@ -130,39 +172,29 @@ function formatNotificationTime(value) {
     return "";
   }
 
-  const date = new Date(value);
+  const date = parseApiDate(value);
 
   if (Number.isNaN(date.getTime())) {
     return "";
   }
 
-  const diffMs = Date.now() - date.getTime();
-  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+  const parts = new Intl.DateTimeFormat("vi-VN", {
+    timeZone: VIETNAM_TIME_ZONE,
+    day: "numeric",
+    month: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
 
-  if (diffMinutes < 1) {
-    return "Vừa xong";
-  }
+  const getPart = (type) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const day = getPart("day");
+  const month = getPart("month");
+  const hour = getPart("hour");
+  const minute = getPart("minute");
 
-  if (diffMinutes < 60) {
-    return `${diffMinutes} phút`;
-  }
-
-  const diffHours = Math.floor(diffMinutes / 60);
-
-  if (diffHours < 24) {
-    return `${diffHours} giờ`;
-  }
-
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffDays < 7) {
-    return `${diffDays} ngày`;
-  }
-
-  return date.toLocaleDateString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-  });
+  return `${day}/${month} ${hour}:${minute}`;
 }
 
 // NotificationsScreen: Component chính của tab Thông báo
