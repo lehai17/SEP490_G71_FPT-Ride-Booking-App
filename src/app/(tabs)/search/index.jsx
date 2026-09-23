@@ -1,3 +1,9 @@
+// BOOKING SEARCH SCREEN - Luồng đặt xe, chọn địa điểm, tính giá và tạo chuyến
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
@@ -62,10 +68,15 @@ import {
   replaceRideSharingCards,
 } from "@/features/ride-sharing/services/ride-sharing-storage";
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const BRAND = "#FF7A00";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MAP_BG = "#FFF3C9";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const PICKUP_BLUE = "#2563EB";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const DESTINATION_GREEN = "#16A34A";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MOCK_DRIVER_POINT = {
   placeId: "",
   formattedAddress: "Cổng chính Đại học FPT, Thạch Hòa, Hà Nội",
@@ -74,6 +85,7 @@ const MOCK_DRIVER_POINT = {
     lng: 105.5262,
   },
 };
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const FPT_HOLA_PLACE = {
   placeId: "fpt-hola",
   formattedAddress:
@@ -83,9 +95,13 @@ const FPT_HOLA_PLACE = {
     lng: 105.527637553,
   },
 };
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MOCK_DRIVER_LOCATION = "Cổng chính Đại học FPT, Thạch Hòa, Hà Nội";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const SHARED_RIDE_MAX_DISTANCE_KM = 50;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MIN_BOOKING_DISTANCE_KM = 0.1;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MIN_BOOKING_DISTANCE_METERS = 100;
 const vietnameseTextInputProps = {
   autoCapitalize: "none",
@@ -96,6 +112,7 @@ const vietnameseTextInputProps = {
   disableFullscreenUI: true,
 };
 
+// formatDeviceReverseAddress: Ghép các trường địa chỉ từ GPS thành một chuỗi dễ đọc
 function formatDeviceReverseAddress(address) {
   if (!address) {
     return "";
@@ -114,6 +131,7 @@ function formatDeviceReverseAddress(address) {
     .join(", ");
 }
 
+// formatCoordinateAddress: Tạo text tọa độ khi không lấy được địa chỉ đầy đủ
 function formatCoordinateAddress(location) {
   if (!location) {
     return "";
@@ -129,6 +147,7 @@ function formatCoordinateAddress(location) {
   return `Tọa độ hiện tại: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 }
 
+// getSingleParam: Lấy một query param duy nhất từ Expo Router
 function getSingleParam(value) {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -191,6 +210,7 @@ const defaultAddressForm = {
   label: "",
 };
 
+// formatCurrencyVnd: Định dạng số tiền sang VND để hiển thị
 function formatCurrencyVnd(value) {
   if (!Number.isFinite(value)) {
     return "--";
@@ -199,6 +219,7 @@ function formatCurrencyVnd(value) {
   return `${Math.round(value).toLocaleString("vi-VN")}đ`;
 }
 
+// formatDistanceKm: Định dạng khoảng cách theo km
 function formatDistanceKm(value) {
   const numberValue = Number(value);
 
@@ -214,6 +235,7 @@ function formatDistanceKm(value) {
   return `${roundedValue.toLocaleString("vi-VN")} km`;
 }
 
+// formatDurationMinute: Định dạng thời gian di chuyển theo phút
 function formatDurationMinute(value) {
   const numberValue = Number(value);
 
@@ -224,22 +246,26 @@ function formatDurationMinute(value) {
   return `${Math.max(1, Math.round(numberValue))} phút`;
 }
 
+// getTripEstimatedFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripEstimatedFare(trip) {
   return trip?.pricing?.estimatedFare ?? trip?.estimatedFare ?? null;
 }
 
+// getTripDistanceText: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripDistanceText(trip, fallbackText = "--") {
   return trip?.estimatedDistanceKm != null
     ? formatDistanceKm(trip.estimatedDistanceKm)
     : fallbackText;
 }
 
+// getTripDurationText: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripDurationText(trip, fallbackText = "--") {
   return trip?.estimatedDurationMinute != null
     ? formatDurationMinute(trip.estimatedDurationMinute)
     : fallbackText;
 }
 
+// mergeBookedRideWithTrip: Ghép dữ liệu local với dữ liệu mới nhất từ BE
 function mergeBookedRideWithTrip(bookedRide, trip) {
   const dbEstimatedFare = getTripEstimatedFare(trip);
   const hasDriver = Boolean(trip?.driverId);
@@ -276,6 +302,7 @@ function mergeBookedRideWithTrip(bookedRide, trip) {
   };
 }
 
+// formatSharedSchedule: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatSharedSchedule(value) {
   if (!value) {
     return "Chưa có lịch đi";
@@ -296,6 +323,7 @@ function formatSharedSchedule(value) {
   });
 }
 
+// normalizeSharedStatusLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeSharedStatusLabel(status) {
   const normalizedStatus = String(status ?? "").replace(/\s+/g, "").toLowerCase();
 
@@ -350,6 +378,7 @@ function normalizeSharedStatusLabel(status) {
   return status || "Pending";
 }
 
+// mapRideSharingRequestToCard: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapRideSharingRequestToCard(request, group = null) {
   if (!request?.id) {
     return null;
@@ -385,6 +414,7 @@ function mapRideSharingRequestToCard(request, group = null) {
 
 void mapRideSharingRequestToCard;
 
+// formatSharedScheduleClean: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatSharedScheduleClean(value) {
   if (!value) {
     return "Chưa có lịch đi";
@@ -433,6 +463,7 @@ const rideSharingGroupStatusNameByValue = {
   10: "nodriverfound",
 };
 
+// normalizeRideSharingStatusValue: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRideSharingStatusValue(status, statusNameByValue) {
   const numericStatus = Number(status);
 
@@ -443,14 +474,17 @@ function normalizeRideSharingStatusValue(status, statusNameByValue) {
   return String(status ?? "").replace(/\s+/g, "").toLowerCase();
 }
 
+// normalizeRideSharingRequestStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRideSharingRequestStatus(status) {
   return normalizeRideSharingStatusValue(status, rideSharingRequestStatusNameByValue);
 }
 
+// normalizeRideSharingGroupStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRideSharingGroupStatus(status) {
   return normalizeRideSharingStatusValue(status, rideSharingGroupStatusNameByValue);
 }
 
+// normalizeSharedStatusLabelClean: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeSharedStatusLabelClean(status) {
   const normalizedStatus = String(status ?? "").replace(/\s+/g, "").toLowerCase();
   const labels = {
@@ -475,6 +509,7 @@ function normalizeSharedStatusLabelClean(status) {
   return labels[normalizedStatus] || status || "Pending";
 }
 
+// mapRideSharingRequestToCardClean: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapRideSharingRequestToCardClean(request, group = null) {
   if (!request?.id) {
     return null;
@@ -532,6 +567,7 @@ function mapRideSharingRequestToCardClean(request, group = null) {
   };
 }
 
+// calculateAverageGroupFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function calculateAverageGroupFare(members, fallbackFare = 0) {
   const normalizedFares = (Array.isArray(members) ? members : [])
     .map((member) => Number(member?.finalFare ?? 0))
@@ -548,6 +584,7 @@ function calculateAverageGroupFare(members, fallbackFare = 0) {
     : 0;
 }
 
+// calculateProjectedJoinFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function calculateProjectedJoinFare(members, currentPassengers, fallbackFare = 0) {
   const memberCount = Array.isArray(members) ? members.length : 0;
   const currentCount = Math.max(
@@ -567,6 +604,7 @@ function calculateProjectedJoinFare(members, currentPassengers, fallbackFare = 0
   return (averageCurrentFare * currentCount) / (currentCount + 1);
 }
 
+// mapRideSharingGroupToCard: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapRideSharingGroupToCard(group, { previewJoinFare = false } = {}) {
   if (!group?.id) {
     return null;
@@ -624,10 +662,12 @@ function mapRideSharingGroupToCard(group, { previewJoinFare = false } = {}) {
   };
 }
 
+// normalizeRideSharingStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRideSharingStatus(status) {
   return normalizeRideSharingRequestStatus(status);
 }
 
+// isSharedTerminalStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isSharedTerminalStatus(status) {
   const normalizedStatus = String(status ?? "").replace(/\s+/g, "").toLowerCase();
   const inactiveStatuses = new Set([
@@ -640,14 +680,17 @@ function isSharedTerminalStatus(status) {
   return inactiveStatuses.has(normalizedStatus);
 }
 
+// isSharedRideActive: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isSharedRideActive(status) {
   return !isSharedTerminalStatus(normalizeRideSharingRequestStatus(status));
 }
 
+// isSharedGroupTerminal: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isSharedGroupTerminal(status) {
   return isSharedTerminalStatus(normalizeRideSharingGroupStatus(status));
 }
 
+// formatTripDateTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatTripDateTime(value) {
   if (!value) {
     return "Vừa hoàn thành";
@@ -668,10 +711,12 @@ function formatTripDateTime(value) {
   });
 }
 
+// toRadians: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function toRadians(value) {
   return (Number(value) * Math.PI) / 180;
 }
 
+// calculateBackendDistanceKm: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function calculateBackendDistanceKm(origin, destination) {
   if (!origin?.location || !destination?.location) {
     return 0;
@@ -705,6 +750,7 @@ function calculateBackendDistanceKm(origin, destination) {
   return earthRadiusKm * angle;
 }
 
+// normalizePlaceCompareText: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizePlaceCompareText(value) {
   return String(value ?? "")
     .trim()
@@ -712,6 +758,7 @@ function normalizePlaceCompareText(value) {
     .replace(/\s+/g, " ");
 }
 
+// areSameBookingPlaces: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function areSameBookingPlaces(origin, destination) {
   if (!origin?.location || !destination?.location) {
     return false;
@@ -748,6 +795,7 @@ function areSameBookingPlaces(origin, destination) {
   );
 }
 
+// getMinimumDistanceValidationMessage: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getMinimumDistanceValidationMessage(
   origin,
   destination,
@@ -775,6 +823,7 @@ function getMinimumDistanceValidationMessage(
   return "";
 }
 
+// getBackendTripMetrics: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getBackendTripMetrics(verifiedMap) {
   const routeDistanceKm = Number(verifiedMap?.directions?.distanceKm);
   const routeDurationMinute = Number(verifiedMap?.directions?.durationMinute);
@@ -806,6 +855,7 @@ function getBackendTripMetrics(verifiedMap) {
   return null;
 }
 
+// normalizeTripStatus: Chuẩn hóa status chuyến từ số hoặc text về một dạng thống nhất
 function normalizeTripStatus(status) {
   return String(status ?? "pending").replace(/\s+/g, "").toLowerCase();
 }
@@ -816,6 +866,7 @@ const sharedRequestFilterOptions = [
   { id: "completed", label: "Đã hoàn thành" },
 ];
 
+// getSharedRequestFilterKey: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getSharedRequestFilterKey(status) {
   const normalizedStatus = normalizeRideSharingStatus(status);
 
@@ -834,6 +885,7 @@ function getSharedRequestFilterKey(status) {
   return "booked";
 }
 
+// getSharedRequestEffectiveStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getSharedRequestEffectiveStatus(request) {
   if (!request) {
     return "";
@@ -882,10 +934,12 @@ function getSharedRequestEffectiveStatus(request) {
   return normalizedRequestStatus;
 }
 
+// getSharedRequestCardKey: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getSharedRequestCardKey(card) {
   return String(card?.requestId || card?.groupId || card?.id || "");
 }
 
+// isRideSharingCardOwnedByUser: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isRideSharingCardOwnedByUser(card, userId) {
   const normalizedUserId = String(userId ?? "").trim().toLowerCase();
 
@@ -898,6 +952,7 @@ function isRideSharingCardOwnedByUser(card, userId) {
   return !passengerId || passengerId === normalizedUserId;
 }
 
+// mergeSharedRequestCards: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mergeSharedRequestCards(primaryCards, secondaryCards) {
   const mergedCards = [];
   const seenKeys = new Set();
@@ -916,6 +971,7 @@ function mergeSharedRequestCards(primaryCards, secondaryCards) {
   return mergedCards;
 }
 
+// removeSharedRequestCards: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function removeSharedRequestCards(cards, requestId, groupId = "") {
   const normalizedRequestId = String(requestId ?? "").trim().toLowerCase();
   const normalizedGroupId = String(groupId ?? "").trim().toLowerCase();
@@ -1023,6 +1079,7 @@ async function refreshStoredRideSharingCards(cards, accessToken) {
     .filter(Boolean);
 }
 
+// getRideSharingCreateErrorMessage: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getRideSharingCreateErrorMessage(error) {
   if (error?.status === 401) {
     return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tạo yêu cầu xe ghép.";
@@ -1045,6 +1102,7 @@ function getRideSharingCreateErrorMessage(error) {
   );
 }
 
+// logRideSharingCreateDebug: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function logRideSharingCreateDebug(label, data) {
   if (typeof __DEV__ !== "undefined" && !__DEV__) {
     return;
@@ -1055,6 +1113,7 @@ function logRideSharingCreateDebug(label, data) {
 
 void getRideSharingCreateErrorMessage;
 
+// getRideSharingCreateReadableErrorMessage: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getRideSharingCreateReadableErrorMessage(error) {
   if (error?.status === 401) {
     return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tạo yêu cầu xe ghép.";
@@ -1080,11 +1139,13 @@ function getRideSharingCreateReadableErrorMessage(error) {
   );
 }
 
+// isTerminalTripStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isTerminalTripStatus(status) {
   const normalizedStatus = normalizeTripStatus(status);
   return normalizedStatus === "completed" || normalizedStatus === "cancelled";
 }
 
+// getTripStatusView: Quy đổi status chuyến thành label và màu hiển thị
 function getTripStatusView(status, hasDriver) {
   const normalizedStatus = normalizeTripStatus(status);
 
@@ -1141,6 +1202,7 @@ function getTripStatusView(status, hasDriver) {
   };
 }
 
+// getSharedProposal: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getSharedProposal(ride) {
   const isCar7 = ride.vehicle.includes("7");
   const soloPrice = isCar7 ? "320.000đ" : "250.000đ";
@@ -1171,6 +1233,7 @@ function getSharedProposal(ride) {
   };
 }
 
+// mapAvailableRideSharingGroupToCard: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapAvailableRideSharingGroupToCard(group) {
   if (!group?.id) {
     return null;
@@ -1217,6 +1280,7 @@ function mapAvailableRideSharingGroupToCard(group) {
   };
 }
 
+// getRideSharingJoinErrorMessage: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getRideSharingJoinErrorMessage(error) {
   const rawMessage =
     error?.payload?.message ||
@@ -1235,6 +1299,7 @@ function getRideSharingJoinErrorMessage(error) {
   );
 }
 
+// getJoinDestinationFromGroupCard: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getJoinDestinationFromGroupCard(groupCard) {
   const rawGroup = groupCard?.rawGroup ?? {};
   const groupLatitude = Number(
@@ -1300,24 +1365,31 @@ const initialSavedAddresses = [
   },
 ];
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MAX_SCHEDULE_DAYS = 7;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MIN_PICKUP_BUFFER_MINUTES = 30;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MINUTE_STEP = 5;
 
+// padSchedule: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function padSchedule(value) {
   return String(value).padStart(2, "0");
 }
 
+// addScheduleMinutes: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function addScheduleMinutes(date, minutes) {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
+// addScheduleDays: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function addScheduleDays(date, days) {
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
 }
 
+// roundScheduleDate: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function roundScheduleDate(date) {
   const rounded = new Date(date);
   rounded.setSeconds(0, 0);
@@ -1330,6 +1402,7 @@ function roundScheduleDate(date) {
   return rounded;
 }
 
+// getScheduleBounds: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getScheduleBounds() {
   const now = new Date();
   return {
@@ -1338,19 +1411,23 @@ function getScheduleBounds() {
   };
 }
 
+// formatScheduleDateValue: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatScheduleDateValue(date) {
   return `${date.getFullYear()}-${padSchedule(date.getMonth() + 1)}-${padSchedule(date.getDate())}`;
 }
 
+// formatScheduleDisplay: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatScheduleDisplay(date) {
   return `${padSchedule(date.getDate())}/${padSchedule(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
+// parseScheduleDateValue: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function parseScheduleDateValue(value) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
+// getScheduleDateLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getScheduleDateLabel(date, index) {
   if (index === 0) {
     return "Hôm nay";
@@ -1363,6 +1440,7 @@ function getScheduleDateLabel(date, index) {
   return formatScheduleDisplay(date);
 }
 
+// createScheduleDateOptions: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createScheduleDateOptions() {
   const { max } = getScheduleBounds();
   const today = new Date();
@@ -1390,6 +1468,7 @@ function createScheduleDateOptions() {
   return options;
 }
 
+// getSharedSlotDateTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getSharedSlotDateTime(dateValue, slotTime) {
   if (!dateValue || !slotTime) {
     return null;
@@ -1401,6 +1480,7 @@ function getSharedSlotDateTime(dateValue, slotTime) {
   return date;
 }
 
+// formatLocalApiDateTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatLocalApiDateTime(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return null;
@@ -1413,6 +1493,7 @@ function formatLocalApiDateTime(date) {
   ].join("-") + `T${padSchedule(date.getHours())}:${padSchedule(date.getMinutes())}:00`;
 }
 
+// isSharedSlotAvailable: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isSharedSlotAvailable(slot, dateValue) {
   if (!dateValue) {
     return true;
@@ -1427,17 +1508,20 @@ function isSharedSlotAvailable(slot, dateValue) {
   return slotDateTime.getTime() - Date.now() > MIN_PICKUP_BUFFER_MINUTES * 60 * 1000;
 }
 
+// createScheduleDate: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createScheduleDate(dateValue, hour, minute) {
   const date = parseScheduleDateValue(dateValue);
   date.setHours(Number(hour), Number(minute), 0, 0);
   return date;
 }
 
+// isScheduleInRange: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isScheduleInRange(date) {
   const { min, max } = getScheduleBounds();
   return date >= min && date <= max;
 }
 
+// createScheduleHourOptions: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createScheduleHourOptions(dateValue) {
   return Array.from({ length: 24 }, (_, hour) => padSchedule(hour)).filter((hour) =>
     Array.from({ length: 60 / MINUTE_STEP }, (_, index) =>
@@ -1446,12 +1530,14 @@ function createScheduleHourOptions(dateValue) {
   );
 }
 
+// createScheduleMinuteOptions: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createScheduleMinuteOptions(dateValue, hour) {
   return Array.from({ length: 60 / MINUTE_STEP }, (_, index) =>
     padSchedule(index * MINUTE_STEP)
   ).filter((minute) => isScheduleInRange(createScheduleDate(dateValue, hour, minute)));
 }
 
+// normalizeBookingSchedule: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeBookingSchedule(draft) {
   const dateOptions = createScheduleDateOptions();
   const selectedDate = dateOptions.find((option) => option.value === draft.date);
@@ -1474,6 +1560,7 @@ function normalizeBookingSchedule(draft) {
   };
 }
 
+// getDefaultBookingSchedule: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDefaultBookingSchedule() {
   const { min } = getScheduleBounds();
   return normalizeBookingSchedule({
@@ -1483,12 +1570,17 @@ function getDefaultBookingSchedule() {
   });
 }
 
+// SearchScreen: Component chính của luồng tìm kiếm và đặt xe
 export default function SearchScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { session, isAuthenticated, refreshSession } = useAuth();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
+  // NHẬN QUERY PARAMS TỪ CÁC MÀN KHÁC
+  // - Home chọn xe lẻ sẽ push /search?mode=now&when=now&source=home&vehicle={bike|car4}
+  // - Home chọn xe ghép sẽ push /search?mode=shared&when=any
+  // SearchScreen đọc params này để chọn mode ban đầu và preselect loại xe.
   const rawMode = getSingleParam(params.mode) ?? "now";
   const normalizedMode = rawMode === "shared" ? "shared" : "now";
   const rawVehicle = getSingleParam(params.vehicle);
@@ -1660,6 +1752,13 @@ export default function SearchScreen() {
       }
 
       try {
+        // refreshSharedState: LUỒNG NHẬN DỮ LIỆU XE GHÉP
+        // 1. Gọi song song các API BE:
+        //    - request hiện tại của khách
+        //    - group khách đang tham gia
+        //    - group còn trống chiều đi FPT và chiều về
+        // 2. Đọc thêm card đã cache local để UI vẫn có dữ liệu khi reload.
+        // 3. Map request/group BE thành card UI rồi setPendingSharedRequests/setAvailableSharedGroups.
         const [
           requestResult,
           groupResult,
@@ -1675,10 +1774,12 @@ export default function SearchScreen() {
           loadStoredRideSharingCards(session.userId),
         ]);
 
+        // Kết quả Promise.allSettled có thể fail từng API riêng; API lỗi sẽ được thay bằng null/[] để màn không crash.
         const request =
           requestResult.status === "fulfilled" ? requestResult.value : null;
         const group =
           groupResult.status === "fulfilled" ? groupResult.value : null;
+        // Nếu request đã được ghép group, gọi thêm chi tiết group để lấy members/status/fare mới nhất.
         const requestGroup = await getRideSharingGroupForRequest(
           request,
           group,
@@ -1706,6 +1807,7 @@ export default function SearchScreen() {
         const refreshedStoredCards = (
           await refreshStoredRideSharingCards(storedCards, session.accessToken)
         ).filter((card) => isRideSharingCardOwnedByUser(card, session.userId));
+        // Với danh sách group available, gọi chi tiết từng group để card hiển thị đủ currentPassengers/driver/fare.
         const availableGroupDetails = await Promise.allSettled(
           availableGroups.map((item) =>
             getRideSharingGroup(item.id, session.accessToken)
@@ -1753,6 +1855,7 @@ export default function SearchScreen() {
           return;
         }
 
+        // Đẩy request/group của chính user vào state đang chờ để render tab "Yêu cầu của tôi".
         setPendingSharedRequests(mergedCards);
 
         if (currentCards.length > 0 || refreshedStoredCards.length > 0) {
@@ -1762,6 +1865,7 @@ export default function SearchScreen() {
           ).catch(() => {});
         }
 
+        // Đẩy các group người dùng có thể join vào state gợi ý.
         setAvailableSharedGroups(mappedAvailableGroups);
       } finally {
         if (
@@ -2121,6 +2225,7 @@ export default function SearchScreen() {
 
     let isActive = true;
 
+    // loadRidePrices: GỬI distance/duration/vehicleType lên Pricing API để nhận giá từng loại xe.
     const loadRidePrices = async () => {
       setIsLoadingRidePrices(true);
       setRidePriceError("");
@@ -2129,6 +2234,7 @@ export default function SearchScreen() {
         const results = await Promise.all(
           availableRideOptions.map(async (option) => {
             try {
+              // Payload gửi sang /pricing/estimate; response nhận estimatedFare cho option hiện tại.
               const response = await estimateFare({
                 vehicleType: option.vehicleType,
                 rideType: "SingleRide",
@@ -2144,6 +2250,7 @@ export default function SearchScreen() {
         );
 
         if (isActive) {
+          // Map response giá theo id loại xe để UI chọn xe đọc nhanh: { bike: "xxđ", car4: "yyđ" }.
           setRidePriceQuotes(
             Object.fromEntries(
               results.map(([id, fare]) => [id, fare == null ? null : formatCurrencyVnd(fare)])
@@ -2277,6 +2384,7 @@ export default function SearchScreen() {
       return true;
     }
 
+    // Nếu chưa đăng nhập mà user bấm đặt xe/tạo xe ghép, chuyển sang /profile để lấy session trước.
     router.push("/profile");
     return false;
   };
@@ -2585,6 +2693,10 @@ export default function SearchScreen() {
     destination,
     vehicleType = selectedRideOption.vehicleType
   ) => {
+    // createVerifiedTripMap: NHẬN điểm đón/điểm đến đã chọn từ VietMap.
+    // Gửi 2 request tới map service:
+    // - origin -> destination để lấy route chính cho khách.
+    // - mock driver -> origin để mô phỏng đoạn tài xế tới đón.
     const directions = await getMapDirections(origin, destination, vehicleType);
     const driverDirections = await getMapDirections(MOCK_DRIVER_POINT, origin, vehicleType);
 
@@ -2690,6 +2802,12 @@ export default function SearchScreen() {
       // Nếu lưu cục bộ thất bại thì vẫn cho đi tiếp sang màn chuyến đi.
     }
 
+    // Điều hướng legacy sang /trips bằng route params.
+    // Các params này là bản rút gọn của bookedTrip để TripsScreen dựng active ride nếu cần:
+    // - activeRide=1 báo TripsScreen mở trạng thái chuyến đang chạy.
+    // - pickup/destination/vehicle/estimatedFare/tripDistance/tripDuration hiển thị trên card.
+    // - tọa độ + driverOrigin + mapImageUrl dùng để dựng bản đồ/tài xế mô phỏng.
+    // Flow hiện tại ưu tiên persistBookedTrip + setActiveBookedRide, nhưng giữ legacy để tương thích test/đường cũ.
     router.push({
       pathname: "/trips",
       params: {
@@ -2821,6 +2939,9 @@ export default function SearchScreen() {
       1,
       Math.round(Number(validatedTripMetrics.durationMinute))
     );
+    // createTripPayload: DỮ LIỆU FE GỬI LÊN BE ĐỂ TẠO CHUYẾN
+    // Lấy từ verifiedTripMap sau khi VietMap đã xác minh địa chỉ/tọa độ.
+    // BE sẽ tự tính/kiểm tra pricing theo distance, duration, vehicleType và tripType.
     const createTripPayload = {
       pickupLatitude: verifiedTripMap.origin.location.lat,
       pickupLongitude: verifiedTripMap.origin.location.lng,
@@ -2839,16 +2960,19 @@ export default function SearchScreen() {
       let response;
 
       try {
+        // Gửi request tạo chuyến bằng accessToken hiện tại.
         response = await createTrip(createTripPayload, session?.accessToken);
       } catch (error) {
         if (error?.status !== 401) {
           throw error;
         }
 
+        // Nếu BE trả 401: refresh token rồi gửi lại createTrip một lần với accessToken mới.
         const nextSession = await refreshSession();
         response = await createTrip(createTripPayload, nextSession.accessToken);
       }
 
+      // Response BE có thể là { trip } hoặc chính object trip, nên normalize về tripResponse.
       const tripResponse = response?.trip ?? response;
       const confirmedTripDistance =
         validatedTripMetrics?.distanceText ??
@@ -2858,6 +2982,8 @@ export default function SearchScreen() {
         validatedTripMetrics?.durationText ??
         verifiedTripMap.directions.durationText ??
         "--";
+      // bookedTrip: object FE dùng để hiển thị/tracking local.
+      // Nó merge dữ liệu BE trả về với route/map/giá đang có ở FE.
       const bookedTrip = {
         id: tripResponse.id || `trip-${Date.now()}`,
         status: isScheduledRide
@@ -2890,6 +3016,7 @@ export default function SearchScreen() {
       };
 
       try {
+        // Lưu local để tab Trips/Home có thể đọc lại ngay cả khi reload hoặc API chậm.
         await persistBookedTrip(bookedTrip);
       } catch {
         // Neu luu cuc bo that bai thi van hien man tim tai xe.
@@ -2897,9 +3024,12 @@ export default function SearchScreen() {
 
       setAcceptedTrip(null);
       if (isScheduledRide) {
+        // Chuyến đặt trước: reset form và chuyển sang tab Trips để xem danh sách lịch hẹn.
         resetSingleRideBookingForm();
+        // Điều hướng không cần params vì chuyến đã được BE tạo và persistBookedTrip lưu local; TripsScreen sẽ load từ BE/cache.
         router.push("/trips");
       } else {
+        // Chuyến đi ngay: giữ bookedTrip trong state để màn "đang tìm tài xế" hiển thị realtime giả lập/API.
         setActiveBookedRide(bookedTrip);
         setBookingStep("findingDriver");
       }
@@ -2931,6 +3061,7 @@ export default function SearchScreen() {
       let cancelledTrip;
 
       try {
+        // Gửi tripId + cancelReason lên BE để hủy chuyến phía passenger.
         cancelledTrip = await cancelTrip(
           activeBookedRide.id,
           { cancelReason: 4 },
@@ -2941,6 +3072,7 @@ export default function SearchScreen() {
           throw error;
         }
 
+        // Nếu token hết hạn, refresh session rồi gửi lại request hủy.
         const nextSession = await refreshSession();
         cancelledTrip = await cancelTrip(
           activeBookedRide.id,
@@ -2949,6 +3081,7 @@ export default function SearchScreen() {
         );
       }
 
+      // Response hủy từ BE được lưu vào acceptedTrip và merge lại activeBookedRide để UI đổi trạng thái.
       setAcceptedTrip(cancelledTrip);
       const nextBookedRide = {
         ...(activeBookedRide ?? {}),
@@ -2960,6 +3093,7 @@ export default function SearchScreen() {
       setActiveBookedRide(nextBookedRide);
 
       try {
+        // Lưu trạng thái đã hủy xuống cache local để tab Trips/Home đọc đúng sau khi quay lại.
         await persistBookedTrip(nextBookedRide);
       } catch {
         // Neu luu cuc bo that bai thi van hien trang thai huy tu BE.
@@ -3003,6 +3137,7 @@ export default function SearchScreen() {
     setReviewError("");
     setIsSubmittingReview(true);
 
+    // Payload gửi lên Review API: id chuyến đã hoàn thành, số sao và comment.
     const payload = {
       tripId: completedTripId,
       rating: reviewRating,
@@ -3011,6 +3146,7 @@ export default function SearchScreen() {
 
     try {
       try {
+        // Gửi review bằng token hiện tại; nếu 401 sẽ refresh token và gửi lại.
         await createReview(payload, session.accessToken);
       } catch (error) {
         if (error?.status !== 401) {
@@ -3105,14 +3241,20 @@ export default function SearchScreen() {
       return null;
     }
 
+    // verifyBookingLocations: LUỒNG XÁC MINH ĐỊA ĐIỂM TRƯỚC KHI ĐẶT XE
+    // Input lấy từ form: fromInput/toInput và selectedFromPlace/selectedToPlace.
+    // Xử lý: kiểm tra user đã chọn gợi ý VietMap, kiểm tra khoảng cách tối thiểu.
+    // Output: verifiedTripMap gồm origin, destination, directions, map URL; state này dùng để tính giá và tạo trip.
     setIsVerifyingMap(true);
 
     try {
+      // Gọi VietMap directions để nhận distance/duration/routeGeometry cho cặp điểm đã chọn.
       const nextVerifiedTripMap = await createVerifiedTripMap(
         selectedFromPlace,
         selectedToPlace
       );
 
+      // Lưu route đã xác minh vào state; các bước confirm/rideOptions đọc state này.
       setVerifiedTripMap(nextVerifiedTripMap);
       setAlertMessage("");
       return nextVerifiedTripMap;
@@ -3259,6 +3401,9 @@ export default function SearchScreen() {
     setSharedLocationLoading(true);
 
     try {
+      // Khi user chọn gợi ý điểm đón để join group:
+      // - Nếu suggestion đã có location thì dùng luôn.
+      // - Nếu chỉ có placeId/refId thì gọi VietMap detail để nhận tọa độ.
       const resolvedPlace = suggestion.location
         ? suggestion
         : await getMapPlaceDetails(suggestion.refId || suggestion.placeId);
@@ -3352,6 +3497,7 @@ export default function SearchScreen() {
         formattedAddress;
 
       joinSharedLocationPickedRef.current = resolvedAddress.trim();
+      // Lưu địa điểm đã resolve vào state; joinSuggestedSharedGroup sẽ lấy state này để gửi payload join.
       setJoinSharedPlace({
         ...resolvedPlace,
         formattedAddress: resolvedAddress,
@@ -3392,10 +3538,20 @@ export default function SearchScreen() {
       return;
     }
 
+    // joinSuggestedSharedGroup: LUỒNG GỬI DỮ LIỆU THAM GIA NHÓM XE GHÉP
+    // Input từ UI: joinSharedGroup.groupId + joinSharedPlace (điểm đón khách chọn).
+    // Xử lý:
+    // - Kiểm tra khách chưa có request xe ghép active.
+    // - Tính route từ điểm đón khách đến destination của group.
+    // - Gửi payload join lên /ride-sharing/groups/{groupId}/join.
+    // Output:
+    // - Response group/request được map thành card pending.
+    // - Group vừa join bị remove khỏi list available.
     setIsJoiningSharedGroup(true);
     setJoinSharedError("");
 
     try {
+      // Gọi BE kiểm tra request active để chặn user join nhiều nhóm cùng lúc.
       const activeRequest = await getMyRideSharingRequest(
         session.accessToken
       ).catch((error) => {
@@ -3415,6 +3571,7 @@ export default function SearchScreen() {
 
       let joinDirections = null;
       try {
+        // Gọi map service để lấy distance/duration thực tế giữa điểm đón user và điểm đến của group.
         joinDirections = await getMapDirections(
           joinSharedPlace,
           destinationPlace,
@@ -3448,6 +3605,7 @@ export default function SearchScreen() {
         return;
       }
 
+      // Payload gửi lên BE khi join group: tọa độ/địa chỉ pickup của user + destination group + metrics tuyến đường.
       const joinedGroup = await joinRideSharingGroup(
         joinSharedGroup.groupId,
         {
@@ -3468,6 +3626,7 @@ export default function SearchScreen() {
         session.accessToken
       );
 
+      // Response BE được map thành card UI để hiển thị ngay ở danh sách yêu cầu của tôi.
       const mappedGroup = mapRideSharingGroupToCard(joinedGroup);
       if (mappedGroup) {
         setPendingSharedRequests((current) =>
@@ -3553,12 +3712,19 @@ export default function SearchScreen() {
       return;
     }
 
+    // createSharedRide: LUỒNG TẠO REQUEST XE GHÉP MỚI
+    // Input từ form: loại chuyến đi/về, địa điểm user nhập, ngày, slot.
+    // Quy ước:
+    // - direction = 1: từ nơi khác đến FPT, user nhập pickup.
+    // - direction = 2: từ FPT đi nơi khác, user nhập destination.
+    // FE tự ghép với FPT_HOLA_PLACE để tạo đủ pickup/destination trước khi gửi BE.
     const fptPlace = FPT_HOLA_PLACE;
     const pickupPlace = isSharedTripToFpt ? selectedSharedPlace : fptPlace;
     const destinationPlace = isSharedTripToFpt ? fptPlace : selectedSharedPlace;
     let sharedDirections = null;
 
     try {
+      // Gọi map service để lấy distance/duration route xe ghép, dùng cho validation và payload BE.
       sharedDirections = await getMapDirections(pickupPlace, destinationPlace, 2);
     } catch {
       sharedDirections = null;
@@ -3627,6 +3793,7 @@ export default function SearchScreen() {
     setSharedFormError("");
 
     try {
+      // Trước khi tạo request mới, hỏi BE xem user đang có request active không để tránh tạo trùng.
       const latestActiveRequest = await getMyRideSharingRequest(
         session.accessToken
       ).catch((error) => {
@@ -3664,6 +3831,8 @@ export default function SearchScreen() {
         return;
       }
 
+      // requestPayload: DỮ LIỆU FE GỬI LÊN BE ĐỂ TẠO YÊU CẦU XE GHÉP
+      // Bao gồm tọa độ/địa chỉ pickup-destination, direction, distance/duration, tripType, scheduledAt, slot.
       const requestPayload = {
         pickupLatitude: pickupPlace.location.lat,
         pickupLongitude: pickupPlace.location.lng,
@@ -3683,6 +3852,7 @@ export default function SearchScreen() {
       };
 
       logRideSharingCreateDebug("create request payload", requestPayload);
+      // Gửi request xe ghép lên BE; response ban đầu có thể chưa đủ group/member nên sẽ fetch lại detail phía dưới.
       const createdRequest = await createRideSharingRequest(
         requestPayload,
         session.accessToken
@@ -3692,6 +3862,7 @@ export default function SearchScreen() {
 
       if (createdRequest?.id) {
         try {
+          // Lấy lại request theo id để nhận status/groupId mới nhất sau khi BE xử lý matching.
           latestRequest = await getRideSharingRequest(
             createdRequest.id,
             session.accessToken
@@ -3701,6 +3872,7 @@ export default function SearchScreen() {
         }
       }
 
+      // Nếu request đã match group, lấy group của user để card có thông tin member/giá/trạng thái đầy đủ.
       const latestMyGroup = await getMyRideSharingGroup(session.accessToken).catch(
         () => null
       );
@@ -3720,6 +3892,7 @@ export default function SearchScreen() {
           ? [mappedGroup]
           : [];
 
+      // Đẩy card mới vào state pending và lưu cache để reload app vẫn thấy yêu cầu vừa tạo.
       setPendingSharedRequests((current) =>
         mergeSharedRequestCards(currentCards, current)
       );
@@ -3760,6 +3933,8 @@ export default function SearchScreen() {
     setSharedCancelError("");
 
     try {
+      // handleCancelSharedRequest: GỬI hủy request xe ghép theo requestId.
+      // Nếu API hủy lỗi nhưng kiểm tra lại thấy request đã terminal/404 thì vẫn coi là đã hủy để UI không kẹt.
       const requestToCancel = pendingSharedRequests.find(
         (request) => request.requestId === requestId
       );
@@ -3769,6 +3944,7 @@ export default function SearchScreen() {
       let cancelApiError = null;
 
       try {
+        // Gửi cancelReason lên BE để hủy request phía passenger.
         cancelledRequest = await cancelRideSharingRequest(
           requestId,
           { cancelReason: 4 },
@@ -3783,6 +3959,7 @@ export default function SearchScreen() {
         let requestNoLongerExists = false;
 
         try {
+          // Nếu cancel API lỗi, fetch lại request để xác minh trạng thái thật trên BE.
           latestRequest = await getRideSharingRequest(
             requestId,
             session.accessToken
@@ -3807,6 +3984,7 @@ export default function SearchScreen() {
         }
       }
 
+      // Map request đã hủy thành card UI rồi lưu lại vào cache/tab cancelled.
       const cancelledCard = mapRideSharingRequestToCardClean(
         {
           ...(cancelledRequest ?? requestToCancel ?? {}),
@@ -3952,6 +4130,7 @@ export default function SearchScreen() {
 
   return (
     <>
+      {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
       <ScrollView
         style={[styles.container, { backgroundColor: theme.background }]}
         contentContainerStyle={[
@@ -3975,6 +4154,7 @@ export default function SearchScreen() {
         nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
+        {/* Khối content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
         <View
           style={[
             styles.content,
@@ -3983,25 +4163,31 @@ export default function SearchScreen() {
             bookingStep === "findingDriver" && styles.contentFit,
           ]}
         >
+        {/* Khối header row: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
         <View style={styles.headerRow}>
           {!isSoloRideTrackingLocked ? (
+            /* Nút back có logic theo step: findingDriver/form thì quay stack, rideOptions thì về confirm, confirm thì về form. */
             <Pressable
               onPress={() => {
                 if (bookingStep === "findingDriver") {
+                  // Đang tracking chuyến đi ngay: quay lại màn trước trong stack Expo Router.
                   router.back();
                   return;
                 }
 
                 if (bookingStep === "rideOptions") {
+                  // Đang chọn loại xe: không rời màn, chỉ lùi về bước xác nhận route.
                   setBookingStep("confirm");
                   return;
                 }
 
                 if (bookingStep === "confirm") {
+                  // Đang confirm địa điểm: không rời màn, quay về form nhập địa điểm để sửa.
                   setBookingStep("form");
                   return;
                 }
 
+                // Mặc định: quay lại route trước đó trong navigation stack.
                 router.back();
               }}
               style={styles.backButton}
@@ -4016,7 +4202,9 @@ export default function SearchScreen() {
                   </ThemedText>
         </View>
 
+        {/* Khối segment row: Nhóm lựa chọn dạng tab/segment để đổi chế độ hiển thị. */}
         <View style={styles.segmentRow}>
+          {/* Tab xe lẻ: gọi selectSingleRide để set mode=now, reset lịch xe ghép và đưa UI về flow đặt xe riêng. */}
           <Pressable
             style={[styles.segment, mode === "now" && styles.segmentActive]}
             onPress={selectSingleRide}
@@ -4031,6 +4219,7 @@ export default function SearchScreen() {
               {"Xe lẻ"}
             </ThemedText>
           </Pressable>
+          {/* Tab xe ghép: gọi selectSharedRide để set mode=shared, load/hiển thị request và group xe ghép. */}
           <Pressable
             style={[styles.segment, mode === "shared" && styles.segmentActive]}
             onPress={selectSharedRide}
@@ -4049,7 +4238,9 @@ export default function SearchScreen() {
         </View>
 
         {bookingStep === "findingDriver" && mode !== "shared" ? (
+          /* Khối finding driver stage: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
           <View testID="booking-finding-driver-stage" style={styles.findingDriverStage}>
+            {/* Khối finding radar card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View
               style={[
                 styles.findingRadarCard,
@@ -4058,6 +4249,7 @@ export default function SearchScreen() {
             >
               {shouldShowTripStatusCard ? (
                 <>
+                  {/* Khối driver avatar: Hiển thị avatar/chữ cái đại diện của người dùng. */}
                   <View
                     style={[
                       styles.driverAvatar,
@@ -4078,6 +4270,7 @@ export default function SearchScreen() {
                     {tripStatusView.subtitle}
                   </ThemedText>
                   {hasAssignedDriver ? (
+                    /* Khối driver info box: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                     <View style={styles.driverInfoBox}>
                       <ThemedText type="default" style={styles.driverNameText}>
                         {acceptedTrip?.driverName || activeBookedRide?.driverName || "Tài xế"}
@@ -4096,8 +4289,11 @@ export default function SearchScreen() {
                 </>
               ) : (
                 <>
+                  {/* Khối radar outer: Hiển thị điểm đón, điểm đến và thông tin tuyến đường. */}
                   <View style={styles.radarOuter}>
+                    {/* Khối radar middle: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.radarMiddle}>
+                      {/* Khối radar inner: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                       <View style={styles.radarInner}>
                         <ThemedText type="default" style={styles.radarIcon}>
                           {"●"}
@@ -4115,7 +4311,9 @@ export default function SearchScreen() {
               )}
             </View>
 
+            {/* Khối finding trip card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.findingTripCard}>
+              {/* Khối finding trip header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
               <View style={styles.findingTripHeader}>
                 <ThemedText type="smallBold" style={styles.findingVehicle}>
                   {activeBookedRide?.vehicleName ?? selectedRideOption.name}
@@ -4137,6 +4335,7 @@ export default function SearchScreen() {
               <ThemedText type="smallBold" style={styles.findingStatusText}>
                 {tripStatusView.label}
               </ThemedText>
+              {/* Khối finding route box: Hiển thị điểm đón, điểm đến và thông tin tuyến đường. */}
               <View style={styles.findingRouteBox}>
                 <ThemedText type="smallBold" style={styles.findingAddress} numberOfLines={2}>
                   {"Đón: "}{activeBookedRide?.pickup ?? verifiedFromLabel}
@@ -4146,7 +4345,9 @@ export default function SearchScreen() {
                 </ThemedText>
               </View>
               {isCompletedTrip ? (
+                /* Khối completed summary box: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                 <View style={styles.completedSummaryBox}>
+                  {/* Khối completed summary row: Dàn các phần tử trên cùng một hàng. */}
                   <View style={styles.completedSummaryRow}>
                     <ThemedText type="small" style={styles.completedSummaryLabel}>
                       {"Tổng tiền"}
@@ -4155,6 +4356,7 @@ export default function SearchScreen() {
                       {completedFare}
                     </ThemedText>
                   </View>
+                  {/* Khối completed summary row: Dàn các phần tử trên cùng một hàng. */}
                   <View style={styles.completedSummaryRow}>
                     <ThemedText type="small" style={styles.completedSummaryLabel}>
                       {"Thời gian hoàn thành"}
@@ -4166,7 +4368,9 @@ export default function SearchScreen() {
                 </View>
               ) : null}
               {isCompletedTrip ? (
+                /* Khối completed action row: Dàn các phần tử trên cùng một hàng. */
                 <View style={styles.completedActionRow}>
+                  {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
                   <Pressable
                     testID="booking-completed-review-button"
                     style={[
@@ -4180,6 +4384,7 @@ export default function SearchScreen() {
                       {hasReviewedCompletedTrip ? "Đã đánh giá" : "Đánh giá tài xế"}
                     </ThemedText>
                   </Pressable>
+                  {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
                   <Pressable
                     style={styles.completedHomeButton}
                     onPress={resetSingleRideBookingForm}
@@ -4190,6 +4395,7 @@ export default function SearchScreen() {
                   </Pressable>
                 </View>
               ) : isSoloRideInProgress ? null : (
+                /* Nút hủy thao tác hiện tại và đóng form/modal liên quan. */
                 <Pressable
                   testID="booking-finding-secondary-button"
                   style={[
@@ -4227,14 +4433,20 @@ export default function SearchScreen() {
           </View>
         ) : bookingStep === "rideOptions" && mode !== "shared" ? (
           <>
+            {/* Khối dots row: Dàn các phần tử trên cùng một hàng. */}
             <View style={styles.dotsRow}>
+              {/* Khối dot active: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.dotActive} />
+              {/* Khối dot active: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.dotActive} />
+              {/* Khối dot active: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.dotActive} />
             </View>
 
+            {/* Khối route map card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.routeMapCard}>
               {verifiedTripMap ? (
+                /* WebView: Nhúng bản đồ HTML tương tác để hiển thị tuyến đường/marker. */
                 <WebView
                   key={`route-map-${verifiedTripMap.origin.placeId || verifiedTripMap.origin.formattedAddress}-${verifiedTripMap.destination.placeId || verifiedTripMap.destination.formattedAddress}`}
                   source={{ html: routeMapHtml }}
@@ -4247,7 +4459,9 @@ export default function SearchScreen() {
                   nestedScrollEnabled
                 />
               ) : (
+                /* Khối route map fallback: Khu vực bản đồ/preview tuyến đường cho chuyến đi. */
                 <View style={styles.routeMapFallback}>
+                  {/* Khối route map fallback header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
                   <View style={styles.routeMapFallbackHeader}>
                     <ThemedText type="smallBold" style={styles.routeMapFallbackTitle}>
                     {"Tuyến đường đã xác minh"}
@@ -4261,6 +4475,7 @@ export default function SearchScreen() {
                         "--"}
                     </ThemedText>
                   </View>
+                  {/* Khối route map fallback body: Khu vực bản đồ/preview tuyến đường cho chuyến đi. */}
                   <View style={styles.routeMapFallbackBody}>
                     <ThemedText type="smallBold" style={styles.routeMapFallbackPoint}>
                       {verifiedFromLabel}
@@ -4274,7 +4489,9 @@ export default function SearchScreen() {
                   </View>
                 </View>
               )}
+              {/* Khối route map top bar: Khu vực bản đồ/preview tuyến đường cho chuyến đi. */}
               <View style={styles.routeMapTopBar}>
+                {/* Khối route info pill: Hiển thị điểm đón, điểm đến và thông tin tuyến đường. */}
                 <View style={styles.routeInfoPill}>
                   <ThemedText type="smallBold" style={styles.routeInfoText}>
                     {backendTripMetrics?.durationText ||
@@ -4286,6 +4503,7 @@ export default function SearchScreen() {
                   </ThemedText>
                 </View>
               </View>
+              {/* Khối route destination pill: Hiển thị điểm đón, điểm đến và thông tin tuyến đường. */}
               <View style={styles.routeDestinationPill}>
                 <ThemedText
                   type="smallBold"
@@ -4297,7 +4515,9 @@ export default function SearchScreen() {
               </View>
             </View>
 
+            {/* Khối ride options sheet: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
             <View testID="booking-ride-options-stage" style={styles.rideOptionsSheet}>
+              {/* Khối sheet handle: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.sheetHandle} />
               <ThemedText type="default" style={styles.rideSheetTitle}>
                     {isHomeBookingFlow ? "Giá chuyến đi" : "Chọn loại xe"}
@@ -4308,6 +4528,7 @@ export default function SearchScreen() {
                 </ThemedText>
               )}
               {isHomeBookingFlow ? (
+                /* Khối ride option: Thông tin nhóm/chuyến xe ghép đang hiển thị. */
                 <View
                   testID={`booking-ride-option-${selectedRideOption.id}`}
                   style={[
@@ -4316,6 +4537,7 @@ export default function SearchScreen() {
                     styles.rideOptionActive,
                   ]}
                 >
+                  {/* Khối ride option name: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
                   <View>
                     <ThemedText type="smallBold" style={styles.rideOptionName}>
                       {selectedRideOption.name}
@@ -4330,6 +4552,7 @@ export default function SearchScreen() {
                   const isSelected = option.id === selectedRideId;
 
                   return (
+                    /* Chọn loại xe: gọi selectRideOption(option), cập nhật selectedRideId và nếu cần gọi lại VietMap route theo profile xe mới. */
                     <Pressable
                       testID={`booking-ride-option-${option.id}`}
                       key={option.id}
@@ -4340,6 +4563,7 @@ export default function SearchScreen() {
                       ]}
                       onPress={() => selectRideOption(option)}
                       >
+                      {/* Khối ride option name: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
                       <View>
                         <ThemedText type="smallBold" style={styles.rideOptionName}>
                           {option.name}
@@ -4354,6 +4578,7 @@ export default function SearchScreen() {
                   );
                 })
               )}
+              {/* Nút đặt xe: gọi handleBookRide, gửi createTripPayload lên BE, lưu bookedTrip local rồi chuyển sang tracking/tabs. */}
               <Pressable
                 testID="booking-book-button"
                 style={[
@@ -4370,15 +4595,22 @@ export default function SearchScreen() {
             </View>
           </>
         ) : bookingStep === "confirm" && mode !== "shared" ? (
+          /* Khối confirm stage: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
           <View testID="booking-confirm-stage" style={styles.confirmStage}>
+            {/* Khối dots row: Dàn các phần tử trên cùng một hàng. */}
             <View style={styles.dotsRow}>
+              {/* Khối dot active: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.dotActive} />
+              {/* Khối dot active: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.dotActive} />
+              {/* Khối dot inactive: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.dotInactive} />
             </View>
 
+            {/* Khối pickup map card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.pickupMapCard}>
               {verifiedTripMap ? (
+                /* WebView: Nhúng bản đồ HTML tương tác để hiển thị tuyến đường/marker. */
                 <WebView
                   key={`pickup-map-${verifiedTripMap.origin.placeId || verifiedTripMap.origin.formattedAddress}`}
                   source={{ html: pickupMapHtml }}
@@ -4393,6 +4625,7 @@ export default function SearchScreen() {
                 />
               ) : (
                 <>
+                  {/* Khối pin wrap: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.pinWrap}>
                     <ThemedText type="default" style={styles.pinIcon}>
                     {"●"}
@@ -4405,8 +4638,11 @@ export default function SearchScreen() {
               )}
             </View>
 
+            {/* Khối pickup confirm sheet: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.pickupConfirmSheet}>
+              {/* Khối pickup address row: Dàn các phần tử trên cùng một hàng. */}
               <View style={styles.pickupAddressRow}>
+                {/* Khối pickup address icon wrap: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                 <View style={styles.pickupAddressIconWrap}>
                   <ThemedText type="default" style={styles.pickupAddressIcon}>
                     {"📍"}
@@ -4415,6 +4651,7 @@ export default function SearchScreen() {
                     20 m
                   </ThemedText>
                 </View>
+                {/* Khối pickup address content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
                 <View style={styles.pickupAddressContent}>
                   <ThemedText
                     type="default"
@@ -4433,6 +4670,7 @@ export default function SearchScreen() {
                 </View>
               </View>
 
+              {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
               <TextInput
                 {...vietnameseTextInputProps}
                 placeholder={"Thêm ghi chú cho bác tài (ví dụ: gần cổng)."}
@@ -4443,6 +4681,7 @@ export default function SearchScreen() {
               />
 
               {Boolean(scheduledRideTime) && (
+                /* Khối pickup schedule badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */
                 <View style={styles.pickupScheduleBadge}>
                   <ThemedText type="smallBold" style={styles.pickupScheduleText}>
                     {"Hẹn lịch: "}{scheduledRideTime}
@@ -4450,6 +4689,7 @@ export default function SearchScreen() {
                 </View>
               )}
 
+              {/* Xác nhận điểm đến: không gọi API mới, chỉ chuyển bookingStep sang rideOptions để hiện giá và loại xe. */}
               <Pressable
                 testID="booking-confirm-destination-button"
                 style={styles.pickupConfirmButton}
@@ -4463,10 +4703,12 @@ export default function SearchScreen() {
           </View>
         ) : mode !== "shared" ? (
           <>
+            {/* Khối field group: Nhóm label, input và lỗi validate của một trường form. */}
             <View style={styles.fieldGroup}>
               <ThemedText type="smallBold" style={styles.inputLabel}>
                 {"Điểm đón"}
               </ThemedText>
+              {/* Khối input wrap: Bao ô nhập và nút phụ như xóa nhanh hoặc chọn gợi ý. */}
               <View
                 style={[
                   styles.inputWrap,
@@ -4475,6 +4717,7 @@ export default function SearchScreen() {
                   },
                 ]}
               >
+                {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
                 <TextInput
                   testID="booking-pickup-input"
                   ref={fromInputRef}
@@ -4511,6 +4754,7 @@ export default function SearchScreen() {
                   onFocus={() => setFocusedField('from')}
                 />
                 {Boolean(fromInput) && (
+                  /* Xóa điểm đón: clearAddressField("from") reset input, selectedFromPlace, suggestions và verifiedTripMap. */
                   <Pressable
                     style={styles.inputClearButton}
                     onPress={() => clearAddressField("from")}
@@ -4526,6 +4770,7 @@ export default function SearchScreen() {
               (addressSuggestions.from.length > 0 ||
                 loadingSuggestionsFor === "from" ||
                 suggestionError.from) && (
+                /* Khối suggestion card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View style={styles.suggestionCard}>
                   {loadingSuggestionsFor === "from" ? (
                     <ThemedText type="small" style={styles.suggestionLoading}>
@@ -4537,17 +4782,20 @@ export default function SearchScreen() {
                     </ThemedText>
                   ) : (
                     addressSuggestions.from.map((suggestion, index) => (
+                      /* Chọn gợi ý điểm đón: selectAddressSuggestion("from", suggestion) resolve VietMap detail và lưu tọa độ pickup. */
                       <Pressable
                         testID={`booking-pickup-suggestion-${index}`}
                         key={suggestion.placeId}
                         style={styles.suggestionItem}
                         onPress={() => selectAddressSuggestion("from", suggestion)}
                       >
+                        {/* Khối suggestion icon: Danh sách gợi ý địa điểm trả về từ dịch vụ bản đồ. */}
                         <View style={styles.suggestionIcon}>
                           <ThemedText type="smallBold" style={styles.suggestionIconText}>
                             {"•"}
                           </ThemedText>
                         </View>
+                        {/* Khối suggestion content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
                         <View style={styles.suggestionContent}>
                           <ThemedText
                             type="smallBold"
@@ -4573,10 +4821,12 @@ export default function SearchScreen() {
                   </ThemedText>
                 </View>
               )}
+            {/* Khối field group: Nhóm label, input và lỗi validate của một trường form. */}
             <View style={styles.fieldGroup}>
               <ThemedText type="smallBold" style={styles.inputLabel}>
                 {"Điểm đến"}
               </ThemedText>
+              {/* Khối input wrap: Bao ô nhập và nút phụ như xóa nhanh hoặc chọn gợi ý. */}
               <View
                 style={[
                   styles.inputWrap,
@@ -4585,6 +4835,7 @@ export default function SearchScreen() {
                   },
                 ]}
               >
+                {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
                 <TextInput
                   testID="booking-destination-input"
                   ref={toInputRef}
@@ -4619,6 +4870,7 @@ export default function SearchScreen() {
                   onFocus={() => setFocusedField('to')}
                 />
                 {Boolean(toInput) && (
+                  /* Xóa điểm đến: clearAddressField("to") reset input, selectedToPlace, suggestions và verifiedTripMap. */
                   <Pressable
                     style={styles.inputClearButton}
                     onPress={() => clearAddressField("to")}
@@ -4634,6 +4886,7 @@ export default function SearchScreen() {
               (addressSuggestions.to.length > 0 ||
                 loadingSuggestionsFor === "to" ||
                 suggestionError.to) && (
+                /* Khối suggestion card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View style={styles.suggestionCard}>
                   {loadingSuggestionsFor === "to" ? (
                     <ThemedText type="small" style={styles.suggestionLoading}>
@@ -4645,17 +4898,20 @@ export default function SearchScreen() {
                     </ThemedText>
                   ) : (
                     addressSuggestions.to.map((suggestion, index) => (
+                      /* Chọn gợi ý điểm đến: selectAddressSuggestion("to", suggestion) resolve VietMap detail và lưu tọa độ destination. */
                       <Pressable
                         testID={`booking-destination-suggestion-${index}`}
                         key={suggestion.placeId}
                         style={styles.suggestionItem}
                         onPress={() => selectAddressSuggestion("to", suggestion)}
                       >
+                        {/* Khối suggestion icon: Danh sách gợi ý địa điểm trả về từ dịch vụ bản đồ. */}
                         <View style={styles.suggestionIcon}>
                           <ThemedText type="smallBold" style={styles.suggestionIconText}>
                     {"•"}
                   </ThemedText>
                         </View>
+                        {/* Khối suggestion content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
                         <View style={styles.suggestionContent}>
                           <ThemedText
                             type="smallBold"
@@ -4681,9 +4937,12 @@ export default function SearchScreen() {
                 </View>
               )}
 
+            {/* Khối saved list: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.savedList}>
+              {/* Khối saved header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
               <View style={styles.savedHeader}>
                 <ThemedText type="smallBold">{"Địa chỉ đã lưu"}</ThemedText>
+                {/* Mở modal lưu địa chỉ: reset addressForm rồi hiển thị form tạo địa chỉ mới. */}
                 <Pressable onPress={openCreateAddressModal}>
                   <ThemedText type="smallBold" style={styles.saveAddressButtonText}>
                     {"+ Lưu địa chỉ"}
@@ -4691,7 +4950,9 @@ export default function SearchScreen() {
                 </Pressable>
               </View>
               {savedAddresses.map((item) => (
+                /* Khối saved item row wrap: Dàn các phần tử trên cùng một hàng. */
                 <View key={item.id} style={styles.savedItemRowWrap}>
+                  {/* Dùng địa chỉ đã lưu: fillAddressToFocusedField(item) đưa label vào ô đang focus và resolve tọa độ qua VietMap. */}
                   <Pressable
                     style={({ pressed }) => [
                       styles.savedItem,
@@ -4709,6 +4970,7 @@ export default function SearchScreen() {
                       {item.label}
                     </ThemedText>
                   </Pressable>
+                  {/* Mở/đóng menu nhỏ của địa chỉ đã lưu; chỉ đổi openAddressMenuId, chưa sửa/xóa dữ liệu. */}
                   <Pressable
                     style={styles.savedMoreButton}
                     onPress={() =>
@@ -4723,7 +4985,9 @@ export default function SearchScreen() {
                   </Pressable>
 
                   {openAddressMenuId === item.id && (
+                    /* Khối saved mini menu: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                     <View style={styles.savedMiniMenu}>
+                      {/* Sửa địa chỉ lưu: mở modal edit, nạp item hiện tại vào addressForm. */}
                       <Pressable
                         style={styles.savedMiniAction}
                         onPress={() => openEditAddressModal(item)}
@@ -4732,6 +4996,7 @@ export default function SearchScreen() {
                           {"Sửa"}
                         </ThemedText>
                       </Pressable>
+                      {/* Xóa địa chỉ lưu: deleteAddress(item.id) remove khỏi savedAddresses state. */}
                       <Pressable
                         style={styles.savedMiniAction}
                         onPress={() => deleteAddress(item.id)}
@@ -4746,7 +5011,9 @@ export default function SearchScreen() {
               ))}
             </View>
 
+            {/* Khối button row: Nhóm nút cuối form để hủy hoặc xác nhận thao tác. */}
             <View style={styles.buttonRow}>
+              {/* Hẹn lịch: openSchedulePicker verify địa điểm trước, sau đó mở modal chọn ngày/giờ. */}
               <Pressable
                 style={[
                   styles.secondaryButton,
@@ -4760,6 +5027,7 @@ export default function SearchScreen() {
                 </ThemedText>
               </Pressable>
 
+              {/* Tiếp tục: showConfirmationStep gọi verifyBookingLocations, nhận verifiedTripMap rồi sang bước confirm. */}
               <Pressable
                 testID="booking-continue-button"
                 style={[styles.primaryButton, isVerifyingMap && styles.buttonDisabled]}
@@ -4773,12 +5041,16 @@ export default function SearchScreen() {
             </View>
           </>
         ) : (
+          /* Khối shared section: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
           <View testID="ride-sharing-section" style={styles.sharedSection}>
+            {/* Khối pending shared section: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.pendingSharedSection}>
+              {/* Khối shared header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
               <View style={styles.sharedHeader}>
                 <ThemedText type="default" style={styles.pendingSharedTitle}>
                   {"Yêu cầu xe ghép của bạn"}
                 </ThemedText>
+                {/* Tạo yêu cầu xe ghép: kiểm tra login rồi mở modal createSharedVisible để nhập direction/date/slot/location. */}
                 <Pressable
                   testID="ride-sharing-create-button"
                   onPress={() => {
@@ -4793,10 +5065,12 @@ export default function SearchScreen() {
                 </Pressable>
               </View>
 
+              {/* Khối shared request filter box: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
               <View style={styles.sharedRequestFilterBox}>
                 <ThemedText type="smallBold" style={styles.sharedRequestFilterLabel}>
                   {"Chọn chuyến ghép"}
                 </ThemedText>
+                {/* Mở dropdown lọc request: chỉ đổi openSharedDropdown, không gọi API. */}
                 <Pressable
                   style={styles.sharedRequestSelect}
                   onPress={() =>
@@ -4814,8 +5088,10 @@ export default function SearchScreen() {
                 </Pressable>
 
                 {openSharedDropdown === "requestFilter" && (
+                  /* Khối shared request dropdown: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                   <View style={styles.sharedRequestDropdown}>
                     {sharedRequestFilterOptions.map((option) => (
+                      /* Chọn filter request: cập nhật sharedRequestFilter để lọc pendingSharedRequests theo booked/cancelled/etc. */
                       <Pressable
                         key={option.id}
                         style={[
@@ -4851,12 +5127,14 @@ export default function SearchScreen() {
               )}
 
               {isLoadingSharedState ? (
+                /* Khối pending shared empty card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View style={styles.pendingSharedEmptyCard}>
                   <ThemedText type="small" style={styles.pendingSharedMeta}>
                     {"Đang tải yêu cầu xe ghép của bạn..."}
                   </ThemedText>
                 </View>
               ) : filteredSharedRequests.length === 0 ? (
+                /* Khối pending shared empty card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View style={styles.pendingSharedEmptyCard}>
                   <ThemedText type="smallBold" style={styles.emptySharedTitle}>
                     {"Chưa có yêu cầu/chuyến ghép nào"}
@@ -4868,15 +5146,18 @@ export default function SearchScreen() {
               ) : null}
 
               {filteredSharedRequests.map((request, index) => (
+                /* Khối pending shared card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View
                   key={request.id}
                   testID={`ride-sharing-request-card-${index}`}
                   style={styles.pendingSharedCard}
                 >
+                  {/* Khối pending shared header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
                   <View style={styles.pendingSharedHeader}>
                     <ThemedText type="smallBold" style={styles.pendingSharedVehicle}>
                       {request.vehicle}
                     </ThemedText>
+                    {/* Khối pending badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
                     <View style={styles.pendingBadge}>
                       <ThemedText type="smallBold" style={styles.pendingBadgeText}>
                         {request.statusLabel}
@@ -4902,11 +5183,14 @@ export default function SearchScreen() {
                   <ThemedText type="small" style={styles.pendingSharedMeta}>
                     {"Quãng đường: "}{request.distance}{" • "}{request.duration}
                   </ThemedText>
+                  {/* Khối pending shared footer: Nhóm nút cuối form để hủy hoặc xác nhận thao tác. */}
                   <View style={styles.pendingSharedFooter}>
                     <ThemedText type="smallBold" style={styles.pendingSharedPrice}>
                       {request.price}
                     </ThemedText>
                     {Boolean(request.groupId) && (
+                      /* Điều hướng xem group từ request của tôi: request.groupId là id nhóm BE trả về sau khi match. */
+                      /* Màn /search/shared-ride/[id] nhận groupId qua params.id và fetch lại getRideSharingGroup(groupId). */
                       <Pressable
                         testID={`ride-sharing-request-detail-${index}`}
                         style={styles.pendingSharedDetailButton}
@@ -4924,6 +5208,7 @@ export default function SearchScreen() {
                     )}
                     {request.requestId &&
                     isSharedRideActive(getSharedRequestEffectiveStatus(request)) ? (
+                      /* Hủy request xe ghép: handleCancelSharedRequest gửi requestId lên BE, cập nhật pendingSharedRequests/cache. */
                       <Pressable
                         testID={`ride-sharing-request-cancel-${index}`}
                         style={[
@@ -4948,6 +5233,7 @@ export default function SearchScreen() {
                 </View>
               ))}
             </View>
+            {/* Khối shared header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
             <View style={styles.sharedHeader}>
               <ThemedText type="default" style={styles.sharedTitle}>
                 {"Đề xuất nhóm ghép sẵn có"}
@@ -4955,6 +5241,7 @@ export default function SearchScreen() {
             </View>
 
             {suggestedSharedRides.length === 0 ? (
+              /* Khối empty shared card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
               <View style={styles.emptySharedCard}>
                 <ThemedText type="smallBold" style={styles.emptySharedTitle}>
                     {"Chưa có nhóm ghép phù hợp"}
@@ -4967,17 +5254,21 @@ export default function SearchScreen() {
 
             {suggestedSharedRides.map((ride, index) => {
               return (
+                /* Khối suggested group card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View
                   key={ride.id}
                   testID={`ride-sharing-suggested-group-${index}`}
                   style={styles.suggestedGroupCard}
                 >
+                  {/* Khối suggested group top: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.suggestedGroupTop}>
+                    {/* Khối suggested group label: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.suggestedGroupLabel}>
                       <ThemedText type="smallBold" style={styles.suggestedGroupLabelText}>
                         {"Nhóm phù hợp"}
                       </ThemedText>
                     </View>
+                    {/* Khối suggested group badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
                     <View style={styles.suggestedGroupBadge}>
                       <ThemedText type="smallBold" style={styles.suggestedGroupBadgeText}>
                         {ride.seats}
@@ -4999,12 +5290,15 @@ export default function SearchScreen() {
                     {ride.route}
                   </ThemedText>
 
+                  {/* Khối suggested group chip row: Dàn các phần tử trên cùng một hàng. */}
                   <View style={styles.suggestedGroupChipRow}>
+                    {/* Khối suggested group chip: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.suggestedGroupChip}>
                       <ThemedText type="small" style={styles.suggestedGroupChipText}>
                         {ride.scheduleText || "Chưa có lịch"}
                       </ThemedText>
                     </View>
+                    {/* Khối suggested group chip: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.suggestedGroupChip}>
                       <ThemedText type="small" style={styles.suggestedGroupChipText}>
                         {ride.statusLabel}
@@ -5012,6 +5306,7 @@ export default function SearchScreen() {
                     </View>
                   </View>
 
+                  {/* Khối suggested group driver card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
                   <View style={styles.suggestedGroupDriverCard}>
                     <ThemedText type="small" style={styles.suggestedGroupDriverLabel}>
                       {"Tài xế"}
@@ -5025,7 +5320,9 @@ export default function SearchScreen() {
                     </ThemedText>
                   </View>
 
+                  {/* Khối suggested group footer: Nhóm nút cuối form để hủy hoặc xác nhận thao tác. */}
                   <View style={styles.suggestedGroupFooter}>
+                    {/* Khối suggested group price block: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.suggestedGroupPriceBlock}>
                       <ThemedText type="small" style={styles.suggestedGroupPriceLabel}>
                         {ride.priceLabel || "Giá mỗi người"}
@@ -5035,7 +5332,10 @@ export default function SearchScreen() {
                       </ThemedText>
                     </View>
 
+                    {/* Khối suggested group actions: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                     <View style={styles.suggestedGroupActions}>
+                      {/* Điều hướng xem chi tiết group đề xuất: ride.id là groupId đã map từ BE available group. */}
+                      {/* Không gửi toàn bộ object qua route, chỉ gửi id; màn detail tự gọi API để tránh dùng dữ liệu cũ. */}
                       <Pressable
                         testID={`ride-sharing-suggested-detail-${index}`}
                         style={styles.suggestedGroupSecondaryButton}
@@ -5048,6 +5348,7 @@ export default function SearchScreen() {
                           {"Xem nhóm"}
                         </ThemedText>
                       </Pressable>
+                      {/* Mở modal join ngay tại SearchScreen: truyền cả ride card vào state joinSharedGroup để form biết groupId/destination. */}
                       <Pressable
                         testID={`ride-sharing-suggested-join-${index}`}
                         style={styles.suggestedGroupPrimaryButton}
@@ -5070,23 +5371,28 @@ export default function SearchScreen() {
         </View>
       </ScrollView>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={addressModalVisible}
         transparent
         animationType="fade"
         onRequestClose={closeAddressModal}
       >
+        {/* Khối address overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.addressOverlay}>
+          {/* Khối address card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View
             style={[
               styles.addressCard,
               { backgroundColor: theme.backgroundElement },
             ]}
           >
+            {/* Khối address header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
             <View style={styles.addressHeader}>
               <ThemedText type="default" style={styles.addressTitle}>
                 {editingAddressId ? "Sửa địa chỉ" : "Lưu địa chỉ"}
               </ThemedText>
+              {/* Nút đóng modal/popup đang hiển thị. */}
               <Pressable style={styles.addressCloseButton} onPress={closeAddressModal}>
                 <ThemedText type="default" style={styles.addressCloseText}>
                     {"x"}
@@ -5094,10 +5400,12 @@ export default function SearchScreen() {
               </Pressable>
             </View>
 
+            {/* Khối address field: Nhóm label, input và lỗi validate của một trường form. */}
             <View style={styles.addressField}>
               <ThemedText type="smallBold" style={styles.addressLabel}>
                     {"Tên địa chỉ"}
                   </ThemedText>
+              {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
               <TextInput
                 {...vietnameseTextInputProps}
                 placeholder={"VD: Đại học FPT, Bến xe Mỹ Đình..."}
@@ -5117,13 +5425,16 @@ export default function SearchScreen() {
               </ThemedText>
             )}
 
+            {/* Khối address button row: Nhóm nút cuối form để hủy hoặc xác nhận thao tác. */}
             <View style={styles.addressButtonRow}>
+              {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
               <Pressable
                 style={[styles.addressSecondaryButton, { backgroundColor: theme.background }]}
                 onPress={closeAddressModal}
               >
                 <ThemedText type="smallBold">{"Hủy"}</ThemedText>
               </Pressable>
+              {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
               <Pressable style={styles.addressPrimaryButton} onPress={saveAddress}>
                 <ThemedText type="smallBold" style={styles.addressPrimaryText}>
                     {"Lưu địa chỉ"}
@@ -5134,11 +5445,13 @@ export default function SearchScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={schedulePickerVisible}
         animationType="slide"
         onRequestClose={() => setSchedulePickerVisible(false)}
       >
+        {/* Khối schedule screen: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
         <View
           style={[
             styles.scheduleScreen,
@@ -5148,7 +5461,9 @@ export default function SearchScreen() {
             },
           ]}
         >
+          {/* Khối schedule header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
           <View style={styles.scheduleHeader}>
+            {/* Nút quay lại màn trước trong stack điều hướng. */}
             <Pressable
               style={styles.scheduleBackButton}
               onPress={() => setSchedulePickerVisible(false)}
@@ -5160,9 +5475,11 @@ export default function SearchScreen() {
             <ThemedText type="default" style={styles.scheduleTitle}>
                     {"Hẹn giờ"}
                   </ThemedText>
+            {/* Khối schedule back button: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.scheduleBackButton} />
           </View>
 
+          {/* Khối schedule calendar card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View style={styles.scheduleCalendarCard}>
             <ThemedText type="default" style={styles.scheduleCalendarMonth}>
               {selectedScheduleDate.monthLabel}
@@ -5172,6 +5489,7 @@ export default function SearchScreen() {
             </ThemedText>
           </View>
 
+          {/* Khối schedule intro: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
           <View style={styles.scheduleIntro}>
             <ThemedText type="default" style={styles.scheduleQuestion}>
                     {"Bạn muốn xe đón lúc nào?"}
@@ -5181,7 +5499,9 @@ export default function SearchScreen() {
             </ThemedText>
           </View>
 
+          {/* Khối schedule picker panel: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
           <View style={styles.schedulePickerPanel}>
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.scheduleDateColumn}
               showsVerticalScrollIndicator={false}
@@ -5190,6 +5510,7 @@ export default function SearchScreen() {
                 const isSelected = option.value === selectedScheduleDate.value;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={option.value}
                     style={[
@@ -5221,6 +5542,7 @@ export default function SearchScreen() {
               })}
             </ScrollView>
 
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.scheduleTimeColumn}
               showsVerticalScrollIndicator={false}
@@ -5229,6 +5551,7 @@ export default function SearchScreen() {
                 const isSelected = hour === scheduleDraft.hour;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={hour}
                     style={[
@@ -5259,6 +5582,7 @@ export default function SearchScreen() {
               :
             </ThemedText>
 
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.scheduleTimeColumn}
               showsVerticalScrollIndicator={false}
@@ -5267,6 +5591,7 @@ export default function SearchScreen() {
                 const isSelected = minute === scheduleDraft.minute;
 
                 return (
+                  /* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */
                   <Pressable
                     key={minute}
                     style={[
@@ -5294,12 +5619,14 @@ export default function SearchScreen() {
             </ScrollView>
           </View>
 
+          {/* Khối schedule result card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View style={styles.scheduleResultCard}>
             <ThemedText type="default" style={styles.scheduleResultTitle}>
               {"Xe đón bạn lúc "}{scheduleDisplayText}
             </ThemedText>
           </View>
 
+          {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
           <Pressable
             style={styles.scheduleConfirmButton}
             onPress={confirmSchedulePicker}
@@ -5311,18 +5638,23 @@ export default function SearchScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={Boolean(joinSharedGroup)}
         transparent
         animationType="fade"
         onRequestClose={closeJoinSharedModal}
       >
+        {/* Khối create shared overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.createSharedOverlay}>
+          {/* Khối create shared card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View testID="ride-sharing-join-modal" style={styles.createSharedCard}>
+            {/* Khối create shared header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
             <View style={styles.createSharedHeader}>
               <ThemedText type="default" style={styles.createSharedTitle}>
                 {"Tham gia nhóm xe ghép"}
               </ThemedText>
+              {/* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */}
               <Pressable
                 style={styles.createSharedClose}
                 onPress={closeJoinSharedModal}
@@ -5334,15 +5666,18 @@ export default function SearchScreen() {
               </Pressable>
             </View>
 
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.createSharedBody}
               contentContainerStyle={styles.createSharedBodyContent}
               showsVerticalScrollIndicator
             >
+              {/* Khối create field: Nhóm label, input và lỗi validate của một trường form. */}
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
                   {"Nhóm đã chọn"}
                 </ThemedText>
+                {/* Khối join group summary: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                 <View style={styles.joinGroupSummary}>
                   <ThemedText type="smallBold" style={styles.joinGroupSummaryTitle}>
                     {joinSharedGroup?.route || "Nhóm xe ghép"}
@@ -5354,12 +5689,15 @@ export default function SearchScreen() {
                 </View>
               </View>
 
+              {/* Khối create field: Nhóm label, input và lỗi validate của một trường form. */}
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
                   {"Điểm đón của bạn"}
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
+                {/* Khối create location input wrap: Bao ô nhập và nút phụ như xóa nhanh hoặc chọn gợi ý. */}
                 <View style={styles.createLocationInputWrap}>
+                  {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
                   <TextInput
                     testID="ride-sharing-join-location-input"
                     {...vietnameseTextInputProps}
@@ -5370,6 +5708,7 @@ export default function SearchScreen() {
                     onChangeText={updateJoinSharedPickup}
                   />
                   {Boolean(joinSharedPickup) && (
+                    /* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="Xóa điểm đón"
@@ -5386,6 +5725,7 @@ export default function SearchScreen() {
                 {(joinSharedLocationLoading ||
                   joinSharedError ||
                   joinSharedSuggestions.length > 0) && (
+                  /* Khối shared suggestion card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                   <View style={styles.sharedSuggestionCard}>
                     {joinSharedLocationLoading ? (
                       <ThemedText type="small" style={styles.suggestionLoading}>
@@ -5393,17 +5733,20 @@ export default function SearchScreen() {
                       </ThemedText>
                     ) : joinSharedSuggestions.length > 0 ? (
                       joinSharedSuggestions.map((suggestion, index) => (
+                        /* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */
                         <Pressable
                           testID={`ride-sharing-join-location-suggestion-${index}`}
                           key={suggestion.placeId || suggestion.description}
                           style={styles.suggestionItem}
                           onPress={() => selectJoinSharedLocationSuggestion(suggestion)}
                         >
+                          {/* Khối suggestion icon: Danh sách gợi ý địa điểm trả về từ dịch vụ bản đồ. */}
                           <View style={styles.suggestionIcon}>
                             <ThemedText type="smallBold" style={styles.suggestionIconText}>
                               {"•"}
                             </ThemedText>
                           </View>
+                          {/* Khối suggestion content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
                           <View style={styles.suggestionContent}>
                             <ThemedText
                               type="smallBold"
@@ -5444,7 +5787,9 @@ export default function SearchScreen() {
               )}
             </ScrollView>
 
+            {/* Khối create shared footer: Nhóm nút cuối form để hủy hoặc xác nhận thao tác. */}
             <View style={styles.createSharedFooter}>
+              {/* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */}
               <Pressable
                 style={styles.secondaryButton}
                 onPress={closeJoinSharedModal}
@@ -5454,6 +5799,7 @@ export default function SearchScreen() {
                   {"Đóng"}
                 </ThemedText>
               </Pressable>
+              {/* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */}
               <Pressable
                 testID="ride-sharing-join-submit-button"
                 style={[
@@ -5472,18 +5818,23 @@ export default function SearchScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={createSharedVisible}
         transparent
         animationType="fade"
         onRequestClose={closeCreateSharedModal}
       >
+        {/* Khối create shared overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.createSharedOverlay}>
+          {/* Khối create shared card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View testID="ride-sharing-create-modal" style={styles.createSharedCard}>
+            {/* Khối create shared header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
             <View style={styles.createSharedHeader}>
               <ThemedText type="default" style={styles.createSharedTitle}>
                     {"Tạo yêu cầu xe ghép"}
                   </ThemedText>
+              {/* Nút đóng modal/popup đang hiển thị. */}
               <Pressable
                 style={styles.createSharedClose}
                 onPress={closeCreateSharedModal}
@@ -5494,16 +5845,20 @@ export default function SearchScreen() {
               </Pressable>
             </View>
 
+            {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
             <ScrollView
               style={styles.createSharedBody}
               contentContainerStyle={styles.createSharedBodyContent}
               showsVerticalScrollIndicator
             >
+              {/* Khối create field: Nhóm label, input và lỗi validate của một trường form. */}
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
                   {"Kiểu ghép"}
                 </ThemedText>
+                {/* Khối segment row: Nhóm lựa chọn dạng tab/segment để đổi chế độ hiển thị. */}
                 <View style={styles.segmentRow}>
+                  {/* Nút tab/segment để đổi nhóm nội dung đang xem. */}
                   <Pressable
                     style={[
                       styles.segment,
@@ -5529,6 +5884,7 @@ export default function SearchScreen() {
                       {"Ghép tức thì"}
                     </ThemedText>
                   </Pressable>
+                  {/* Nút tab/segment để đổi nhóm nội dung đang xem. */}
                   <Pressable
                     style={[
                       styles.segment,
@@ -5555,11 +5911,13 @@ export default function SearchScreen() {
                 </View>
               </View>
 
+              {/* Khối create field: Nhóm label, input và lỗi validate của một trường form. */}
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
                   {"Loại chuyến"}
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
+                {/* Mở dropdown loại chuyến: chỉ đổi openSharedDropdown, chưa đổi dữ liệu form. */}
                 <Pressable
                   style={styles.createSelect}
                   onPress={() =>
@@ -5571,6 +5929,7 @@ export default function SearchScreen() {
                   <ThemedText type="default" style={styles.createSelectText}>
                     {sharedForm.tripType}
                   </ThemedText>
+                  {/* Khối create select indicator: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.createSelectIndicator}>
                     <ThemedText type="smallBold" style={styles.createSelectChevron}>
                       {openSharedDropdown === "tripType" ? "⌃" : "⌄"}
@@ -5578,8 +5937,10 @@ export default function SearchScreen() {
                   </View>
                 </Pressable>
                 {openSharedDropdown === "tripType" && (
+                  /* Khối create dropdown: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                   <View style={styles.createDropdown}>
                     {sharedTripTypes.map((item) => (
+                      /* Chọn loại chuyến: ghi tripType vào sharedForm và reset slotId vì slot phụ thuộc chiều đi/về. */
                       <Pressable
                         key={item}
                         style={[
@@ -5613,10 +5974,12 @@ export default function SearchScreen() {
                 )}
               </View>
 
+              {/* Khối create field: Nhóm label, input và lỗi validate của một trường form. */}
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
                   {"Loại xe"}
                 </ThemedText>
+                {/* Khối create select: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                 <View style={styles.createSelect}>
                   <ThemedText type="default" style={styles.createSelectText}>
                     Ô tô
@@ -5624,12 +5987,15 @@ export default function SearchScreen() {
                 </View>
               </View>
 
+              {/* Khối create field: Nhóm label, input và lỗi validate của một trường form. */}
               <View style={styles.createField}>
                 <ThemedText type="small" style={styles.createLabel}>
                   {sharedLocationLabel}
                   <ThemedText type="small" style={styles.requiredMark}>*</ThemedText>
                 </ThemedText>
+                {/* Khối create location input wrap: Bao ô nhập và nút phụ như xóa nhanh hoặc chọn gợi ý. */}
                 <View style={styles.createLocationInputWrap}>
+                  {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
                   <TextInput
                     testID="ride-sharing-location-input"
                     {...vietnameseTextInputProps}
@@ -5640,6 +6006,7 @@ export default function SearchScreen() {
                     onChangeText={(value) => updateSharedForm("location", value)}
                   />
                   {Boolean(sharedForm.location) && (
+                    /* Xóa địa điểm xe ghép: clearSharedLocation reset sharedForm.location, selectedSharedPlace và suggestions. */
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="Xóa địa chỉ"
@@ -5655,6 +6022,7 @@ export default function SearchScreen() {
                 {(sharedLocationLoading ||
                   sharedLocationError ||
                   sharedLocationSuggestions.length > 0) && (
+                  /* Khối shared suggestion card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                   <View style={styles.sharedSuggestionCard}>
                     {sharedLocationLoading ? (
                       <ThemedText type="small" style={styles.suggestionLoading}>
@@ -5666,17 +6034,20 @@ export default function SearchScreen() {
                       </ThemedText>
                     ) : (
                       sharedLocationSuggestions.map((suggestion, index) => (
+                        /* Chọn gợi ý location xe ghép: resolve VietMap detail, lưu selectedSharedPlace có lat/lng để tạo payload. */
                         <Pressable
                           testID={`ride-sharing-location-suggestion-${index}`}
                           key={suggestion.placeId || suggestion.description}
                           style={styles.suggestionItem}
                           onPress={() => selectSharedLocationSuggestion(suggestion)}
                         >
+                          {/* Khối suggestion icon: Danh sách gợi ý địa điểm trả về từ dịch vụ bản đồ. */}
                           <View style={styles.suggestionIcon}>
                             <ThemedText type="smallBold" style={styles.suggestionIconText}>
                               {"•"}
                             </ThemedText>
                           </View>
+                          {/* Khối suggestion content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
                           <View style={styles.suggestionContent}>
                             <ThemedText
                               type="smallBold"
@@ -5704,8 +6075,11 @@ export default function SearchScreen() {
               </View>
 
               {isScheduledSharedRide ? (
+              /* Khối create schedule card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
               <View style={styles.createScheduleCard}>
+                {/* Khối create schedule header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
                 <View style={styles.createScheduleHeader}>
+                  {/* Khối create calendar badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
                   <View style={styles.createCalendarBadge}>
                     <ThemedText type="smallBold" style={styles.createCalendarMonth}>
                       {sharedCalendarPreview?.monthLabel ?? "Ngày"}
@@ -5714,6 +6088,7 @@ export default function SearchScreen() {
                       {sharedCalendarPreview?.dayLabel ?? "--"}
                     </ThemedText>
                   </View>
+                  {/* Khối create schedule intro: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.createScheduleIntro}>
                     <ThemedText type="default" style={styles.createScheduleTitle}>
                     {"Chọn lịch ngày đi"}
@@ -5724,16 +6099,19 @@ export default function SearchScreen() {
                   </View>
                 </View>
 
+                {/* Khối create schedule block: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                 <View style={styles.createScheduleBlock}>
                   <ThemedText type="smallBold" style={styles.createSubLabel}>
                     Slot
                     <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
                   </ThemedText>
+                  {/* Khối slot grid: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.slotGrid}>
                     {availableSharedSlotOptions.map((slot) => {
                       const isSelected = sharedForm.slotId === slot.id;
 
                       return (
+                        /* Chọn slot xe ghép: ghi slot.id vào sharedForm.slotId; createSharedRide sẽ đổi thành scheduledSlot gửi BE. */
                         <Pressable
                           testID={`ride-sharing-slot-${slot.id}`}
                           key={slot.id}
@@ -5775,11 +6153,13 @@ export default function SearchScreen() {
                   ) : null}
                 </View>
 
+                {/* Khối create schedule block: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                 <View style={styles.createScheduleBlock}>
                   <ThemedText type="smallBold" style={styles.createSubLabel}>
                     {"Ngày đi"}
                     <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
                   </ThemedText>
+                  {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -5789,6 +6169,7 @@ export default function SearchScreen() {
                       const isSelected = sharedForm.date === date.value;
 
                       return (
+                        /* Chọn ngày xe ghép: ghi date.value vào sharedForm.date; createSharedRide ghép với slot.time thành scheduledAt. */
                         <Pressable
                           testID={`ride-sharing-date-${index}`}
                           key={date.value}
@@ -5825,6 +6206,7 @@ export default function SearchScreen() {
                   </ScrollView>
                 </View>
 
+                {/* Khối create schedule summary: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                 <View style={styles.createScheduleSummary}>
                   <ThemedText type="smallBold" style={styles.createScheduleSummaryText}>
                     {sharedScheduleSummary}
@@ -5832,6 +6214,7 @@ export default function SearchScreen() {
                 </View>
               </View>
               ) : (
+                /* Khối create schedule summary: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                 <View style={styles.createScheduleSummary}>
                   <ThemedText type="smallBold" style={styles.createScheduleSummaryText}>
                     {sharedScheduleSummary}
@@ -5849,6 +6232,7 @@ export default function SearchScreen() {
                 </ThemedText>
               )}
 
+              {/* Submit tạo request xe ghép: createSharedRide validate form, tính route metrics, gửi createRideSharingRequest lên BE. */}
               <Pressable
                 testID="ride-sharing-submit-button"
                 style={[
@@ -5867,13 +6251,16 @@ export default function SearchScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={reviewModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setReviewModalVisible(false)}
       >
+        {/* Khối review overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.reviewOverlay}>
+          {/* Khối review card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View testID="booking-review-modal" style={styles.reviewCard}>
             <ThemedText type="default" style={styles.reviewTitle}>
               {"Đánh giá chuyến đi"}
@@ -5882,8 +6269,10 @@ export default function SearchScreen() {
               {(activeBookedRide?.pickup ?? verifiedFromLabel) + " → " + (activeBookedRide?.destination ?? verifiedToLabel)}
             </ThemedText>
 
+            {/* Khối review stars row: Dàn các phần tử trên cùng một hàng. */}
             <View style={styles.reviewStarsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
+                /* Chọn số sao review: chỉ cập nhật reviewRating, payload gửi BE khi bấm nút submit review. */
                 <Pressable
                   key={star}
                   testID={`booking-review-star-${star}`}
@@ -5903,6 +6292,7 @@ export default function SearchScreen() {
               ))}
             </View>
 
+            {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
             <TextInput
               testID="booking-review-comment-input"
               {...vietnameseTextInputProps}
@@ -5920,7 +6310,9 @@ export default function SearchScreen() {
               </ThemedText>
             )}
 
+            {/* Khối review button row: Nhóm nút cuối form để hủy hoặc xác nhận thao tác. */}
             <View style={styles.reviewButtonRow}>
+              {/* Hủy review: đóng modal, chưa gọi API và giữ nguyên trạng thái chuyến. */}
               <Pressable
                 style={styles.reviewCancelButton}
                 onPress={() => setReviewModalVisible(false)}
@@ -5929,6 +6321,7 @@ export default function SearchScreen() {
                   {"Hủy"}
                 </ThemedText>
               </Pressable>
+              {/* Submit review: handleSubmitCompletedTripReview gửi { tripId, rating, comment } lên Review API. */}
               <Pressable
                 testID="booking-review-submit-button"
                 style={[
@@ -5947,17 +6340,21 @@ export default function SearchScreen() {
         </View>
       </Modal>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={Boolean(alertMessage)}
         transparent
         animationType="fade"
         onRequestClose={() => setAlertMessage("")}
       >
+        {/* Bấm nền alert: chỉ clear alertMessage để đóng modal, không gửi API. */}
         <Pressable
           style={styles.alertOverlay}
           onPress={() => setAlertMessage("")}
         >
+          {/* Card alert chặn click lan xuống màn booking; không có handler gửi dữ liệu. */}
           <Pressable testID="booking-alert-card" style={styles.alertCard}>
+            {/* Khối alert icon: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.alertIcon}>
               <ThemedText type="smallBold" style={styles.alertIconText}>
                 !
@@ -5973,6 +6370,7 @@ export default function SearchScreen() {
             >
               {alertMessage}
             </ThemedText>
+            {/* Nút đóng alert: clear alertMessage để user sửa input/logic bị thiếu. */}
             <Pressable
               style={styles.alertButton}
               onPress={() => setAlertMessage("")}
@@ -5988,6 +6386,7 @@ export default function SearchScreen() {
   );
 }
 
+// styles: Gom toàn bộ style của màn hình/component ở cuối file
 const styles = StyleSheet.create({
   container: {
     flex: 1,

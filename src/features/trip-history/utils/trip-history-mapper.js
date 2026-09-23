@@ -1,3 +1,9 @@
+// TRIP HISTORY MAPPER - Chuẩn hóa dữ liệu chuyến thành item lịch sử
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 function formatCurrencyVnd(value) {
   const numberValue = Number(value);
 
@@ -8,6 +14,7 @@ function formatCurrencyVnd(value) {
   return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
 }
 
+// formatTripDate: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatTripDate(value) {
   if (!value) {
     return "--";
@@ -25,6 +32,7 @@ function formatTripDate(value) {
   });
 }
 
+// formatDistanceKm: Định dạng khoảng cách theo km
 function formatDistanceKm(value) {
   const numberValue = Number(value);
 
@@ -40,12 +48,14 @@ function formatDistanceKm(value) {
   return `${roundedValue.toLocaleString("vi-VN")} km`;
 }
 
+// getTripTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripTime(value) {
   const date = new Date(value ?? "");
 
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
+// getTripFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripFare(trip) {
   return (
     trip?.pricing?.estimatedFare ??
@@ -62,10 +72,12 @@ function getTripFare(trip) {
   );
 }
 
+// getTripField: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripField(source, camelKey, pascalKey) {
   return source?.[camelKey] ?? source?.[pascalKey] ?? null;
 }
 
+// getTripDistance: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripDistance(trip) {
   return (
     trip?.estimatedDistanceKm ??
@@ -76,10 +88,12 @@ function getTripDistance(trip) {
   );
 }
 
+// getLocalDistanceText: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getLocalDistanceText(trip) {
   return trip?.tripDistance ?? trip?.distanceText ?? "";
 }
 
+// isTripOlderThanThreeDays: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isTripOlderThanThreeDays(value) {
   if (!value) {
     return false;
@@ -97,6 +111,7 @@ function isTripOlderThanThreeDays(value) {
   return diffMs > threeDaysMs;
 }
 
+// getTripIcon: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripIcon(vehicleType) {
   const normalizedType = String(vehicleType ?? "").toLowerCase();
 
@@ -107,6 +122,7 @@ function getTripIcon(vehicleType) {
   return "🚗";
 }
 
+// mapTripToHistoryItem: Map dữ liệu BE/local sang card lịch sử chuyến
 export function mapTripToHistoryItem(trip, localTrip = null) {
   const date =
     trip?.completedAt ?? trip?.cancelledAt ?? trip?.acceptedAt ?? trip?.createdAt;

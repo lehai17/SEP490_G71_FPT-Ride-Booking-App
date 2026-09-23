@@ -1,3 +1,9 @@
+// SHARED RIDE DETAIL SCREEN - Chi tiết nhóm đi ghép và thao tác tham gia
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -34,10 +40,14 @@ import {
 } from "@/features/booking/services/vietmap-api";
 import { useTheme } from "@/hooks/use-theme";
 
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const BRAND = "#FF7A00";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const CARD_BORDER = "#ECECEC";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MUTED = "#70757E";
 
+// getRideDestinationLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getRideDestinationLabel(ride) {
   const route = ride?.route ?? "";
   const [, to = "Đại học FPT"] = route.split(/\s*(?:→|->)\s*/);
@@ -45,6 +55,7 @@ function getRideDestinationLabel(ride) {
   return to.includes("FPT") ? to : "Đại học FPT";
 }
 
+// getGroupJoinDestination: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getGroupJoinDestination(...groups) {
   for (const group of groups) {
     const members = Array.isArray(group?.members) ? group.members : [];
@@ -80,6 +91,7 @@ function getGroupJoinDestination(...groups) {
   return null;
 }
 
+// formatDistanceKm: Định dạng khoảng cách theo km
 function formatDistanceKm(value) {
   const distanceKm = Number(value ?? 0);
 
@@ -94,10 +106,12 @@ function formatDistanceKm(value) {
   return `${distanceKm.toFixed(1)} km`;
 }
 
+// toRadians: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function toRadians(value) {
   return (Number(value) * Math.PI) / 180;
 }
 
+// calculateDistanceKmBetweenPoints: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function calculateDistanceKmBetweenPoints(origin, destination) {
   const originLat = Number(origin?.lat);
   const originLng = Number(origin?.lng);
@@ -127,6 +141,7 @@ function calculateDistanceKmBetweenPoints(origin, destination) {
   return earthRadiusKm * angle;
 }
 
+// getMemberDistanceKm: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getMemberDistanceKm(member) {
   const estimatedDistanceKm = Number(member?.estimatedDistanceKm ?? 0);
 
@@ -146,6 +161,7 @@ function getMemberDistanceKm(member) {
   );
 }
 
+// calculateAverageGroupFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function calculateAverageGroupFare(members) {
   const normalizedFares = (Array.isArray(members) ? members : [])
     .map((member) => Number(member?.finalFare ?? 0))
@@ -159,6 +175,7 @@ function calculateAverageGroupFare(members) {
   return totalFare / normalizedFares.length;
 }
 
+// calculateProjectedJoinFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function calculateProjectedJoinFare(members, currentPassengers) {
   const memberCount = Array.isArray(members) ? members.length : 0;
   const currentCount = Math.max(Number(currentPassengers) || 0, memberCount);
@@ -175,6 +192,7 @@ function calculateProjectedJoinFare(members, currentPassengers) {
   return (averageCurrentFare * currentCount) / (currentCount + 1);
 }
 
+// getReadableApiErrorMessage: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getReadableApiErrorMessage(error, fallbackMessage) {
   const rawMessage = String(
     error?.payload?.message ??
@@ -197,6 +215,7 @@ function getReadableApiErrorMessage(error, fallbackMessage) {
   return cleanedMessage || fallbackMessage;
 }
 
+// normalizePlaceCompareText: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizePlaceCompareText(value) {
   return String(value ?? "")
     .toLowerCase()
@@ -213,6 +232,7 @@ function normalizePlaceCompareText(value) {
     .trim();
 }
 
+// isRecentRequest: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isRecentRequest(createdAt, maxMinutes = 3) {
   if (!createdAt) {
     return false;
@@ -226,6 +246,7 @@ function isRecentRequest(createdAt, maxMinutes = 3) {
   return Date.now() - createdTime <= maxMinutes * 60 * 1000;
 }
 
+// isLikelyStrayJoinRequest: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isLikelyStrayJoinRequest(request, expectedPickupAddress, expectedDestinationAddress) {
   if (!request?.id || request?.groupId) {
     return false;
@@ -263,6 +284,7 @@ function isLikelyStrayJoinRequest(request, expectedPickupAddress, expectedDestin
   );
 }
 
+// getJoinButtonLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getJoinButtonLabel(isJoiningGroup, pendingRequest) {
   if (isJoiningGroup) {
     return "Đang tham gia...";
@@ -277,6 +299,7 @@ function getJoinButtonLabel(isJoiningGroup, pendingRequest) {
   return "Tham gia nhóm";
 }
 
+// getDefaultJoinDestination: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getDefaultJoinDestination(ride) {
   const route = ride?.route ?? "";
   const [, to = "Đại học FPT"] = route.split(/\s*(?:→|->)\s*/);
@@ -285,6 +308,7 @@ function getDefaultJoinDestination(ride) {
   return isToFpt ? to : "Đại học FPT";
 }
 
+// formatCurrencyVnd: Định dạng số tiền sang VND để hiển thị
 function formatCurrencyVnd(value) {
   const numberValue = Number(value ?? 0);
 
@@ -295,6 +319,7 @@ function formatCurrencyVnd(value) {
   return `${Math.round(numberValue).toLocaleString("vi-VN")}đ`;
 }
 
+// formatGroupDateTime: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatGroupDateTime(value) {
   if (!value) {
     return "Chưa có thời gian";
@@ -315,6 +340,7 @@ function formatGroupDateTime(value) {
   });
 }
 
+// normalizeGroupStatusKey: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeGroupStatusKey(status) {
   const normalized = String(status ?? "").replace(/\s+/g, "").toLowerCase();
   const numericStatusMap = {
@@ -333,6 +359,7 @@ function normalizeGroupStatusKey(status) {
   return numericStatusMap[normalized] || normalized;
 }
 
+// normalizeGroupStatusLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeGroupStatusLabel(status) {
   const normalized = normalizeGroupStatusKey(status);
   const labels = {
@@ -352,6 +379,7 @@ function normalizeGroupStatusLabel(status) {
   return labels[normalized] || status || "Đang chờ ghép";
 }
 
+// getGroupDriverDisplay: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getGroupDriverDisplay(driverName, status) {
   const normalizedStatus = normalizeGroupStatusKey(status);
   const safeDriverName = driverName || "Tài xế";
@@ -382,6 +410,7 @@ function getGroupDriverDisplay(driverName, status) {
   }
 }
 
+// getGroupDestinationDisplay: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getGroupDestinationDisplay(group) {
   const members = Array.isArray(group?.members) ? group.members : [];
   const firstDestination = members.find((member) => member?.destinationAddress)
@@ -394,6 +423,7 @@ function getGroupDestinationDisplay(group) {
   );
 }
 
+// normalizeRequestStatusKey: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRequestStatusKey(status) {
   const normalized = String(status ?? "").replace(/\s+/g, "").toLowerCase();
   const numericStatusMap = {
@@ -414,6 +444,7 @@ function normalizeRequestStatusKey(status) {
   return numericStatusMap[normalized] || normalized;
 }
 
+// getCurrentUserRequest: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getCurrentUserRequest(maybeRequest, session, groupId = "") {
   if (!maybeRequest?.id || !session?.userId) {
     return null;
@@ -435,6 +466,7 @@ function getCurrentUserRequest(maybeRequest, session, groupId = "") {
   return maybeRequest;
 }
 
+// getPassengerStatusNotice: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getPassengerStatusNotice({
   ride,
   myRequest,
@@ -527,6 +559,7 @@ function getPassengerStatusNotice({
   return null;
 }
 
+// mapApiGroupToRide: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapApiGroupToRide(group, session = null) {
   if (!group?.id) {
     return null;
@@ -580,6 +613,7 @@ function mapApiGroupToRide(group, session = null) {
   };
 }
 
+// isCurrentUserGroupMember: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function isCurrentUserGroupMember(members, session) {
   if (!Array.isArray(members) || !session) {
     return false;
@@ -603,12 +637,18 @@ function isCurrentUserGroupMember(members, session) {
   });
 }
 
+// SharedRideDetailScreen: Component chi tiết nhóm đi ghép
 export default function SharedRideDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { isAuthenticated, session } = useAuth();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
+  // NHẬN ID TỪ LINK /search/shared-ride/[id]
+  // Nguồn id có thể đến từ:
+  // - HomeScreen: router.push(`/search/shared-ride/${ride.id}`)
+  // - SearchScreen: router.push(`/search/shared-ride/${request.groupId}`)
+  // id này được dùng làm groupId để gọi BE lấy chi tiết nhóm xe ghép.
   const rideId = Array.isArray(params.id) ? params.id[0] : params.id;
   const mockRide = getRideGroupById(rideId);
   const [apiRide, setApiRide] = useState(null);
@@ -721,10 +761,14 @@ export default function SharedRideDetailScreen() {
       setLoadError("");
 
       try {
+        // loadGroup: LUỒNG NHẬN DỮ LIỆU CHI TIẾT NHÓM
+        // Gửi groupId = rideId lên getRideSharingGroup để nhận group/members/driver/status mới nhất.
+        // Đồng thời gọi getMyRideSharingRequest để biết user hiện tại đã join/pending/completed trong group này chưa.
         const [group, latestRequest] = await Promise.all([
           getRideSharingGroup(rideId, session.accessToken),
           getMyRideSharingRequest(session.accessToken).catch(() => null),
         ]);
+        // Lọc request của chính user trong đúng groupId hiện tại; tránh lấy nhầm request group khác.
         const normalizedRequest = getCurrentUserRequest(
           latestRequest,
           session,
@@ -732,6 +776,7 @@ export default function SharedRideDetailScreen() {
         );
 
         if (isActive) {
+          // Map response group BE sang object ride mà UI detail đang render.
           setApiRide(mapApiGroupToRide(group, session));
           setPendingRequest((current) => {
             if (!current) {
@@ -784,6 +829,7 @@ export default function SharedRideDetailScreen() {
       }
     };
 
+    // Lần đầu vào màn: show loading; sau đó polling 5s/lần để status/member cập nhật gần realtime.
     loadGroup({ showLoading: true });
     const intervalId = setInterval(() => {
       loadGroup();
@@ -800,6 +846,7 @@ export default function SharedRideDetailScreen() {
       return true;
     }
 
+    // Nếu user chưa login khi bấm tham gia, chuyển sang /profile; quay lại thì user bấm lại thao tác.
     router.push("/profile");
     return false;
   }
@@ -857,6 +904,7 @@ export default function SharedRideDetailScreen() {
       setIsLoadingPickupSuggestions(true);
 
       try {
+        // Gửi text pickupPoint lên VietMap autocomplete để nhận danh sách gợi ý địa điểm.
         const suggestions = await getVietMapPlaceSuggestions(query);
 
         if (isActive) {
@@ -889,6 +937,9 @@ export default function SharedRideDetailScreen() {
 
   async function handleSelectPickupSuggestion(suggestion) {
     try {
+      // Khi chọn gợi ý:
+      // - Nếu suggestion đã có location thì dùng luôn.
+      // - Nếu chỉ có refId/placeId thì gọi VietMap detail để lấy tọa độ chính xác.
       const resolvedPlace = suggestion.location
         ? suggestion
         : await getVietMapPlaceDetails(suggestion.refId || suggestion.placeId);
@@ -899,6 +950,7 @@ export default function SharedRideDetailScreen() {
         pickupPoint;
 
       selectedPickupAddressRef.current = resolvedAddress.trim();
+      // Lưu địa điểm đã chọn vào state; handleSubmitJoinRequest sẽ lấy lat/lng/address từ đây để gửi BE.
       setSelectedPickupPlace({
         ...resolvedPlace,
         formattedAddress: resolvedAddress,
@@ -940,6 +992,13 @@ export default function SharedRideDetailScreen() {
       return;
     }
 
+    // handleSubmitJoinRequest: LUỒNG GỬI REQUEST THAM GIA GROUP
+    // Input: rideId từ URL + selectedPickupPlace từ VietMap + destination của group.
+    // Payload gửi lên /ride-sharing/groups/{rideId}/join gồm:
+    // pickupLatitude/pickupLongitude/pickupAddress,
+    // destinationLatitude/destinationLongitude/destinationAddress,
+    // estimatedDistanceKm/estimatedDurationMinutes.
+    // Response nhận: group sau khi join, dùng để cập nhật apiRide/myRideRequest/pendingRequest.
     setIsJoiningGroup(true);
     setJoinError("");
 
@@ -953,6 +1012,7 @@ export default function SharedRideDetailScreen() {
         return;
       }
 
+      // Destination lấy từ group/members BE; nếu thiếu thì fallback defaultDestination đang hiển thị.
       const expectedDestinationAddress =
         joinDestination?.address ||
         ride?.members?.[0]?.destinationAddress ||
@@ -962,6 +1022,7 @@ export default function SharedRideDetailScreen() {
       const pickupLng = Number(verifiedPickup.location?.lng);
       const destinationLat = Number(joinDestination.latitude);
       const destinationLng = Number(joinDestination.longitude);
+      // Tính tạm distance/duration ở FE để BE có metrics cho passenger mới join group.
       const estimatedDistanceKm = Math.max(
         calculateDistanceKmBetweenPoints(
           { lat: pickupLat, lng: pickupLng },
@@ -973,6 +1034,7 @@ export default function SharedRideDetailScreen() {
         Math.round((estimatedDistanceKm / 30) * 60),
         1
       );
+      // Gửi request join thật lên BE bằng groupId từ URL.
       const joinedGroup = await joinRideSharingGroup(
         rideId,
         {
@@ -987,6 +1049,7 @@ export default function SharedRideDetailScreen() {
         },
         session.accessToken
       );
+      // Response BE được map lại vào apiRide để UI thấy member/status mới ngay.
       setApiRide(mapApiGroupToRide(joinedGroup, session));
       setMyRideRequest({
         id: `joined-${rideId}`,
@@ -1005,6 +1068,7 @@ export default function SharedRideDetailScreen() {
     } catch (error) {
       if (session?.accessToken) {
         try {
+          // Nếu join lỗi sau khi BE đã tạo request "lạc", thử đọc request mới nhất để cleanup.
           const latestRequest = await getMyRideSharingRequest(session.accessToken);
 
           if (
@@ -1040,6 +1104,7 @@ export default function SharedRideDetailScreen() {
 
   return (
     <>
+      {/* ScrollView: Cho phép nội dung dài cuộn được trên màn hình nhỏ. */}
       <ScrollView
         style={[styles.container, { backgroundColor: "#F8F8F8" }]}
         contentContainerStyle={[
@@ -1051,8 +1116,11 @@ export default function SharedRideDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Khối content: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
         <View style={styles.content}>
+          {/* Khối header row: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
           <View style={styles.headerRow}>
+            {/* Điều hướng quay lại: không gửi dữ liệu, chỉ pop stack về màn đã push sang detail. */}
             <Pressable onPress={() => router.back()} style={styles.backButton}>
               <ThemedText type="subtitle" style={styles.backIcon}>
                 ←
@@ -1064,6 +1132,7 @@ export default function SharedRideDetailScreen() {
           </View>
 
           {isLoadingRide ? (
+            /* Khối detail card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
             <ThemedView
               style={[styles.detailCard, { backgroundColor: theme.backgroundElement }]}
             >
@@ -1072,6 +1141,7 @@ export default function SharedRideDetailScreen() {
               </ThemedText>
             </ThemedView>
           ) : loadError ? (
+            /* Khối detail card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
             <ThemedView
               style={[styles.detailCard, { backgroundColor: theme.backgroundElement }]}
             >
@@ -1081,6 +1151,7 @@ export default function SharedRideDetailScreen() {
               <ThemedText type="small" style={styles.errorText}>
                 {loadError}
               </ThemedText>
+              {/* Quay lại khi load group lỗi: không retry ở đây, chỉ đưa user về danh sách nhóm trước đó. */}
               <Pressable
                 style={[styles.secondaryButton, styles.notFoundButton]}
                 onPress={() => router.back()}
@@ -1092,16 +1163,20 @@ export default function SharedRideDetailScreen() {
             </ThemedView>
           ) : ride ? (
             <>
+              {/* Khối detail card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
               <ThemedView
                 style={[styles.detailCard, { backgroundColor: theme.backgroundElement }]}
               >
+                {/* Khối detail top row: Dàn các phần tử trên cùng một hàng. */}
                 <View style={styles.detailTopRow}>
+                  {/* Khối vehicle pill: Hiển thị lựa chọn loại xe và mô tả cho người dùng. */}
                   <View style={styles.vehiclePill}>
                     <ThemedText type="smallBold" style={styles.vehiclePillText}>
                       🚙 {ride.vehicle.toUpperCase()}
                     </ThemedText>
                   </View>
 
+                  {/* Khối price wrap: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.priceWrap}>
                     <ThemedText type="default" style={styles.priceText}>
                       {ride.price}
@@ -1112,6 +1187,7 @@ export default function SharedRideDetailScreen() {
                   </View>
                 </View>
 
+                {/* Khối info block: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                 <View style={styles.infoBlock}>
                   <ThemedText type="default" style={styles.driverText}>
                     {finalDriverStatusText}
@@ -1126,15 +1202,18 @@ export default function SharedRideDetailScreen() {
                     {`"${ride.note}"`}
                   </ThemedText>
                   {Array.isArray(ride.members) && ride.members.length > 0 && (
+                    /* Khối member list: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                     <View style={styles.memberList}>
                       <ThemedText type="smallBold" style={styles.memberTitle}>
                         {"Thành viên trong nhóm"}
                       </ThemedText>
                       {ride.members.map((member) => (
+                        /* Khối member item: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */
                         <View
                           key={`${member.passengerId}-${member.joinedAt ?? ""}`}
                           style={styles.memberItem}
                         >
+                          {/* Khối member item top: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                           <View style={styles.memberItemTop}>
                             <ThemedText type="smallBold" style={styles.memberName}>
                               {member.passengerName || "Hành khách"}
@@ -1159,16 +1238,19 @@ export default function SharedRideDetailScreen() {
               </ThemedView>
 
               {pendingRequest && (
+                /* Khối pending card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <ThemedView
                   style={[
                     styles.pendingCard,
                     { backgroundColor: theme.backgroundElement },
                   ]}
                 >
+                  {/* Khối pending top row: Dàn các phần tử trên cùng một hàng. */}
                   <View style={styles.pendingTopRow}>
                     <ThemedText type="smallBold" style={styles.pendingTitle}>
                       Đang chờ duyệt
                     </ThemedText>
+                    {/* Khối pending badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
                     <View style={styles.pendingBadge}>
                       <ThemedText type="smallBold" style={styles.pendingBadgeText}>
                         Pending
@@ -1185,6 +1267,7 @@ export default function SharedRideDetailScreen() {
               )}
 
               {!isJoinedGroup && (
+                /* Nút tham gia group: kiểm tra login rồi mở join modal; chưa gọi BE cho đến khi submit form. */
                 <Pressable
                   testID="shared-ride-join-button"
                   style={[
@@ -1205,6 +1288,7 @@ export default function SharedRideDetailScreen() {
                 </Pressable>
               )}
 
+              {/* Quay lại danh sách/route trước đó sau khi xem detail; không thay đổi request/group. */}
               <Pressable
                 style={[styles.secondaryButton, { backgroundColor: theme.backgroundElement }]}
                 onPress={() => router.back()}
@@ -1215,12 +1299,14 @@ export default function SharedRideDetailScreen() {
               </Pressable>
             </>
           ) : (
+            /* Khối detail card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
             <ThemedView
               style={[styles.detailCard, { backgroundColor: theme.backgroundElement }]}
             >
               <ThemedText type="default" style={styles.headerTitle}>
                 Không tìm thấy chuyến xe ghép
               </ThemedText>
+              {/* Không tìm thấy group: quay lại route trước đó, vì id trên URL không lấy được dữ liệu BE/mock. */}
               <Pressable
                 style={[styles.secondaryButton, styles.notFoundButton]}
                 onPress={() => router.back()}
@@ -1234,13 +1320,16 @@ export default function SharedRideDetailScreen() {
         </View>
       </ScrollView>
 
+      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
       <Modal
         visible={joinModalVisible}
         transparent
         animationType="fade"
         onRequestClose={closeJoinModal}
       >
+        {/* Khối modal overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
         <View style={styles.modalOverlay}>
+          {/* Khối join card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
           <View
             testID="shared-ride-join-modal"
             style={[
@@ -1248,10 +1337,13 @@ export default function SharedRideDetailScreen() {
               { backgroundColor: theme.backgroundElement },
             ]}
           >
+            {/* Khối join header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
             <View style={styles.joinHeader}>
               <ThemedText type="default" style={styles.joinTitle}>
                 Thông tin tham gia
               </ThemedText>
+              {/* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */}
+              {/* Đóng join modal: clear lỗi/gợi ý pickup nhưng không gửi request lên BE. */}
               <Pressable style={styles.joinCloseButton} onPress={closeJoinModal}>
                 <ThemedText type="default" style={styles.joinCloseText}>
                   ×
@@ -1259,17 +1351,20 @@ export default function SharedRideDetailScreen() {
               </Pressable>
             </View>
 
+            {/* Khối form group: Nhóm label, input và lỗi validate của một trường form. */}
             <View style={styles.formGroup}>
               <ThemedText type="smallBold" style={styles.formLabel}>
                 Điểm đón
                 <ThemedText type="smallBold" style={styles.requiredMark}>*</ThemedText>
               </ThemedText>
+              {/* Khối form input wrap: Nhóm label, input và lỗi validate của một trường form. */}
               <View
                 style={[
                   styles.formInputWrap,
                   { backgroundColor: theme.background },
                 ]}
               >
+                {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
                 <TextInput
                   testID="shared-ride-pickup-input"
                   placeholder="VD: Cổng chính, trạm xe, đường XYZ..."
@@ -1291,6 +1386,8 @@ export default function SharedRideDetailScreen() {
                   }}
                 />
                 {Boolean(pickupPoint) && (
+                  /* Nút xóa nhanh nội dung ô nhập để người dùng chọn lại. */
+                  /* Xóa input pickup và selectedPickupPlace để bắt user chọn lại gợi ý có tọa độ. */
                   <Pressable
                     style={styles.clearInputButton}
                     onPress={clearPickupPointInput}
@@ -1302,6 +1399,7 @@ export default function SharedRideDetailScreen() {
                 )}
               </View>
               {Boolean(pickupPoint.trim()) && (
+                /* Khối pickup suggestion card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View style={styles.pickupSuggestionCard}>
                   {isLoadingPickupSuggestions ? (
                     <ThemedText type="small" style={styles.pickupSuggestionMeta}>
@@ -1316,6 +1414,8 @@ export default function SharedRideDetailScreen() {
                         `Địa điểm ${index + 1}`;
 
                       return (
+                        /* Nút chọn một gợi ý địa điểm từ danh sách autocomplete. */
+                        /* Chọn suggestion: resolve VietMap detail nếu cần rồi lưu lat/lng vào selectedPickupPlace. */
                         <Pressable
                           testID={`shared-ride-pickup-suggestion-${index}`}
                           key={`${suggestion.refId || suggestion.placeId || suggestionLabel}-${index}`}
@@ -1341,6 +1441,7 @@ export default function SharedRideDetailScreen() {
               )}
             </View>
 
+            {/* Khối readonly destination: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
             <View style={styles.readonlyDestination}>
               <ThemedText type="small" style={styles.readonlyLabel}>
                 Điểm đến mặc định
@@ -1350,10 +1451,12 @@ export default function SharedRideDetailScreen() {
               </ThemedText>
             </View>
 
+            {/* Khối form group: Nhóm label, input và lỗi validate của một trường form. */}
             <View style={styles.formGroup}>
               <ThemedText type="smallBold" style={styles.formLabel}>
                 Ghi chú
               </ThemedText>
+              {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
               <TextInput
                 placeholder="VD: Mình đứng gần cổng, mặc áo xanh..."
                 placeholderTextColor="#9CA3AF"
@@ -1374,13 +1477,18 @@ export default function SharedRideDetailScreen() {
               </ThemedText>
             )}
 
+            {/* Khối modal button row: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
             <View style={styles.modalButtonRow}>
+              {/* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */}
+              {/* Nút đóng form: không gửi payload join, chỉ đóng modal. */}
               <Pressable
                 style={[styles.modalSecondaryButton, { backgroundColor: theme.background }]}
                 onPress={closeJoinModal}
               >
                 <ThemedText type="smallBold">Đóng</ThemedText>
               </Pressable>
+              {/* Nút tham gia nhóm đi ghép hoặc mở form nhập thông tin tham gia. */}
+              {/* Submit join: lấy rideId từ URL + selectedPickupPlace rồi gọi joinRideSharingGroup. */}
               <Pressable
                 testID="shared-ride-submit-join-button"
                 style={[
@@ -1402,6 +1510,7 @@ export default function SharedRideDetailScreen() {
   );
 }
 
+// styles: Gom toàn bộ style của màn hình/component ở cuối file
 const styles = StyleSheet.create({
   container: {
     flex: 1,

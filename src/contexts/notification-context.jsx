@@ -1,3 +1,9 @@
+// NOTIFICATION CONTEXT - Quản lý danh sách thông báo và số chưa đọc
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import {
   createContext,
   useCallback,
@@ -16,6 +22,7 @@ import { useAuth } from "@/contexts/auth-context";
 
 const NotificationContext = createContext(null);
 
+// normalizeNotification: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeNotification(notification) {
   return {
     id: String(notification.id),
@@ -27,6 +34,7 @@ function normalizeNotification(notification) {
   };
 }
 
+// NotificationProvider: Provider tải thông báo và đồng bộ trạng thái đã đọc
 export function NotificationProvider({ children }) {
   const { session } = useAuth();
   const accessToken = session?.accessToken ?? null;
@@ -57,11 +65,15 @@ export function NotificationProvider({ children }) {
       }
 
       try {
+        // refreshNotifications: NHẬN danh sách thông báo của user từ BE.
+        // Gửi accessToken lên notification API, nhận array notification thô.
+        // Sau đó normalize field id/title/message/isRead để màn Notifications render thống nhất.
         const response = await getMyNotifications(accessToken);
         const nextNotifications = Array.isArray(response)
           ? response.map(normalizeNotification)
           : [];
 
+        // Đẩy danh sách đã chuẩn hóa vào state; unreadCount phía trên tự tính lại từ state này.
         setNotifications(nextNotifications);
         setError(null);
         didInitialLoadRef.current = true;
@@ -98,6 +110,7 @@ export function NotificationProvider({ children }) {
         return true;
       }
 
+      // Optimistic update: đổi UI sang đã đọc ngay để người dùng thấy phản hồi nhanh.
       setNotifications((items) =>
         items.map((notification) =>
           notification.id === id
@@ -107,10 +120,12 @@ export function NotificationProvider({ children }) {
       );
 
       try {
+        // Gửi rawId thật của BE lên API mark-read; id render có thể đã được normalize thành string.
         await markNotificationAsRead(current.rawId, accessToken);
         setError(null);
         return true;
       } catch (requestError) {
+        // Nếu BE báo lỗi, rollback lại trạng thái chưa đọc để UI không sai dữ liệu.
         setNotifications((items) =>
           items.map((notification) =>
             notification.id === id
@@ -160,6 +175,7 @@ export function NotificationProvider({ children }) {
   );
 }
 
+// useNotifications: Hook lấy notification context, bắt lỗi nếu dùng ngoài Provider
 export function useNotifications() {
   const context = useContext(NotificationContext);
 

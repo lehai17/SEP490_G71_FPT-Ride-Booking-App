@@ -1,3 +1,9 @@
+// RIDE DATA - Dữ liệu mẫu cho nhóm xe và chuyến đi
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 export const rideGroups = [
   {
     id: "shared-1",
@@ -31,10 +37,12 @@ export const rideGroups = [
   },
 ];
 
+// getRideGroupById: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function getRideGroupById(id) {
   return rideGroups.find((ride) => ride.id === id);
 }
 
+// recentTrips: Hằng số export để các màn hình/service khác dùng chung
 export const recentTrips = [
   {
     route: "Cổng FPT → Bến xe Mỹ Đình",
@@ -48,6 +56,7 @@ export const recentTrips = [
   },
 ];
 
+// scheduledTrips: Hằng số export để các màn hình/service khác dùng chung
 export const scheduledTrips = [
   {
     id: "schedule-1",
@@ -69,6 +78,7 @@ export const scheduledTrips = [
   },
 ];
 
+// tripSections: Hằng số export để các màn hình/service khác dùng chung
 export const tripSections = {
   active: [
     {

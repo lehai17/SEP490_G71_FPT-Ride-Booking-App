@@ -1,3 +1,9 @@
+// APP TABS WEB - Thanh tab responsive cho web
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import {
   Tabs,
   TabList,
@@ -14,6 +20,7 @@ import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useNotifications } from '@/contexts/notification-context';
 
 const webTabs = [
+  // href là route nội bộ của Expo Router; TabTrigger dùng href này để chuyển tab trên web.
   {
     name: 'home',
     href: '/',
@@ -46,6 +53,7 @@ const webTabs = [
   },
 ];
 
+// AppTabs: Cấu hình tab bar, icon và badge thông báo
 export default function AppTabs() {
   const { unreadCount } = useNotifications();
 
@@ -55,6 +63,7 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabList>
           {webTabs.map((tab) => (
+            /* TabTrigger nhận href từ webTabs và điều hướng nội bộ, không gọi API. */
             <TabTrigger key={tab.name} name={tab.name} href={tab.href} asChild>
               <TabButton icon={tab.icon} badgeCount={tab.name === 'notifications' ? unreadCount : 0}>
                 {tab.label}
@@ -67,6 +76,8 @@ export default function AppTabs() {
   );
 }
 
+// TabButton: Nút tab web nhận props điều hướng từ TabTrigger.
+// Khi bấm, Expo Router xử lý href ở TabTrigger; component này chỉ render icon, label và badge.
 export function TabButton({ children, icon, isFocused, badgeCount = 0, ...props }) {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
@@ -74,13 +85,17 @@ export function TabButton({ children, icon, isFocused, badgeCount = 0, ...props 
   const badgeText = badgeCount > 99 ? '99+' : String(badgeCount || '');
 
   return (
+    /* Nút tab web: onPress/href được TabTrigger truyền qua props để đổi route nội bộ. */
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
+      {/* Khối tab button view: Nhóm lựa chọn dạng tab/segment để đổi chế độ hiển thị. */}
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
         style={styles.tabButtonView}>
+        {/* Khối icon wrap: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
         <View style={styles.iconWrap}>
           <SymbolView tintColor={tintColor} name={icon} size={17} />
           {Boolean(badgeText) && (
+            /* Khối badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */
             <View style={styles.badge}>
               <ThemedText type="smallBold" style={styles.badgeText}>
                 {badgeText}
@@ -96,9 +111,12 @@ export function TabButton({ children, icon, isFocused, badgeCount = 0, ...props 
   );
 }
 
+// CustomTabList: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function CustomTabList({ children, ...props }) {
   return (
+    /* Khối tab list container: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */
     <View {...props} style={styles.tabListContainer}>
+      {/* Khối inner container: Bố cục bao ngoài, canh lề và giới hạn chiều rộng nội dung. */}
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
         <ThemedText type="smallBold" style={styles.brandText}>
           FPT Ride
@@ -110,6 +128,7 @@ export function CustomTabList({ children, ...props }) {
   );
 }
 
+// styles: Gom toàn bộ style của màn hình/component ở cuối file
 const styles = StyleSheet.create({
   tabListContainer: {
     position: 'absolute',

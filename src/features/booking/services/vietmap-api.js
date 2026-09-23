@@ -1,13 +1,23 @@
+// VIETMAP API - Tìm địa điểm, chỉ đường và dựng bản đồ VietMap
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 const VIETMAP_API_KEY = process.env.EXPO_PUBLIC_VIETMAP_API_KEY;
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const VIETMAP_BASE_URL = "https://maps.vietmap.vn/api";
+// Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const XANH_STYLE_AVERAGE_SPEED_KMH = 30;
 
+// assertVietMapKey: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function assertVietMapKey() {
   if (!VIETMAP_API_KEY) {
     throw new Error("Thieu EXPO_PUBLIC_VIETMAP_API_KEY trong .env cua FE.");
   }
 }
 
+// buildVietMapUrl: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function buildVietMapUrl(path, params = {}) {
   assertVietMapKey();
 
@@ -19,6 +29,7 @@ function buildVietMapUrl(path, params = {}) {
   return `${VIETMAP_BASE_URL}${path}?${searchParams.toString()}`;
 }
 
+// getPayloadItems: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getPayloadItems(payload) {
   if (Array.isArray(payload)) {
     return payload;
@@ -51,6 +62,7 @@ function getPayloadItems(payload) {
   return [];
 }
 
+// normalizeVietMapError: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeVietMapError(message) {
   const lowerMessage = String(message || "").toLowerCase();
 
@@ -65,6 +77,7 @@ function normalizeVietMapError(message) {
   return "";
 }
 
+// createVietMapNetworkError: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createVietMapNetworkError(error) {
   const message = String(error?.message || error || "").toLowerCase();
   const isDnsError =
@@ -83,6 +96,7 @@ function createVietMapNetworkError(error) {
   );
 }
 
+// normalizeLocation: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeLocation(item) {
   const data = item?.properties ?? item ?? {};
   const geometry = item?.geometry ?? data?.geometry;
@@ -108,6 +122,7 @@ function normalizeLocation(item) {
   return { lat, lng };
 }
 
+// normalizeFormattedAddress: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeFormattedAddress(item) {
   const data = item?.properties ?? item ?? {};
   const nestedData =
@@ -152,6 +167,7 @@ function normalizeFormattedAddress(item) {
     .join(", ");
 }
 
+// mapVietMapPlace: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapVietMapPlace(item, index = 0) {
   const data = item?.properties ?? item ?? {};
   const oldData = data?.data_old ?? {};
@@ -197,6 +213,7 @@ function mapVietMapPlace(item, index = 0) {
   };
 }
 
+// haversineDistanceKm: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function haversineDistanceKm(origin, destination) {
   const toRadians = (value) => (value * Math.PI) / 180;
   const earthRadiusKm = 6371;
@@ -212,6 +229,7 @@ function haversineDistanceKm(origin, destination) {
   return earthRadiusKm * c;
 }
 
+// formatDistance: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatDistance(distanceMeters) {
   const meters = Number(distanceMeters);
 
@@ -227,6 +245,7 @@ function formatDistance(distanceMeters) {
   return `${Math.round(meters)} m`;
 }
 
+// formatDuration: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function formatDuration(seconds) {
   const durationSeconds = Number(seconds);
 
@@ -246,6 +265,7 @@ function formatDuration(seconds) {
   return minutes === 0 ? `${hours} giờ` : `${hours} giờ ${minutes} phút`;
 }
 
+// estimateRideDurationSeconds: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function estimateRideDurationSeconds(distanceKm) {
   if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
     return 0;
@@ -254,10 +274,12 @@ function estimateRideDurationSeconds(distanceKm) {
   return (distanceKm / XANH_STYLE_AVERAGE_SPEED_KMH) * 3600;
 }
 
+// getCurrentUtcIsoString: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getCurrentUtcIsoString() {
   return new Date().toISOString();
 }
 
+// summarizeCongestion: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function summarizeCongestion(route) {
   const annotations = route?.annotations ?? {};
   const congestionSegments = Array.isArray(annotations?.congestion)
@@ -283,6 +305,7 @@ function summarizeCongestion(route) {
   };
 }
 
+// decodePolyline: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function decodePolyline(encoded) {
   if (!encoded || typeof encoded !== "string") {
     return [];
@@ -321,6 +344,7 @@ function decodePolyline(encoded) {
   return coordinates;
 }
 
+// normalizeRouteCoordinates: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function normalizeRouteCoordinates(route) {
   const points = route?.points ?? route?.geometry;
   const coordinates = points?.coordinates ?? route?.coordinates;
@@ -336,6 +360,7 @@ function normalizeRouteCoordinates(route) {
   return [];
 }
 
+// getVietMapVehicleProfile: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function getVietMapVehicleProfile(vehicleType) {
   const normalizedVehicleType = String(vehicleType ?? "").trim().toLowerCase();
 
@@ -351,6 +376,7 @@ export function getVietMapVehicleProfile(vehicleType) {
   return "car";
 }
 
+// createApproximateRoute: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function createApproximateRoute(origin, destination, vehicleProfile = "car") {
   const distanceKm = haversineDistanceKm(origin.location, destination.location);
   const distanceMeters = distanceKm * 1000;
@@ -384,6 +410,7 @@ function createApproximateRoute(origin, destination, vehicleProfile = "car") {
   };
 }
 
+// mapVietMapRoute: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function mapVietMapRoute(payload, origin, destination, vehicleProfile = "car") {
   const route = payload?.paths?.[0] ?? payload?.routes?.[0] ?? payload?.data?.paths?.[0];
 
@@ -427,10 +454,12 @@ function mapVietMapRoute(payload, origin, destination, vehicleProfile = "car") {
   };
 }
 
+// isVietMapConfigured: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function isVietMapConfigured() {
   return Boolean(VIETMAP_API_KEY);
 }
 
+// getVietMapPlaceSuggestions: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function getVietMapPlaceSuggestions(input) {
   const trimmedInput = input.trim();
 
@@ -466,6 +495,7 @@ export async function getVietMapPlaceSuggestions(input) {
     .slice(0, 6);
 }
 
+// getVietMapPlaceDetails: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function getVietMapPlaceDetails(placeId) {
   assertVietMapKey();
 
@@ -493,6 +523,7 @@ export async function getVietMapPlaceDetails(placeId) {
   return place;
 }
 
+// verifyVietMapAddress: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function verifyVietMapAddress(address) {
   if (!address.trim()) {
     throw new Error("Vui long nhap dia chi can xac minh.");
@@ -512,6 +543,7 @@ export async function verifyVietMapAddress(address) {
   return getVietMapPlaceDetails(firstSuggestion.refId || firstSuggestion.placeId);
 }
 
+// reverseVietMapPlaceLocation: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function reverseVietMapPlaceLocation(location) {
   const tryReverseRequest = async (path, params) => {
     const response = await fetch(buildVietMapUrl(path, params));
@@ -554,6 +586,7 @@ export async function reverseVietMapPlaceLocation(location) {
   };
 }
 
+// getVietMapDirections: Hàm async gọi API hoặc xử lý dữ liệu bất đồng bộ
 export async function getVietMapDirections(origin, destination, vehicleType = "car") {
   const vehicleProfile = getVietMapVehicleProfile(vehicleType);
 
@@ -601,14 +634,17 @@ export async function getVietMapDirections(origin, destination, vehicleType = "c
   }
 }
 
+// getVietMapStaticMapUrl: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function getVietMapStaticMapUrl() {
   return "";
 }
 
+// getVietMapPlaceMapUrl: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function getVietMapPlaceMapUrl() {
   return "";
 }
 
+// buildVietMapInteractiveMapHtml: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 export function buildVietMapInteractiveMapHtml({
   center,
   markers = [],

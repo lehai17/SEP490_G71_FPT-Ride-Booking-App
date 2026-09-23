@@ -1,9 +1,16 @@
+// THEMED TEXT - Text component tự lấy màu theo theme
+// ================================================================
+// Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
+// Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
+// ================================================================
+
 import { Platform, StyleSheet, Text } from "react-native";
 
 import { Fonts } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { repairTextNode } from "@/utils/repair-text";
 
+// ThemedText: Text dùng màu theo theme và type truyền vào
 export function ThemedText({ style, type = "default", themeColor, ...rest }) {
   const theme = useTheme();
   const repairedChildren = repairTextNode(rest.children);
@@ -29,6 +36,7 @@ export function ThemedText({ style, type = "default", themeColor, ...rest }) {
   );
 }
 
+// styles: Gom toàn bộ style của màn hình/component ở cuối file
 const styles = StyleSheet.create({
   small: {
     fontSize: 14,
