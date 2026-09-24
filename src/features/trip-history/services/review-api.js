@@ -1,4 +1,4 @@
-// REVIEW API - Gọi BE cho đánh giá và báo cáo chuyến
+// REVIEW API - Gọi BE cho đánh giá chuyến
 // ================================================================
 // Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
 // Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
@@ -6,7 +6,7 @@
 
 import { apiRequest } from "@/services/api-client";
 
-// getAuthHeaders: Đóng gói accessToken vào Authorization header cho các API review/report.
+// getAuthHeaders: Đóng gói accessToken vào Authorization header cho các API review.
 function getAuthHeaders(accessToken) {
   return {
     Authorization: `Bearer ${accessToken}`,
@@ -55,26 +55,6 @@ export function getDriverReviews(driverId, accessToken) {
 // Response thường gồm averageRating/totalReviews; TripsScreen normalize để hiển thị.
 export function getDriverRatingSummary(driverId, accessToken) {
   return apiRequest(`/reviews/driver/${driverId}/summary`, {
-    method: "GET",
-    headers: getAuthHeaders(accessToken),
-  });
-}
-
-// createTripReport: GỬI báo cáo sự cố chuyến đi lên BE.
-// Payload gửi: { tripId, reason }
-// Response nhận: report đã tạo; TripsScreen lưu vào reportsByTripId.
-export function createTripReport(payload, accessToken) {
-  return apiRequest("/reports", {
-    method: "POST",
-    headers: getAuthHeaders(accessToken),
-    body: JSON.stringify(payload),
-  });
-}
-
-// getMyTripReports: LẤY các report user đã gửi.
-// Response nhận: array reports; TripsScreen map theo tripId để hiển thị trạng thái đã báo cáo.
-export function getMyTripReports(accessToken) {
-  return apiRequest("/reports/my", {
     method: "GET",
     headers: getAuthHeaders(accessToken),
   });

@@ -1,4 +1,4 @@
-// HOME SCREEN - Màn trang chủ khách, gom chuyến gần đây, chuyến đặt trước và đi ghép
+// HOME SCREEN - Màn trang chủ khách, liệt kê tất cả các chuyến đã đi ở "Chuyến gần đây"
 // ================================================================
 // Comment tiếng Việt được đặt phía trên từng khối để giải thích vai trò code.
 // Logic hiện tại được giữ nguyên, chỉ bổ sung mô tả cho dễ đọc/bảo trì.
@@ -19,10 +19,6 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { getPassengerTrips } from "@/features/booking/services/trip-api";
 import { loadBookedTrips } from "@/features/booking/services/trip-storage";
-import {
-  getAvailableRideSharingGroups,
-  getRideSharingGroup,
-} from "@/features/ride-sharing/services/ride-sharing-api";
 import { useTheme } from "@/hooks/use-theme";
 
 // Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
@@ -60,81 +56,6 @@ function getDisplayRole(role) {
 // getTripField: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripField(source, camelKey, pascalKey) {
   return source?.[camelKey] ?? source?.[pascalKey];
-}
-
-// normalizeTripStatus: Chuẩn hóa status chuyến từ số hoặc text về một dạng thống nhất
-function normalizeTripStatus(status) {
-  const rawStatus = String(status ?? "").trim().toLowerCase();
-
-  if (!rawStatus) {
-    return "";
-  }
-
-  const statusByNumber = {
-    1: "pending",
-    2: "pendingdriverassignment",
-    3: "accepted",
-    4: "driverarrived",
-    5: "inprogress",
-    6: "completed",
-    7: "cancelled",
-    8: "nodriverfound",
-  };
-
-  return statusByNumber[rawStatus] ?? rawStatus.replace(/\s+/g, "");
-}
-
-// isScheduledTrip: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
-function isScheduledTrip(trip) {
-  const tripType = String(
-    getTripField(trip, "tripType", "TripType") ?? ""
-  ).toLowerCase();
-
-  return (
-    tripType === "scheduled" ||
-    tripType === "2" ||
-    Boolean(getTripField(trip, "scheduledAt", "ScheduledAt"))
-  );
-}
-
-// isImmediateTrip: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
-function isImmediateTrip(trip) {
-  return !isScheduledTrip(trip);
-}
-
-// isTerminalStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
-function isTerminalStatus(status) {
-  return ["completed", "cancelled", "nodriverfound"].includes(
-    normalizeTripStatus(status)
-  );
-}
-
-// normalizeRideSharingGroupStatus: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
-function normalizeRideSharingGroupStatus(status) {
-  const rawStatus = String(status ?? "").trim().toLowerCase();
-
-  const statusByNumber = {
-    1: "forming",
-    2: "readyforbroadcast",
-    3: "broadcasting",
-    4: "driveraccepted",
-    5: "driverarrived",
-    6: "inprogress",
-    7: "completed",
-    8: "cancelled",
-    9: "expired",
-  };
-
-  return statusByNumber[rawStatus] ?? rawStatus.replace(/\s+/g, "");
-}
-
-// isAvailableRideSharingGroup: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
-function isAvailableRideSharingGroup(group) {
-  const status = normalizeRideSharingGroupStatus(
-    getTripField(group, "status", "Status")
-  );
-
-  return !["completed", "cancelled", "expired", "nodriverfound"].includes(status);
 }
 
 // formatCurrencyVnd: Định dạng số tiền sang VND để hiển thị
@@ -214,109 +135,82 @@ function getVehicleLabel(trip) {
   return "Ô tô";
 }
 
+// getTripAddress: NHẬN trip từ BE/local và lấy địa chỉ đón/đến.
+// BE camelCase (pickupAddress/destinationAddress), PascalCase (PickupAddress/DestinationAddress),
+// và cache local có thể dùng pickup/destination hoặc pickupText/destinationText.
+// Trả về chuỗi rỗng nếu tất cả các key đều không có dữ liệu hợp lệ.
+function getTripAddress(trip, kind) {
+  const candidateKeys = {
+    pickup: [
+      "pickupAddress",
+      "PickupAddress",
+      "pickup",
+      "Pickup",
+      "pickupLocation",
+      "PickupLocation",
+      "pickupText",
+      "PickupText",
+      "pickupName",
+      "PickupName",
+    ],
+    destination: [
+      "destinationAddress",
+      "DestinationAddress",
+      "destination",
+      "Destination",
+      "destinationLocation",
+      "DestinationLocation",
+      "destinationText",
+      "DestinationText",
+      "destinationName",
+      "DestinationName",
+    ],
+  };
+  const keys = candidateKeys[kind] ?? [];
+  for (const key of keys) {
+    const value = trip?.[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
 // getTripIcon: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getTripIcon(trip) {
   return getVehicleLabel(trip) === "Xe máy" ? "🛵" : "🚗";
 }
 
-// getScheduledStatusLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
-function getScheduledStatusLabel(status) {
-  switch (normalizeTripStatus(status)) {
-    case "pending":
-      return "Đang chờ";
-    case "pendingdriverassignment":
-      return "Chờ tài xế";
-    case "accepted":
-      return "Tài xế đã nhận";
-    case "driverarrived":
-      return "Tài xế đã đến";
-    case "inprogress":
-      return "Đang di chuyển";
-    case "completed":
-      return "Hoàn thành";
-    case "cancelled":
-      return "Đã hủy";
-    case "nodriverfound":
-      return "Không có tài xế";
-    default:
-      return "Chờ tài xế";
-  }
+// isCancelledStatus: Chuẩn hóa status chuyến về dạng thống nhất rồi kiểm tra đã hủy chưa.
+// Chấp nhận cả status dạng số (7 = cancelled) hoặc text ("cancelled", "Cancelled", ...).
+function isCancelledStatus(status) {
+  const rawStatus = String(status ?? "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!rawStatus) return false;
+  if (rawStatus === "7") return true;
+  return rawStatus === "cancelled";
+}
+
+// isCancelledTrip: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
+function isCancelledTrip(trip) {
+  return isCancelledStatus(getTripField(trip, "status", "Status"));
 }
 
 // mapTripToRecentCard: NHẬN trip thô từ BE/local và chuyển thành card "Chuyến gần đây".
-// Dữ liệu lấy: id, pickupAddress, destinationAddress, completedAt/cancelledAt/createdAt, fare.
+// Dữ liệu lấy: id, địa chỉ đón/đến, completedAt/cancelledAt/createdAt, fare.
 // Output card chỉ chứa field UI cần render: id/icon/route/meta.
 function mapTripToRecentCard(trip) {
+  const pickup = getTripAddress(trip, "pickup");
+  const destination = getTripAddress(trip, "destination");
+
   return {
     id: getTripField(trip, "id", "Id"),
     icon: getTripIcon(trip),
-    route: `${getTripField(trip, "pickupAddress", "PickupAddress") || "Điểm đón"} → ${
-      getTripField(trip, "destinationAddress", "DestinationAddress") || "Điểm đến"
-    }`,
+    route: `${pickup || "Điểm đón"} → ${destination || "Điểm đến"}`,
     meta: `${formatTripDateTime(
       getTripField(trip, "completedAt", "CompletedAt") ??
         getTripField(trip, "cancelledAt", "CancelledAt") ??
         getTripField(trip, "createdAt", "CreatedAt")
     )} · ${formatCurrencyVnd(getTripFare(trip))}`,
-  };
-}
-
-// mapTripToScheduledCard: NHẬN trip đặt trước từ BE/local và chuyển thành card lịch hẹn.
-// Hiện Home tạm chưa render scheduled từ API thống kê riêng, nhưng mapper giữ sẵn cho flow sau.
-function mapTripToScheduledCard(trip) {
-  return {
-    id: getTripField(trip, "id", "Id"),
-    status: getScheduledStatusLabel(getTripField(trip, "status", "Status")),
-    price: formatCurrencyVnd(getTripFare(trip)),
-    from: getTripField(trip, "pickupAddress", "PickupAddress") || "Điểm đón",
-    to:
-      getTripField(trip, "destinationAddress", "DestinationAddress") ||
-      "Điểm đến",
-    vehicle: getVehicleLabel(trip),
-    time: formatTripDateTime(getTripField(trip, "scheduledAt", "ScheduledAt")),
-  };
-}
-
-// mapRideSharingGroupToHomeCard: NHẬN group xe ghép từ BE và map thành card ở Home.
-// Quan trọng: id của card = groupId BE. Nút "Xem chi tiết" dùng id này để push sang /search/shared-ride/[id].
-// Màn [id] sẽ nhận id qua useLocalSearchParams rồi gọi getRideSharingGroup(id) để lấy chi tiết mới nhất.
-function mapRideSharingGroupToHomeCard(group) {
-  const members = Array.isArray(group?.members) ? group.members : [];
-  const firstMember = members[0] ?? {};
-  // groupId là khóa liên kết giữa card Home và màn chi tiết dynamic route [id].
-  const groupId = getTripField(group, "id", "Id");
-  const price =
-    firstMember.finalFare ??
-    firstMember.FinalFare ??
-    group?.finalFare ??
-    group?.FinalFare ??
-    0;
-  const pickup =
-    firstMember.pickupAddress ??
-    firstMember.PickupAddress ??
-    group?.pickupAddress ??
-    group?.PickupAddress ??
-    "Điểm đón";
-  const destination =
-    firstMember.destinationAddress ??
-    firstMember.DestinationAddress ??
-    group?.destinationAddress ??
-    group?.DestinationAddress ??
-    "Điểm đến";
-  const currentPassengers =
-    group?.currentPassengers ?? group?.CurrentPassengers ?? members.length;
-  const maxPassengers = group?.maxPassengers ?? group?.MaxPassengers ?? 3;
-  const isGroupFull = currentPassengers >= maxPassengers && maxPassengers > 0;
-
-  return {
-    id: groupId,
-    // Khi nhóm đã đủ người thì dùng "FULL" thay vì "XG" để user nhận biết nhanh.
-    vehicle: isGroupFull ? "FULL" : "XG",
-    price: formatCurrencyVnd(price),
-    route: `${pickup} → ${destination}`,
-    driver: group?.driverName || group?.DriverName || "Chưa có tài xế",
-    seats: `${currentPassengers}/${maxPassengers} người`,
-    note: isGroupFull ? "Nhóm đã đủ người" : "Nhóm còn có thể tham gia",
   };
 }
 
@@ -343,8 +237,6 @@ export default function HomeScreen() {
   const { session, isAuthenticated } = useAuth();
   const [selectedMode, setSelectedMode] = useState("now");
   const [visibleRecentTrips, setVisibleRecentTrips] = useState([]);
-  const [visibleScheduledTrips, setVisibleScheduledTrips] = useState([]);
-  const [visibleRideGroups, setVisibleRideGroups] = useState([]);
   const accessToken = session?.accessToken;
 
   const displayName = session?.fullName ?? "Bạn";
@@ -358,16 +250,14 @@ export default function HomeScreen() {
   //    - getPassengerTrips(accessToken): nhận danh sách chuyến từ BE.
   //    - loadBookedTrips(): nhận chuyến local đã cache sau khi đặt xe.
   // 3. Gộp BE + local, bỏ trùng theo trip id để tránh hiển thị lặp.
-  // 4. Lọc chuyến đi ngay đã kết thúc/hủy, sort mới nhất, map thành card "Chuyến gần đây".
-  // 5. Gọi getAvailableRideSharingGroups + getRideSharingGroup để lấy nhóm xe ghép còn tham gia được.
-  // 6. setVisibleRecentTrips/setVisibleRideGroups đẩy dữ liệu vào UI render.
+  // 4. Lọc bỏ chuyến đã hủy, sort mới nhất, lấy 3 chuyến gần nhất rồi map thành card
+  //    "Chuyến gần đây" cho mọi loại chuyến còn lại.
+  // 5. setVisibleRecentTrips đẩy dữ liệu vào UI render.
   // ================================================================
   const loadHomeTrips = useCallback(async () => {
     if (!accessToken) {
       // Không có session đăng nhập: xóa dữ liệu cá nhân khỏi trang chủ.
       setVisibleRecentTrips([]);
-      setVisibleScheduledTrips([]);
-      setVisibleRideGroups([]);
       return;
     }
 
@@ -392,66 +282,18 @@ export default function HomeScreen() {
         ).values()
       );
 
-      // Chỉ lấy chuyến "đi ngay" đã ở trạng thái cuối để đưa vào khu vực chuyến gần đây.
+      // Lọc bỏ chuyến đã hủy, sort mới nhất, lấy 3 chuyến gần nhất để hiển thị ở "Chuyến gần đây".
       const recentTrips = dedupedTrips
-        .filter((trip) =>
-          isImmediateTrip(trip) &&
-          isTerminalStatus(getTripField(trip, "status", "Status"))
-        )
+        .filter((trip) => !isCancelledTrip(trip))
         .sort((first, second) => getTripSortTime(second) - getTripSortTime(first))
         .slice(0, 3)
         .map(mapTripToRecentCard);
 
-      // Tam thoi an du lieu chuyen dat truoc o trang chu cho den khi co API thong ke rieng.
-      const scheduledTrips = [];
-
-      // Đưa dữ liệu đã map vào state; JSX phía dưới chỉ render theo các state này.
+      // Đưa dữ liệu đã map vào state; JSX phía dưới chỉ render theo state này.
       setVisibleRecentTrips(recentTrips);
-      setVisibleScheduledTrips(scheduledTrips);
-
-      // Lấy nhóm xe ghép còn trống từ BE, sau đó gọi chi tiết từng group để có member/giá/status mới nhất.
-      const availableGroups = await getAvailableRideSharingGroups(
-        "",
-        accessToken
-      ).catch(() => []);
-      const detailedGroups = await Promise.allSettled(
-        (Array.isArray(availableGroups) ? availableGroups : [])
-          .slice(0, 6)
-          .map((group) =>
-            getRideSharingGroup(getTripField(group, "id", "Id"), accessToken)
-          )
-      );
-      const groups = (Array.isArray(availableGroups) ? availableGroups : [])
-        .map((group, index) =>
-          detailedGroups[index]?.status === "fulfilled"
-            ? detailedGroups[index].value
-            : group
-        )
-        .filter(
-          (group) =>
-            getTripField(group, "id", "Id") && isAvailableRideSharingGroup(group)
-        )
-        // Loại nhóm đã đủ người; nhóm sẽ tự xuất hiện lại khi có thành viên rời.
-        .filter((group) => {
-          const currentCount =
-            Number(group?.currentPassengers ?? group?.CurrentPassengers) || 0;
-          const maxCount =
-            Number(group?.maxPassengers ?? group?.MaxPassengers) || 0;
-          if (maxCount <= 0) {
-            return true;
-          }
-          return currentCount < maxCount;
-        })
-        .slice(0, 3)
-        .map(mapRideSharingGroupToHomeCard);
-
-      // Đưa tối đa 3 nhóm xe ghép lên trang chủ.
-      setVisibleRideGroups(groups);
     } catch {
-      // Nếu API lỗi/mạng lỗi: không crash màn hình, chỉ đưa các section về trạng thái rỗng.
+      // Nếu API lỗi/mạng lỗi: không crash màn hình, chỉ đưa section về trạng thái rỗng.
       setVisibleRecentTrips([]);
-      setVisibleScheduledTrips([]);
-      setVisibleRideGroups([]);
     }
   }, [accessToken]);
 
@@ -755,146 +597,12 @@ export default function HomeScreen() {
           ))
         ) : (
           <EmptyState
-            title="Chưa có chuyến gần đây"
+            title="Chưa có chuyến nào"
             description={
               isAuthenticated
-                ? "Khi bạn hoàn thành chuyến đầu tiên, lịch sử sẽ hiện ở đây."
+                ? "Khi bạn đặt hoặc hoàn thành chuyến đầu tiên, lịch sử sẽ hiện ở đây."
                 : "Đăng nhập để xem lịch sử di chuyển của bạn."
             }
-          />
-        )}
-
-        {/* Header section: Tiêu đề cho một nhóm nội dung trong màn hình. */}
-        <View style={styles.sectionHeader}>
-          <ThemedText type="default" style={styles.sectionTitle}>
-            Chuyến đã đặt trước
-          </ThemedText>
-        </View>
-
-        {visibleScheduledTrips.length > 0 ? (
-          visibleScheduledTrips.map((trip) => (
-            /* Khối scheduled card: Thông tin chuyến đã đặt trước và trạng thái xử lý. */
-            <ThemedView
-              key={trip.id}
-              style={[
-                styles.scheduledCard,
-                { backgroundColor: theme.backgroundElement },
-              ]}
-            >
-              {/* Khối scheduled top row: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
-              <View style={styles.scheduledTopRow}>
-                {/* Khối waiting badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
-                <View style={styles.waitingBadge}>
-                  <ThemedText type="smallBold" style={styles.waitingText}>
-                    {trip.status}
-                  </ThemedText>
-                </View>
-                <ThemedText type="default" style={styles.scheduledPrice}>
-                  {trip.price}
-                </ThemedText>
-              </View>
-
-              {/* Khối scheduled body: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
-              <View style={styles.scheduledBody}>
-                <ThemedText type="default" style={styles.scheduledFrom}>
-                  {trip.from}
-                </ThemedText>
-                <ThemedText type="small" style={styles.mutedText}>
-                  {trip.to}
-                </ThemedText>
-                {/* Khối scheduled bottom row: Thông tin chuyến đã đặt trước và trạng thái xử lý. */}
-                <View style={styles.scheduledBottomRow}>
-                  <ThemedText type="small" style={styles.mutedText}>
-                    {trip.vehicle}
-                  </ThemedText>
-                  <ThemedText type="small" style={styles.mutedText}>
-                    {trip.time}
-                  </ThemedText>
-                </View>
-              </View>
-            </ThemedView>
-          ))
-        ) : (
-          <EmptyState
-            title="Chưa có chuyến đặt trước"
-            description={
-              isAuthenticated
-                ? "Mục này sẽ được cập nhật sau khi có API thống kê chuyến đặt trước."
-                : "Đăng nhập hoặc đăng ký để đặt và quản lý chuyến đi."
-            }
-          />
-        )}
-
-        {/* Header section: Tiêu đề cho một nhóm nội dung trong màn hình. */}
-        <View style={styles.sectionHeader}>
-          <ThemedText type="default" style={styles.sectionTitle}>
-            Nhóm xe ghép sẵn có
-          </ThemedText>
-          <ThemedText type="small" style={styles.mutedText}>
-            Chọn chuyến và tham gia cùng bạn bè FPTU
-          </ThemedText>
-        </View>
-
-        {visibleRideGroups.length > 0 ? (
-          visibleRideGroups.map((ride) => (
-            /* Khối ride card: Thông tin nhóm/chuyến xe ghép đang hiển thị. */
-            <ThemedView
-              key={ride.id}
-              style={[
-                styles.rideCard,
-                { backgroundColor: theme.backgroundElement },
-              ]}
-            >
-              {/* Khối ride title row: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
-              <View style={styles.rideTitleRow}>
-                <ThemedText type="smallBold" style={styles.vehiclePill}>
-                  {ride.vehicle}
-                </ThemedText>
-                <ThemedText type="default" style={styles.ridePrice}>
-                  {ride.price}
-                </ThemedText>
-              </View>
-
-              {/* Khối ride route row: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
-              <View style={styles.rideRouteRow}>
-                <ThemedText type="default" style={styles.rideRoute}>
-                  {ride.route}
-                </ThemedText>
-              </View>
-
-              {/* Khối ride driver row: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
-              <View style={styles.rideDriverRow}>
-                <ThemedText type="small" style={styles.mutedText}>
-                  {ride.driver}
-                </ThemedText>
-                <ThemedText type="small" style={styles.mutedText}>
-                  {ride.seats}
-                </ThemedText>
-              </View>
-
-              <ThemedText type="small" style={styles.noteText}>
-                {`"${ride.note}"`}
-              </ThemedText>
-
-              {/* Điều hướng xem chi tiết xe ghép: ride.id chính là groupId BE đã map ở mapRideSharingGroupToHomeCard. */}
-              {/* Dynamic route /search/shared-ride/[id] nhận id này, gọi getRideSharingGroup(id) để lấy chi tiết group/members/status. */}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.joinButton,
-                  pressed && styles.pressedButton,
-                ]}
-                onPress={() => router.push(`/search/shared-ride/${ride.id}`)}
-              >
-                <ThemedText type="smallBold" style={styles.joinButtonText}>
-                  Xem chi tiết
-                </ThemedText>
-              </Pressable>
-            </ThemedView>
-          ))
-        ) : (
-          <EmptyState
-            title="Chưa có nhóm xe ghép"
-            description="Khi có nhóm xe ghép phù hợp, danh sách sẽ hiện tại đây."
           />
         )}
       </View>
@@ -1238,124 +946,6 @@ const styles = StyleSheet.create({
   },
   mutedText: {
     color: SOFT_TEXT,
-  },
-  scheduledCard: {
-    borderRadius: 18,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    borderLeftWidth: 4,
-    borderLeftColor: BRAND,
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 2,
-  },
-  scheduledTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  waitingBadge: {
-    backgroundColor: BRAND_LIGHT,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  waitingText: {
-    color: BRAND_DARK,
-    fontSize: 12,
-  },
-  scheduledPrice: {
-    color: BRAND,
-    fontWeight: "800",
-    fontSize: 18,
-  },
-  scheduledBody: {
-    gap: 4,
-  },
-  scheduledFrom: {
-    color: INK,
-    fontWeight: "700",
-  },
-  scheduledBottomRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 2,
-    gap: 10,
-  },
-  rideCard: {
-    borderRadius: 20,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    borderLeftWidth: 4,
-    borderLeftColor: BRAND,
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 2,
-  },
-  rideTitleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  vehiclePill: {
-    color: "#FFFFFF",
-    backgroundColor: INK,
-    overflow: "hidden",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    fontSize: 12,
-  },
-  ridePrice: {
-    color: BRAND,
-    fontWeight: "800",
-    fontSize: 18,
-  },
-  rideRouteRow: {
-    gap: 4,
-  },
-  rideRoute: {
-    color: INK,
-    fontWeight: "700",
-  },
-  rideDriverRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 8,
-  },
-  noteText: {
-    color: "#64748B",
-    fontStyle: "italic",
-    backgroundColor: "#F8FAFC",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  joinButton: {
-    marginTop: 2,
-    minHeight: 46,
-    borderRadius: 14,
-    backgroundColor: BRAND,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: BRAND_DARK,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  joinButtonText: {
-    color: "#FFFFFF",
   },
   pressedButton: {
     opacity: 0.75,

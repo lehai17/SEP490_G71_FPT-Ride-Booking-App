@@ -41,11 +41,9 @@ import {
 } from "@/features/booking/services/trip-api";
 import {
   createReview,
-  createTripReport,
   getDriverRatingSummary,
   getDriverReviews,
   getMyReviews,
-  getMyTripReports,
   getTripReviews,
 } from "@/features/trip-history/services/review-api";
 import { mapTripToHistoryItem } from "@/features/trip-history/utils/trip-history-mapper";
@@ -572,7 +570,6 @@ export default function TripsScreen() {
   const [historySortOrder, setHistorySortOrder] = useState("newest");
   const [historyPage, setHistoryPage] = useState(1);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
-  const [reportModalVisible, setReportModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [schedulePickerVisible, setSchedulePickerVisible] = useState(false);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
@@ -581,7 +578,6 @@ export default function TripsScreen() {
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [ratingDraft, setRatingDraft] = useState(5);
   const [reviewDraft, setReviewDraft] = useState("");
-  const [reportReason, setReportReason] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([
     {
@@ -602,9 +598,7 @@ export default function TripsScreen() {
   const [tripReviewsByTripId, setTripReviewsByTripId] = useState({});
   const [driverRatingSummariesById, setDriverRatingSummariesById] = useState({});
   const [driverReviewsById, setDriverReviewsById] = useState({});
-  const [reportsByTripId, setReportsByTripId] = useState({});
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
-  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   useEffect(() => {
     if (params.tab === "history" || params.tab === "scheduled") {
@@ -678,7 +672,6 @@ export default function TripsScreen() {
         setTripReviewsByTripId({});
         setDriverRatingSummariesById({});
         setDriverReviewsById({});
-        setReportsByTripId({});
         setIsHistoryLoading(false);
       });
       return;
@@ -693,7 +686,7 @@ export default function TripsScreen() {
         // loadTripHistoryFromDb: LUỒNG ĐỒNG BỘ TRIPS TỪ BE
         // 1. Đọc local cache để bổ sung field UI như scheduledPickupText/estimatedFare nếu BE thiếu.
         // 2. Gọi BE lấy trips theo role passenger/driver.
-        // 3. Gọi thêm review/report để biết chuyến nào đã đánh giá hoặc báo cáo.
+        // 3. Gọi thêm review để biết chuyến nào đã đánh giá.
         // 4. Gọi review summary của driver để hiển thị thông tin rating tài xế.
         // 5. Map dữ liệu BE/local vào tripsBySection.scheduled và tripsBySection.history.
         const role = String(session.role ?? "").toLowerCase();
@@ -702,12 +695,11 @@ export default function TripsScreen() {
           (localBookedTrips ?? []).map((trip) => [trip.id, trip])
         );
         // Gửi accessToken cho các API cá nhân; passenger lấy passenger trips, driver lấy driver trips.
-        const [trips, myReviews, myReports] = await Promise.all([
+        const [trips, myReviews] = await Promise.all([
           role === "driver"
             ? getDriverTrips(session.accessToken)
             : getPassengerTrips(session.accessToken),
           role === "driver" ? Promise.resolve([]) : getMyReviews(session.accessToken),
-          role === "driver" ? Promise.resolve([]) : getMyTripReports(session.accessToken),
         ]);
 
         if (!isMounted) {
@@ -730,23 +722,6 @@ export default function TripsScreen() {
           : {};
 
         setRatingsByTripId(ratingsMap);
-
-        // Chuyển array report của tôi thành map theo tripId để UI biết chuyến nào đã gửi báo cáo.
-        const reportsMap = Array.isArray(myReports)
-          ? myReports.reduce((accumulator, report) => {
-              if (report?.tripId) {
-                accumulator[report.tripId] = {
-                  reason: report.reason ?? "",
-                  submittedAt: report.createdAt,
-                  isResolved: Boolean(report.isResolved),
-                };
-              }
-
-              return accumulator;
-            }, {})
-          : {};
-
-        setReportsByTripId(reportsMap);
 
         const tripList = Array.isArray(trips) ? trips : [];
         const tripIds = tripList
@@ -1025,15 +1000,6 @@ export default function TripsScreen() {
       setCancelModalVisible(true);
       return;
     }
-
-    if (item.actionSecondary !== "Báo cáo") {
-      return;
-    }
-
-    setSelectedTrip(item);
-    setReportReason("");
-    setFormError("");
-    setReportModalVisible(true);
   }
 
   function handleUpdateScheduledTrip() {
@@ -1175,67 +1141,6 @@ export default function TripsScreen() {
       );
     } finally {
       setIsSubmittingReview(false);
-    }
-  }
-
-  async function handleSubmitReport() {
-    if (!requireLogin()) {
-      return;
-    }
-
-    if (!selectedTrip?.id || !session?.accessToken || isSubmittingReport) {
-      return;
-    }
-
-    if (!reportReason.trim()) {
-      setFormError("Vui lòng nhập nội dung báo cáo");
-      return;
-    }
-
-    setFormError("");
-    setIsSubmittingReport(true);
-
-    // Payload gửi báo cáo sự cố chuyến đi lên BE.
-    const payload = {
-      tripId: selectedTrip.id,
-      reason: reportReason.trim(),
-    };
-
-    try {
-      let reportResponse;
-
-      try {
-        // Gửi report bằng token hiện tại.
-        reportResponse = await createTripReport(payload, session.accessToken);
-      } catch (error) {
-        if (error?.status !== 401) {
-          throw error;
-        }
-
-        // Nếu 401 thì refresh session rồi gửi lại report.
-        const nextSession = await refreshSession();
-        reportResponse = await createTripReport(payload, nextSession.accessToken);
-      }
-
-      // Lưu report response vào map theo tripId để UI khóa/hiển thị trạng thái đã báo cáo.
-      setReportsByTripId((current) => ({
-        ...current,
-        [selectedTrip.id]: {
-          reason: reportResponse?.reason ?? payload.reason,
-          submittedAt: reportResponse?.createdAt ?? new Date().toISOString(),
-          isResolved: Boolean(reportResponse?.isResolved),
-        },
-      }));
-      setReportModalVisible(false);
-      setSelectedTrip(null);
-      setReportReason("");
-      setFormError("");
-    } catch (error) {
-      setFormError(
-        error?.message || "Không thể gửi báo cáo. Vui lòng thử lại."
-      );
-    } finally {
-      setIsSubmittingReport(false);
     }
   }
 
@@ -1798,7 +1703,6 @@ export default function TripsScreen() {
               const savedRating = ratingsByTripId[item.id]?.rating;
               const displayRating = savedRating ?? item.rating;
               const hasRated = typeof savedRating === "number";
-              const hasReported = Boolean(reportsByTripId[item.id]);
               const driverSummary = item.driverId
                 ? driverRatingSummariesById[item.driverId]
                 : null;
@@ -1886,33 +1790,20 @@ export default function TripsScreen() {
                       </ThemedText>
                     </Pressable>
 
-                    {/* Pressable: Vùng bấm xử lý thao tác người dùng trong UI. */}
-                    <Pressable
-                      style={[
-                        styles.outlineAction,
-                        hasReported && styles.outlineActionDisabled,
-                      ]}
-                      hitSlop={8}
-                      onPress={() => {
-                        if (!hasReported) {
-                          handleSecondaryAction(item);
-                        }
-                      }}
-                    >
-                      <ThemedText
-                        type="small"
-                        style={[
-                          styles.outlineActionText,
-                          hasReported && styles.outlineActionTextDisabled,
-                        ]}
+                    {/* Nút hành động phụ (Hủy ở scheduled/active). History không có nút này nữa. */}
+                    {selectedTab !== "history" ? (
+                      <Pressable
+                        style={[styles.outlineAction]}
+                        hitSlop={8}
+                        onPress={() => handleSecondaryAction(item)}
                       >
-                        {selectedTab === "scheduled"
-                          ? "Hủy"
-                          : hasReported
-                            ? "Đã báo cáo"
+                        <ThemedText type="small" style={styles.outlineActionText}>
+                          {selectedTab === "scheduled"
+                            ? "Hủy"
                             : item.actionSecondary}
-                      </ThemedText>
-                    </Pressable>
+                        </ThemedText>
+                      </Pressable>
+                    ) : null}
 
                     {typeof displayRating === "number" && (
                       <ThemedText type="smallBold" style={styles.ratingText}>
@@ -2178,90 +2069,6 @@ export default function TripsScreen() {
                   style={styles.modalPrimaryButtonText}
                 >
                   {isSubmittingReview ? "Đang gửi..." : "Gửi đánh giá"}
-                </ThemedText>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal: Lớp giao diện nổi dùng để xác nhận, nhập form hoặc thông báo mà không rời màn hiện tại. */}
-      <Modal
-        visible={reportModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setReportModalVisible(false)}
-      >
-        {/* Khối modal overlay: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
-        <View style={styles.modalOverlay}>
-          {/* Khối modal card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
-          <View
-            style={[
-              styles.modalCard,
-              { backgroundColor: theme.backgroundElement },
-            ]}
-          >
-            {/* Khối report icon: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
-            <View style={styles.reportIcon}>
-              <ThemedText type="default" style={styles.reportIconText}>
-                !
-              </ThemedText>
-            </View>
-            <ThemedText type="default" style={styles.modalTitle}>
-              Báo cáo chuyến đi
-            </ThemedText>
-            <ThemedText type="small" style={styles.metaText}>
-              {selectedTrip?.route}
-            </ThemedText>
-
-            {/* TextInput: Ô nhập dữ liệu người dùng, thường đi kèm validate và state form. */}
-            <TextInput
-              multiline
-              placeholder="Nhập lý do báo cáo, ví dụ: tài xế đến muộn, thái độ không phù hợp..."
-              placeholderTextColor={MUTED}
-              style={[
-                styles.reviewInput,
-                {
-                  color: theme.text,
-                  backgroundColor: theme.background,
-                },
-              ]}
-              value={reportReason}
-              onChangeText={(value) => {
-                setReportReason(value);
-                setFormError("");
-              }}
-            />
-
-            {Boolean(formError) && (
-              <ThemedText type="smallBold" style={styles.formError}>
-                {formError}
-              </ThemedText>
-            )}
-
-            {/* Khối modal button row: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */}
-            <View style={styles.modalButtonRow}>
-              {/* Nút hành động phụ: điều hướng hoặc đóng bước hiện tại mà không gửi form chính. */}
-              <Pressable
-                style={[styles.modalSecondaryButton, { backgroundColor: theme.background }]}
-                onPress={() => {
-                  setReportModalVisible(false);
-                  setFormError("");
-                }}
-              >
-                <ThemedText type="smallBold">Đóng</ThemedText>
-              </Pressable>
-              {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
-              <Pressable
-                style={[
-                  styles.modalDangerButton,
-                  isSubmittingReport && styles.modalButtonDisabled,
-                ]}
-                disabled={isSubmittingReport}
-                onPress={handleSubmitReport}
-              >
-                <ThemedText type="smallBold" style={styles.modalPrimaryButtonText}>
-                  {isSubmittingReport ? "Đang gửi..." : "Gửi báo cáo"}
                 </ThemedText>
               </Pressable>
             </View>
@@ -3191,20 +2998,6 @@ const styles = StyleSheet.create({
   modalTitle: {
     ...ScreenTitleStyle,
     fontSize: 24,
-  },
-  reportIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    backgroundColor: "#FEF2F2",
-  },
-  reportIconText: {
-    color: "#EF4444",
-    fontSize: 30,
-    fontWeight: "900",
   },
   starsRow: {
     flexDirection: "row",
