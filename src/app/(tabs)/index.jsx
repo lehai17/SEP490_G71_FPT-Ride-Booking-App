@@ -306,15 +306,17 @@ function mapRideSharingGroupToHomeCard(group) {
   const currentPassengers =
     group?.currentPassengers ?? group?.CurrentPassengers ?? members.length;
   const maxPassengers = group?.maxPassengers ?? group?.MaxPassengers ?? 3;
+  const isGroupFull = currentPassengers >= maxPassengers && maxPassengers > 0;
 
   return {
     id: groupId,
-    vehicle: "Xe ghép",
+    // Khi nhóm đã đủ người thì dùng "FULL" thay vì "XG" để user nhận biết nhanh.
+    vehicle: isGroupFull ? "FULL" : "XG",
     price: formatCurrencyVnd(price),
     route: `${pickup} → ${destination}`,
     driver: group?.driverName || group?.DriverName || "Chưa có tài xế",
     seats: `${currentPassengers}/${maxPassengers} người`,
-    note: "Nhóm còn có thể tham gia",
+    note: isGroupFull ? "Nhóm đã đủ người" : "Nhóm còn có thể tham gia",
   };
 }
 
@@ -429,6 +431,17 @@ export default function HomeScreen() {
           (group) =>
             getTripField(group, "id", "Id") && isAvailableRideSharingGroup(group)
         )
+        // Loại nhóm đã đủ người; nhóm sẽ tự xuất hiện lại khi có thành viên rời.
+        .filter((group) => {
+          const currentCount =
+            Number(group?.currentPassengers ?? group?.CurrentPassengers) || 0;
+          const maxCount =
+            Number(group?.maxPassengers ?? group?.MaxPassengers) || 0;
+          if (maxCount <= 0) {
+            return true;
+          }
+          return currentCount < maxCount;
+        })
         .slice(0, 3)
         .map(mapRideSharingGroupToHomeCard);
 
@@ -835,7 +848,7 @@ export default function HomeScreen() {
               {/* Khối ride title row: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
               <View style={styles.rideTitleRow}>
                 <ThemedText type="smallBold" style={styles.vehiclePill}>
-                  {ride.vehicle.toUpperCase()}
+                  {ride.vehicle}
                 </ThemedText>
                 <ThemedText type="default" style={styles.ridePrice}>
                   {ride.price}

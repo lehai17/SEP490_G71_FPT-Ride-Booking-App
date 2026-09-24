@@ -54,6 +54,16 @@ export function cancelRideSharingRequest(requestId, payload, accessToken) {
   });
 }
 
+// extendRideSharingSearch: GỬI yêu cầu "tiếp tục tìm tài xế" cho request ghép.
+// Mục đích: lùi deadline NoDriverFound bằng cách cập nhật LastSearchExtendedAt ở BE.
+// Response nhận: request với LastSearchExtendedAt mới.
+export function extendRideSharingSearch(requestId, accessToken) {
+  return apiRequest(`/ride-sharing/requests/${requestId}/extend-search`, {
+    method: "PUT",
+    headers: getAuthHeaders(accessToken),
+  });
+}
+
 // getMyRideSharingGroup: LẤY nhóm đi ghép mà khách đang tham gia.
 // Response nhận: group, members, driver, status; screen hiển thị trạng thái ghép nhóm hiện tại.
 export function getMyRideSharingGroup(accessToken) {

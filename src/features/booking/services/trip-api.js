@@ -49,6 +49,18 @@ export function cancelTrip(tripId, payload, accessToken) {
   });
 }
 
+// extendTripSearch: GỬI yêu cầu "tiếp tục tìm tài xế" khi đã quá thời gian chờ.
+// Mục đích: lùi deadline NoDriverFound bằng cách cập nhật LastSearchExtendedAt ở BE.
+// Response nhận: trip với LastSearchExtendedAt mới.
+export function extendTripSearch(tripId, accessToken) {
+  return apiRequest(`/trips/${tripId}/extend-search`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+}
+
 // getPassengerTrips: LẤY toàn bộ chuyến của khách đang đăng nhập.
 // Header gửi: Authorization Bearer accessToken
 // Response nhận: array trips; Home/Trips screen lọc ra chuyến gần đây, chuyến đặt trước, lịch sử.

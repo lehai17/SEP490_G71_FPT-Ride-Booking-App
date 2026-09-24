@@ -29,9 +29,11 @@ import { getRideGroupById } from "@/constants/ride-data";
 import { useAuth } from "@/contexts/auth-context";
 import {
   cancelRideSharingRequest,
+  extendRideSharingSearch,
   getMyRideSharingRequest,
   getRideSharingGroup,
   joinRideSharingGroup,
+  leaveRideSharingGroup,
 } from "@/features/ride-sharing/services/ride-sharing-api";
 import {
   getVietMapPlaceDetails,
@@ -46,6 +48,8 @@ const BRAND = "#FF7A00";
 const CARD_BORDER = "#ECECEC";
 // Hằng số cấu hình: Giá trị dùng chung trong file, tránh hard-code lặp lại
 const MUTED = "#70757E";
+// Hằng số cấu hình: Thời gian (ms) chờ tối đa trước khi hiển thị prompt cho passenger đang chờ ghép.
+const NO_DRIVER_PROMPT_DELAY_MS = 5 * 60 * 1000;
 
 // getRideDestinationLabel: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
 function getRideDestinationLabel(ride) {
@@ -244,6 +248,37 @@ function isRecentRequest(createdAt, maxMinutes = 3) {
   }
 
   return Date.now() - createdTime <= maxMinutes * 60 * 1000;
+}
+
+// parseApiDateTime: Chuẩn hoá chuỗi ISO/UTC về Date hợp lệ.
+function parseApiDateTime(value) {
+  if (!value) {
+    return null;
+  }
+
+  const rawValue = String(value).trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawValue);
+  const normalized = hasZone ? rawValue : `${rawValue}Z`;
+
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// hasWaitedLongerThanPromptDelay: Kiểm tra đã qua thời gian chờ prompt hay chưa.
+function hasWaitedLongerThanPromptDelay(createdAt, nowMs, lastExtendedAt) {
+  const referenceTime = parseApiDateTime(lastExtendedAt) ?? parseApiDateTime(createdAt);
+
+  if (!referenceTime) {
+    return false;
+  }
+
+  return nowMs - referenceTime.getTime() >= NO_DRIVER_PROMPT_DELAY_MS;
 }
 
 // isLikelyStrayJoinRequest: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
@@ -589,6 +624,11 @@ function mapApiGroupToRide(group, session = null) {
   );
   const priceValue = currentMember?.finalFare ?? joinPreviewFare ?? null;
   const hasJoined = Boolean(currentMember);
+  // Tính trạng thái full ngay từ FE để note/UI đồng bộ, không phụ thuộc vào isLocked từ BE
+  // (BE đôi khi không set isLocked khi nhóm đạt maxPassengers).
+  const currentCount = Number(group.currentPassengers ?? members.length) || 0;
+  const maxCount = Number(group.maxPassengers ?? 3) || 3;
+  const isGroupFull = currentCount >= maxCount && maxCount > 0;
 
   return {
     id: group.id,
@@ -605,11 +645,14 @@ function mapApiGroupToRide(group, session = null) {
     capacity: group.maxPassengers ?? 3,
     note: group.isLocked
       ? "Nhóm đã khóa"
-      : "Nhóm còn có thể tham gia",
+      : isGroupFull
+        ? "Nhóm đã đủ người"
+        : "Nhóm còn có thể tham gia",
     priceDescription: hasJoined
       ? "Giá của bạn trong nhóm"
       : "Giá khi tham gia",
     members,
+    isFull: isGroupFull,
   };
 }
 
@@ -667,6 +710,10 @@ export default function SharedRideDetailScreen() {
   const [pendingRequest, setPendingRequest] = useState(null);
   const [myRideRequest, setMyRideRequest] = useState(null);
   const [hasCompletedThisRide, setHasCompletedThisRide] = useState(false);
+  const [noDriverPromptNowMs, setNoDriverPromptNowMs] = useState(() => Date.now());
+  const [isExtendingSharedSearch, setIsExtendingSharedSearch] = useState(false);
+  const [noDriverPromptDismissed, setNoDriverPromptDismissed] = useState(false);
+  const [sharedExtendError, setSharedExtendError] = useState("");
   const selectedPickupAddressRef = useRef("");
   const defaultDestination = getRideDestinationLabel(ride);
   const joinButtonLabel = getJoinButtonLabel(isJoiningGroup, pendingRequest);
@@ -744,6 +791,11 @@ export default function SharedRideDetailScreen() {
     Boolean(myRideRequest?.id) ||
     hasCompletedThisRide ||
     isCurrentUserGroupMember(ride?.members, session);
+  const isGroupFull = Boolean(ride?.isFull);
+  const isGroupLocked = Boolean(ride?.note === "Nhóm đã khóa");
+  const canJoinGroup = !isJoinedGroup && !isGroupFull && !isGroupLocked;
+  const [isLeavingGroup, setIsLeavingGroup] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
   void getDefaultJoinDestination;
   void joinButtonLabel;
 
@@ -840,6 +892,181 @@ export default function SharedRideDetailScreen() {
       clearInterval(intervalId);
     };
   }, [mockRide, rideId, session]);
+
+  // Tick mỗi 30s để re-evaluate điều kiện hiển thị prompt "chưa tìm được nhóm/tài xế".
+  useEffect(() => {
+    const promptIntervalId = setInterval(() => {
+      setNoDriverPromptNowMs(Date.now());
+    }, 30000);
+
+    return () => clearInterval(promptIntervalId);
+  }, []);
+
+  const isRequestWaitingForDriverOrGroup =
+    stableRequestStatusKey === "waiting" ||
+    stableRequestStatusKey === "matched" ||
+    stableRequestStatusKey === "ingroup";
+  const hasDriverAssignedForGroup =
+    Boolean(ride?.driverNameRaw) ||
+    stableGroupStatusKey === "driveraccepted" ||
+    stableGroupStatusKey === "waitingdeparture" ||
+    stableGroupStatusKey === "driverdriving" ||
+    stableGroupStatusKey === "driverdrivingtopickup" ||
+    stableGroupStatusKey === "passengerboarding" ||
+    stableGroupStatusKey === "inprogress";
+  const isImmediateSharedTrip = (() => {
+    const tripType = String(myRideRequest?.tripType ?? "").toLowerCase();
+    if (!tripType) {
+      return true;
+    }
+
+    return tripType === "immediate" || tripType === "1";
+  })();
+  const shouldShowSharedNoDriverPrompt =
+    !noDriverPromptDismissed &&
+    Boolean(myRideRequest?.id) &&
+    isImmediateSharedTrip &&
+    isRequestWaitingForDriverOrGroup &&
+    !hasDriverAssignedForGroup &&
+    hasWaitedLongerThanPromptDelay(
+      myRideRequest?.createdAt,
+      noDriverPromptNowMs,
+      myRideRequest?.lastSearchExtendedAt
+    );
+
+  async function handleExtendSharedSearch() {
+    if (!myRideRequest?.id || !session?.accessToken) {
+      return;
+    }
+
+    if (isExtendingSharedSearch) {
+      return;
+    }
+
+    setIsExtendingSharedSearch(true);
+    setSharedExtendError("");
+
+    try {
+      let updatedRequest;
+
+      try {
+        updatedRequest = await extendRideSharingSearch(
+          myRideRequest.id,
+          session.accessToken
+        );
+      } catch (error) {
+        if (error?.status !== 401) {
+          throw error;
+        }
+
+        const nextSession = await refreshSession();
+        updatedRequest = await extendRideSharingSearch(
+          myRideRequest.id,
+          nextSession.accessToken
+        );
+      }
+
+      if (updatedRequest) {
+        setMyRideRequest((current) => ({
+          ...(current ?? {}),
+          ...updatedRequest,
+          lastSearchExtendedAt:
+            updatedRequest.lastSearchExtendedAt ?? new Date().toISOString(),
+        }));
+      } else {
+        setMyRideRequest((current) =>
+          current
+            ? {
+                ...current,
+                lastSearchExtendedAt: new Date().toISOString(),
+              }
+            : current
+        );
+      }
+
+      setNoDriverPromptDismissed(true);
+    } catch (error) {
+      setSharedExtendError(
+        getReadableApiErrorMessage(error, "Không thể tiếp tục tìm chuyến ghép.")
+      );
+    } finally {
+      setIsExtendingSharedSearch(false);
+    }
+  }
+
+  async function handleCancelSharedSearch() {
+    if (!myRideRequest?.id || !session?.accessToken) {
+      return;
+    }
+
+    setIsExtendingSharedSearch(true);
+    setSharedExtendError("");
+
+    try {
+      await cancelRideSharingRequest(
+        myRideRequest.id,
+        { cancelReason: 4 },
+        session.accessToken
+      );
+
+      setMyRideRequest((current) =>
+        current
+          ? {
+              ...current,
+              status: "Cancelled",
+              cancelledAt: new Date().toISOString(),
+            }
+          : current
+      );
+      setNoDriverPromptDismissed(true);
+    } catch (error) {
+      setSharedExtendError(
+        getReadableApiErrorMessage(error, "Không thể hủy yêu cầu xe ghép.")
+      );
+    } finally {
+      setIsExtendingSharedSearch(false);
+    }
+  }
+
+  async function handleLeaveGroup() {
+    if (!ride?.id || !session?.accessToken || isLeavingGroup) {
+      return;
+    }
+
+    setIsLeavingGroup(true);
+    setLeaveError("");
+
+    try {
+      await leaveRideSharingGroup(
+        ride.id,
+        { cancelReason: 4 },
+        session.accessToken
+      );
+
+      // Reset trạng thái local về "chưa join" rồi reload data từ BE.
+      setMyRideRequest(null);
+      setHasCompletedThisRide(false);
+      setPendingRequest(null);
+
+      try {
+        const refreshedGroup = await getRideSharingGroup(
+          ride.id,
+          session.accessToken
+        );
+        setApiRide(mapApiGroupToRide(refreshedGroup, session));
+      } catch {
+        // Bỏ qua lỗi refresh; người dùng có thể tự reload.
+      }
+
+      router.back();
+    } catch (error) {
+      setLeaveError(
+        getReadableApiErrorMessage(error, "Không thể rời nhóm xe ghép.")
+      );
+    } finally {
+      setIsLeavingGroup(false);
+    }
+  }
 
   function requireLogin() {
     if (isAuthenticated) {
@@ -1266,7 +1493,66 @@ export default function SharedRideDetailScreen() {
                 </ThemedView>
               )}
 
-              {!isJoinedGroup && (
+              {shouldShowSharedNoDriverPrompt ? (
+                /* Khối shared no driver prompt: Hiển thị khi quá thời gian chờ ghép/tài xế. */
+                <View
+                  testID="shared-ride-no-driver-prompt"
+                  style={[
+                    styles.noDriverPromptCard,
+                    { backgroundColor: "#FFF7ED", borderColor: "#FDBA74" },
+                  ]}
+                >
+                  <ThemedText type="smallBold" style={styles.noDriverPromptTitle}>
+                    {"Chưa tìm được nhóm/tài xế"}
+                  </ThemedText>
+                  <ThemedText type="small" style={styles.noDriverPromptSubtitle}>
+                    {"Bạn muốn tiếp tục chờ hay hủy yêu cầu?"}
+                  </ThemedText>
+                  {Boolean(sharedExtendError) ? (
+                    <ThemedText type="small" style={styles.errorText}>
+                      {sharedExtendError}
+                    </ThemedText>
+                  ) : null}
+                  <View style={styles.noDriverPromptActions}>
+                    <Pressable
+                      testID="shared-ride-no-driver-extend"
+                      style={[
+                        styles.noDriverPromptSecondaryButton,
+                        isExtendingSharedSearch && styles.pendingButton,
+                      ]}
+                      disabled={isExtendingSharedSearch}
+                      onPress={handleExtendSharedSearch}
+                    >
+                      <ThemedText
+                        type="smallBold"
+                        style={styles.noDriverPromptSecondaryText}
+                      >
+                        {isExtendingSharedSearch
+                          ? "Đang xử lý..."
+                          : "Tiếp tục tìm"}
+                      </ThemedText>
+                    </Pressable>
+                    <Pressable
+                      testID="shared-ride-no-driver-cancel"
+                      style={[
+                        styles.noDriverPromptPrimaryButton,
+                        isExtendingSharedSearch && styles.pendingButton,
+                      ]}
+                      disabled={isExtendingSharedSearch}
+                      onPress={handleCancelSharedSearch}
+                    >
+                      <ThemedText
+                        type="smallBold"
+                        style={styles.noDriverPromptPrimaryText}
+                      >
+                        {isExtendingSharedSearch ? "Đang hủy..." : "Hủy yêu cầu"}
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+
+              {canJoinGroup && (
                 /* Nút tham gia group: kiểm tra login rồi mở join modal; chưa gọi BE cho đến khi submit form. */
                 <Pressable
                   testID="shared-ride-join-button"
@@ -1287,6 +1573,49 @@ export default function SharedRideDetailScreen() {
                   </ThemedText>
                 </Pressable>
               )}
+
+              {!isJoinedGroup && isGroupFull ? (
+                /* Nhóm đã đủ người: không cho tham gia, chỉ hiển thị thông báo. */
+                <ThemedView
+                  testID="shared-ride-full-notice"
+                  style={[
+                    styles.secondaryButton,
+                    {
+                      backgroundColor: "#F3F4F6",
+                      borderColor: "#E5E7EB",
+                      borderWidth: 1,
+                    },
+                  ]}
+                >
+                  <ThemedText type="default" style={styles.secondaryButtonText}>
+                    {"Nhóm đã đủ người"}
+                  </ThemedText>
+                </ThemedView>
+              ) : null}
+
+              {isJoinedGroup && !hasCompletedThisRide && stableGroupStatusKey !== "driverdrivingtopickup" && stableGroupStatusKey !== "passengerboarding" && stableGroupStatusKey !== "inprogress" && stableGroupStatusKey !== "completed" ? (
+                /* Nút rời nhóm cho passenger đã join nhưng nhóm chưa bắt đầu chạy. */
+                <>
+                  {Boolean(leaveError) ? (
+                    <ThemedText type="smallBold" style={styles.errorText}>
+                      {leaveError}
+                    </ThemedText>
+                  ) : null}
+                  <Pressable
+                    testID="shared-ride-leave-button"
+                    style={[
+                      styles.secondaryButton,
+                      isLeavingGroup && styles.pendingButton,
+                    ]}
+                    onPress={handleLeaveGroup}
+                    disabled={isLeavingGroup}
+                  >
+                    <ThemedText type="default" style={styles.secondaryButtonText}>
+                      {isLeavingGroup ? "Đang rời nhóm..." : "Rời nhóm"}
+                    </ThemedText>
+                  </Pressable>
+                </>
+              ) : null}
 
               {/* Quay lại danh sách/route trước đó sau khi xem detail; không thay đổi request/group. */}
               <Pressable
@@ -1885,5 +2214,52 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND,
     alignItems: "center",
     justifyContent: "center",
+  },
+  noDriverPromptCard: {
+    marginTop: Spacing.two,
+    backgroundColor: "#FFF7ED",
+    borderRadius: 14,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    gap: Spacing.two,
+  },
+  noDriverPromptTitle: {
+    color: "#9A3412",
+    fontSize: 15,
+  },
+  noDriverPromptSubtitle: {
+    color: "#7C2D12",
+  },
+  noDriverPromptActions: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  noDriverPromptSecondaryButton: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FB923C",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noDriverPromptSecondaryText: {
+    color: "#C2410C",
+  },
+  noDriverPromptPrimaryButton: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noDriverPromptPrimaryText: {
+    color: "#FFFFFF",
+  },
+  errorText: {
+    color: "#B91C1C",
   },
 });
