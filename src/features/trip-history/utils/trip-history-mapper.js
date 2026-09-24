@@ -150,7 +150,7 @@ export function mapTripToHistoryItem(trip, localTrip = null) {
     }`,
     meta: metaParts.join(" · "),
     actionPrimary,
-    actionSecondary: "Báo cáo",
+    actionSecondary: null,
     rating: null,
     sortTimestamp: getTripTime(date),
   };

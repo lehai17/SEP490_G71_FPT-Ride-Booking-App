@@ -118,7 +118,7 @@ export const tripSections = {
       route: "Cổng FPT → Mỹ Đình",
       meta: "24/06 · 45.000đ",
       actionPrimary: "Đánh giá",
-      actionSecondary: "Báo cáo",
+      actionSecondary: null,
       rating: 5,
     },
     {
@@ -127,7 +127,7 @@ export const tripSections = {
       route: "Ngã tư Thạch Hòa → FPT",
       meta: "23/06 · 25.000đ",
       actionPrimary: "Đánh giá",
-      actionSecondary: "Báo cáo",
+      actionSecondary: null,
       rating: 5,
     },
     {
@@ -136,7 +136,7 @@ export const tripSections = {
       route: "FPT → Xuân Mai",
       meta: "22/06 · 35.000đ",
       actionPrimary: "Đánh giá",
-      actionSecondary: "Báo cáo",
+      actionSecondary: null,
       rating: 4,
     },
   ],

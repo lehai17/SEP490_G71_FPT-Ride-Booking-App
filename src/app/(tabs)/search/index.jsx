@@ -1130,6 +1130,12 @@ async function refreshStoredRideSharingCard(card, accessToken) {
   try {
     if (card.requestId) {
       const request = await getRideSharingRequest(card.requestId, accessToken);
+
+      // Nếu request đã ở trạng thái kết thúc thì bỏ qua — không hiển thị card cũ.
+      if (isSharedTerminalStatus(request?.status)) {
+        return null;
+      }
+
       let group = null;
 
       if (request?.groupId) {
@@ -1149,6 +1155,11 @@ async function refreshStoredRideSharingCard(card, accessToken) {
 
     if (card.groupId) {
       const group = await getRideSharingGroup(card.groupId, accessToken);
+
+      if (isSharedGroupTerminal(group?.status)) {
+        return null;
+      }
+
       return mapRideSharingGroupToCard(group) ?? null;
     }
   } catch (error) {

@@ -828,6 +828,38 @@ export default function SharedRideDetailScreen() {
         );
 
         if (isActive) {
+          // Phát hiện nhóm đã ở trạng thái terminal hoặc đã giải tán:
+          // - status terminal (cancelled/completed/nodriverfound/expired): backend đã hủy.
+          // - currentPassengers < MinimumPassengers (mặc định 2): chỉ còn 1 người (user hiện tại),
+          //   nhóm không còn khả thi để ghép → FE nên chuyển user về màn "Yêu cầu xe ghép của bạn"
+          //   với status waiting thay vì tiếp tục hiển thị "Tham gia nhóm" gây hiểu nhầm.
+          const terminalStatuses = new Set([
+            "cancelled",
+            "completed",
+            "nodriverfound",
+            "expired",
+          ]);
+          const rawStatus = normalizeGroupStatusKey(group?.status);
+          const activeMembersCount = Array.isArray(group?.members)
+            ? group.members.filter((member) => Number(member?.status) === 1)
+                .length
+            : 0;
+          const groupCurrent = Number(group?.currentPassengers ?? 0) || 0;
+          const isGroupDissolved =
+            !group ||
+            terminalStatuses.has(rawStatus) ||
+            activeMembersCount < 2 ||
+            groupCurrent < 2;
+
+          if (isGroupDissolved) {
+            // Đặt loadError để UI render nhánh "không tìm thấy", user chỉ cần bấm Quay lại.
+            setApiRide(null);
+            setLoadError(
+              "Nhóm xe ghép đã được giải tán vì không còn đủ hành khách. Bạn đã được đưa về trạng thái chờ ghép."
+            );
+            return;
+          }
+
           // Map response group BE sang object ride mà UI detail đang render.
           setApiRide(mapApiGroupToRide(group, session));
           setPendingRequest((current) => {
@@ -1053,7 +1085,33 @@ export default function SharedRideDetailScreen() {
           ride.id,
           session.accessToken
         );
-        setApiRide(mapApiGroupToRide(refreshedGroup, session));
+        // Sau khi user hiện tại rời, group có thể đã bị BE giải tán nếu còn lại < MinPassengers.
+        // Trong trường hợp đó, set apiRide = null để UI render nhánh dissolved và back về Search.
+        const refreshedStatusKey = normalizeGroupStatusKey(refreshedGroup?.status);
+        const dissolvedStatuses = new Set([
+          "cancelled",
+          "completed",
+          "nodriverfound",
+          "expired",
+        ]);
+        const refreshedActiveCount = Array.isArray(refreshedGroup?.members)
+          ? refreshedGroup.members.filter(
+              (member) => Number(member?.status) === 1
+            ).length
+          : 0;
+        const isRefreshedDissolved =
+          !refreshedGroup ||
+          dissolvedStatuses.has(refreshedStatusKey) ||
+          refreshedActiveCount < 2;
+
+        if (isRefreshedDissolved) {
+          setApiRide(null);
+          setLoadError(
+            "Nhóm xe ghép đã được giải tán vì không còn đủ hành khách. Bạn đã được đưa về trạng thái chờ ghép."
+          );
+        } else {
+          setApiRide(mapApiGroupToRide(refreshedGroup, session));
+        }
       } catch {
         // Bỏ qua lỗi refresh; người dùng có thể tự reload.
       }
