@@ -272,9 +272,14 @@ function getTripDraft(item) {
 function getScheduledTripView(item) {
   const [destination = item.route, pickup = "Vị trí hiện tại"] = item.route.split(/\s*(?:→|->|➝)\s*/);
   const [time = "", price = ""] = item.meta.split(/\s*[·•]\s*/);
-  const vehicle = item.icon.includes("🛵") || item.icon.includes("🚗")
-    ? "Xe máy"
-    : "Xe 4 chỗ";
+  const iconText = String(item?.icon ?? "");
+  // item.icon giờ là emoji 🛵/🚗 (do search/index.jsx set), fallback cho dữ liệu cũ icon là text.
+  const vehicle =
+    iconText.includes("🛵") || /xe máy|xe may/i.test(iconText)
+      ? "Xe máy"
+      : iconText.includes("🚗") || /ô tô|oto|car/i.test(iconText)
+        ? "Ô tô"
+        : "Ô tô";
 
   return {
     destination,
@@ -879,6 +884,19 @@ export default function TripsScreen() {
       isMounted = false;
     };
   }, [historyRefreshKey, isAuthenticated, selectedTab, session?.accessToken, session?.role]);
+
+  // Auto-refresh trips mỗi 30s để kịp thời cập nhật trạng thái NoDriverFound do BE tự động set.
+  useEffect(() => {
+    if (!isAuthenticated || !session?.accessToken) {
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      setHistoryRefreshKey((prev) => prev + 1);
+    }, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, session?.accessToken]);
 
   const rawItems = tripsBySection[selectedTab] ?? [];
   const sortedScheduledItems =

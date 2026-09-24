@@ -45,6 +45,7 @@ import { estimateFare } from "@/features/booking/services/pricing-api";
 import {
   cancelTrip,
   createTrip,
+  extendTripSearch,
   getTrip,
 } from "@/features/booking/services/trip-api";
 import {
@@ -55,6 +56,7 @@ import { createReview } from "@/features/trip-history/services/review-api";
 import {
   cancelRideSharingRequest,
   createRideSharingRequest,
+  extendRideSharingSearch,
   getAvailableRideSharingGroups,
   getMyRideSharingGroup,
   getMyRideSharingRequest,
@@ -155,21 +157,81 @@ function getSingleParam(value) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+// getBookingAlertTitle: Map tiêu đề alert hợp lý dựa trên nội dung message.
+// - Validation/nhập thiếu -> "Vui lòng kiểm tra lại"
+// - Lỗi hệ thống/BE/mạng -> "Đặt chuyến thất bại"
+// - Mặc định -> "Thông báo"
+function getBookingAlertTitle(message) {
+  const text = String(message ?? "").trim();
+  if (!text) {
+    return "Thông báo";
+  }
+  const lower = text.toLowerCase();
+  const systemPrefixes = [
+    "không thể",
+    "be đang lỗi",
+    "lỗi",
+    "an error occurred",
+    "http ",
+    "network",
+    "timeout",
+  ];
+  if (systemPrefixes.some((prefix) => lower.startsWith(prefix))) {
+    return "Đặt chuyến thất bại";
+  }
+  return "Vui lòng kiểm tra lại";
+}
+
 const rideOptions = [
   {
     id: "bike",
-    icon: "Xe máy",
+    icon: "🛵",
     name: "Xe máy",
     vehicleType: 1,
   },
   {
     id: "car4",
-    icon: "Ô tô",
+    icon: "🚗",
     name: "Ô tô",
     vehicleType: 2,
   },
 ];
 const availableRideOptions = rideOptions;
+
+// getRideOptionDisplayLabel: Đảm bảo option name luôn hiển thị đầy đủ "Xe máy"/"Ô tô"
+// trong modal chọn loại xe và mọi nơi render ride option.
+// Nếu dữ liệu rơi vào nhánh rút gọn ("Xe", "OTO", ...) do cache/cũ, helper sẽ fallback
+// về tên đầy đủ tương ứng với vehicleType hoặc id.
+function getRideOptionDisplayLabel(option) {
+  if (!option) {
+    return "";
+  }
+
+  const fallbackByVehicleType = {
+    1: "Xe máy",
+    2: "Ô tô",
+    3: "Xe 7 chỗ",
+  };
+  const fallbackById = {
+    bike: "Xe máy",
+    car4: "Ô tô",
+    car7: "Xe 7 chỗ",
+  };
+
+  const rawName = String(option.name ?? "").trim();
+
+  if (rawName && rawName.length >= 4) {
+    return rawName;
+  }
+
+  const fallback =
+    fallbackByVehicleType[option.vehicleType] ||
+    fallbackById[option.id] ||
+    rawName ||
+    "Xe";
+
+  return fallback;
+}
 
 const sharedTripTypes = [
   "Chuyến đi (Từ nơi khác đến FPT)",
@@ -1671,6 +1733,12 @@ export default function SearchScreen() {
     getSingleParam(params.source) === "home" && normalizedMode === "now";
 
   const [mode, setMode] = useState(normalizedMode);
+  // Sync `mode` khi user navigate lại tới /search với query khác (vd: đang ở /search?mode=now,
+  // bấm "Xe ghép" ở Home sẽ push /search?mode=shared — cùng route nên SearchScreen không re-mount,
+  // useState ban đầu giữ "now". Effect này đảm bảo mode luôn khớp với URL mới nhất.
+  useEffect(() => {
+    setMode(normalizedMode);
+  }, [normalizedMode]);
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
   const [focusedField, setFocusedField] = useState("from");
@@ -1728,8 +1796,10 @@ export default function SearchScreen() {
   const [isLoadingSharedState, setIsLoadingSharedState] = useState(false);
   const [isCreatingSharedRequest, setIsCreatingSharedRequest] = useState(false);
   const [cancellingSharedRequestId, setCancellingSharedRequestId] = useState("");
+  const [extendingSharedRequestId, setExtendingSharedRequestId] = useState("");
   const [isBookingRide, setIsBookingRide] = useState(false);
   const [isCancellingRide, setIsCancellingRide] = useState(false);
+  const [isExtendingSoloSearch, setIsExtendingSoloSearch] = useState(false);
   const [activeBookedRide, setActiveBookedRide] = useState(null);
   const [acceptedTrip, setAcceptedTrip] = useState(null);
   const [noDriverPromptNowMs, setNoDriverPromptNowMs] = useState(() =>
@@ -1753,12 +1823,20 @@ export default function SearchScreen() {
   const deferredFrom = useDeferredValue(fromInput);
   const deferredTo = useDeferredValue(toInput);
   const suggestedSharedRides = availableSharedGroups;
+  // Tách nhóm đã vào (request có groupId) và yêu cầu đang chờ ghép (chưa có groupId)
+  // để render 2 section riêng, tránh trộn status "Đã vào nhóm" / "Chưa vào nhóm" trong cùng một danh sách.
   const filteredSharedRequests = pendingSharedRequests
     .filter((request) => isRideSharingCardOwnedByUser(request, session?.userId))
     .filter((request) => {
       const effectiveStatus = getSharedRequestEffectiveStatus(request);
       return getSharedRequestFilterKey(effectiveStatus) === sharedRequestFilter;
     });
+  const myJoinedSharedGroups = filteredSharedRequests.filter(
+    (request) => Boolean(request.groupId)
+  );
+  const waitingSharedRequests = filteredSharedRequests.filter(
+    (request) => !request.groupId
+  );
   const selectedSharedRequestFilterLabel =
     sharedRequestFilterOptions.find((option) => option.id === sharedRequestFilter)
       ?.label ?? "Đã đặt";
@@ -1968,7 +2046,17 @@ export default function SearchScreen() {
           .filter(
             (item) =>
               String(item.groupId ?? "").toLowerCase() !== currentGroupId
-          );
+          )
+          // Loại nhóm đã đủ người (currentPassengers >= maxPassengers) khỏi đề xuất;
+          // nhóm sẽ tự xuất hiện lại khi có thành viên rời.
+          .filter((item) => {
+            const currentCount = Number(item?.participantCount) || 0;
+            const maxCount = Number(item?.capacity) || 0;
+            if (maxCount <= 0) {
+              return true;
+            }
+            return currentCount < maxCount;
+          });
 
         const currentCards = mappedRequest
           ? [mappedRequest]
@@ -2887,7 +2975,7 @@ export default function SearchScreen() {
       setVerifiedTripMap(nextVerifiedTripMap);
       setAlertMessage("");
     } catch (error) {
-      setAlertMessage(error.message || "KhÃ´ng thá»ƒ cáº­p nháº­t tuyáº¿n Ä‘Æ°á»ng cho loáº¡i xe Ä‘ang chá»n.");
+      setAlertMessage(error.message || "Không thể cập nhật tuyến đường cho loại xe đang chọn.");
     } finally {
       setIsVerifyingMap(false);
     }
@@ -2981,7 +3069,7 @@ export default function SearchScreen() {
     }
 
     if (isVerifyingMap) {
-      setAlertMessage("Tuyáº¿n Ä‘Æ°á»ng Ä‘ang Ä‘Æ°á»£c cáº­p nháº­t. Vui lÃ²ng Ä‘á»£i trong giÃ¢y lÃ¡t.");
+      setAlertMessage("Tuyến đường đang được cập nhật. Vui lòng đợi trong giây lát.");
       return;
     }
 
@@ -2995,7 +3083,7 @@ export default function SearchScreen() {
       verifiedTripMap.vehicleProfile ?? verifiedTripMap.directions?.vehicleProfile;
 
     if (currentVehicleProfile !== expectedVehicleProfile) {
-      setAlertMessage("Tuyáº¿n Ä‘Æ°á»ng chÆ°a khá»›p vá»›i loáº¡i xe Ä‘ang chá»n. Vui lÃ²ng chá»n láº¡i loáº¡i xe hoáº·c thá»­ láº¡i.");
+      setAlertMessage("Tuyến đường chưa khớp với loại xe đang chọn. Vui lòng chọn lại loại xe hoặc thử lại.");
       return;
     }
 
@@ -3041,6 +3129,32 @@ export default function SearchScreen() {
 
     if (ridePriceError) {
       setAlertMessage(ridePriceError);
+      return;
+    }
+
+    // Chặn đặt xe lẻ khi user đang có yêu cầu hoặc nhóm xe ghép của chính mình còn active.
+    // Lưu ý: chỉ chặn dựa trên pendingSharedRequests (request/group của mình).
+    // KHÔNG chặn vì availableSharedGroups (group người khác đề xuất cho mình tham gia):
+    // đó chỉ là gợi ý, user chưa join thì không bị ràng buộc phải đợi.
+    const hasActiveSharedRequest = pendingSharedRequests.some((request) => {
+      if (!request) {
+        return false;
+      }
+      // pendingSharedRequests chứa cả request và group của mình; dùng helper map tương ứng.
+      // Card có groupId thường là group, còn lại là request.
+      const looksLikeGroup = Boolean(request.groupId || request.rawGroup);
+      const normalizedStatus = looksLikeGroup
+        ? normalizeRideSharingGroupStatus(request.status)
+        : normalizeRideSharingRequestStatus(request.status);
+      return looksLikeGroup
+        ? !isSharedGroupTerminal(normalizedStatus)
+        : isSharedRideActive(request.status);
+    });
+
+    if (hasActiveSharedRequest) {
+      setAlertMessage(
+        "Bạn đang có yêu cầu hoặc nhóm xe ghép đang hoạt động. Vui lòng hủy hoặc chờ hoàn thành trước khi đặt xe lẻ."
+      );
       return;
     }
 
@@ -3124,7 +3238,7 @@ export default function SearchScreen() {
         statusLabel: isScheduledRide
           ? "Chờ tài xế"
           : "Đang tìm tài xế",
-        icon: selectedRideOption.icon || "Xe",
+        icon: selectedRideOption.icon || "🚗",
         route: `${verifiedFromLabel} → ${verifiedToLabel}`,
         pickup: tripResponse.pickupAddress || verifiedFromLabel,
         destination: tripResponse.destinationAddress || verifiedToLabel,
@@ -3177,7 +3291,14 @@ export default function SearchScreen() {
   };
 
   const handleCancelBookedRide = async () => {
-    if (!canCancelTrackedTrip || isCancellingRide) {
+    if (isCancellingRide) {
+      return;
+    }
+
+    // Nếu trip đang ở trạng thái terminal (NoDriverFound, completed, cancelled...)
+    // thì không gọi BE cancel được — chỉ reset form về màn nhập địa chỉ.
+    if (!canCancelTrackedTrip) {
+      resetSingleRideBookingForm();
       return;
     }
 
@@ -3234,6 +3355,177 @@ export default function SearchScreen() {
       setAlertMessage(error.message || "Không thể hủy chuyến đi.");
     } finally {
       setIsCancellingRide(false);
+    }
+  };
+
+  const handleExtendSoloSearch = async () => {
+    if (!activeBookedRide?.id || !session?.accessToken) {
+      setAlertMessage("Không tìm thấy chuyến đi để tiếp tục tìm.");
+      return;
+    }
+
+    if (isExtendingSoloSearch) {
+      return;
+    }
+
+    setIsExtendingSoloSearch(true);
+    setAlertMessage("");
+
+    try {
+      let updatedTrip;
+
+      try {
+        updatedTrip = await extendTripSearch(activeBookedRide.id, session.accessToken);
+      } catch (error) {
+        if (error?.status === 400 && verifiedTripMap && selectedRideOption) {
+          // Trip đã ở NoDriverFound (terminal) — BE không cho extend nữa.
+          // Tạo chuyến mới với cùng pickup/destination/vehicleType, giữ user ở màn đang tìm tài xế.
+          await recreateSoloTripAfterNoDriver();
+          return;
+        }
+
+        if (error?.status !== 401) {
+          throw error;
+        }
+
+        const nextSession = await refreshSession();
+        updatedTrip = await extendTripSearch(activeBookedRide.id, nextSession.accessToken);
+      }
+
+      // Cập nhật lại trạng thái chuyến (LastSearchExtendedAt) và ẩn prompt.
+      const lastSearchExtendedAt =
+        updatedTrip?.lastSearchExtendedAt ?? new Date().toISOString();
+      const nextBookedRide = {
+        ...(activeBookedRide ?? {}),
+        lastSearchExtendedAt,
+        createdAt: activeBookedRide?.createdAt,
+      };
+
+      setAcceptedTrip(updatedTrip ?? acceptedTrip);
+      setActiveBookedRide(nextBookedRide);
+
+      try {
+        await persistBookedTrip(nextBookedRide);
+      } catch {
+        // Lưu cache local thất bại: vẫn để UI cập nhật từ BE.
+      }
+
+      if (activeRidePromptId) {
+        setDismissedNoDriverPromptIds((prev) => ({
+          ...prev,
+          [activeRidePromptId]: true,
+        }));
+      }
+    } catch (error) {
+      setAlertMessage(error.message || "Không thể tiếp tục tìm chuyến.");
+    } finally {
+      setIsExtendingSoloSearch(false);
+    }
+  };
+
+  // recreateSoloTripAfterNoDriver: Khi trip cũ đã NoDriverFound (terminal), user bấm "Chờ tiếp" →
+  // tạo chuyến mới với cùng pickup/destination/vehicleType rồi set activeBookedRide → UI tiếp tục
+  // hiển thị màn "đang tìm tài xế" mà không cần user chọn lại địa chỉ.
+  const recreateSoloTripAfterNoDriver = async () => {
+    const currentBookedRide = activeBookedRide;
+    if (!currentBookedRide || !session?.accessToken || !verifiedTripMap || !selectedRideOption) {
+      resetSingleRideBookingForm();
+      setIsExtendingSoloSearch(false);
+      return;
+    }
+
+    const validatedTripMetrics = getBackendTripMetrics(verifiedTripMap);
+    const requestDistanceKm = validatedTripMetrics?.distanceKm ?? 0;
+    const requestDurationMinute = validatedTripMetrics?.durationMinute ?? 0;
+
+    if (!requestDistanceKm || !requestDurationMinute) {
+      resetSingleRideBookingForm();
+      setIsExtendingSoloSearch(false);
+      return;
+    }
+
+    const createTripPayload = {
+      pickupLatitude: verifiedTripMap.origin.location.lat,
+      pickupLongitude: verifiedTripMap.origin.location.lng,
+      pickupAddress: verifiedFromLabel,
+      destinationLatitude: verifiedTripMap.destination.location.lat,
+      destinationLongitude: verifiedTripMap.destination.location.lng,
+      destinationAddress: verifiedToLabel,
+      estimatedDistanceKm: Number(requestDistanceKm),
+      estimatedDurationMinute: Math.max(1, Math.round(Number(requestDurationMinute))),
+      vehicleType: selectedRideOption.vehicleType,
+      tripType: 1,
+    };
+
+    try {
+      let response;
+
+      try {
+        response = await createTrip(createTripPayload, session.accessToken);
+      } catch (error) {
+        if (error?.status !== 401) {
+          throw error;
+        }
+        const nextSession = await refreshSession();
+        response = await createTrip(createTripPayload, nextSession.accessToken);
+      }
+
+      const tripResponse = response?.trip ?? response;
+      const confirmedTripDistance =
+        validatedTripMetrics?.distanceText ??
+        verifiedTripMap.directions.distanceText ??
+        "--";
+      const confirmedTripDuration =
+        validatedTripMetrics?.durationText ??
+        verifiedTripMap.directions.durationText ??
+        "--";
+
+      const newBookedTrip = {
+        id: tripResponse.id || `trip-${Date.now()}`,
+        status: (tripResponse.status || "pending").toLowerCase(),
+        statusLabel: "Đang tìm tài xế",
+        icon: selectedRideOption.icon || "🚗",
+        route: `${verifiedFromLabel} → ${verifiedToLabel}`,
+        pickup: tripResponse.pickupAddress || verifiedFromLabel,
+        destination: tripResponse.destinationAddress || verifiedToLabel,
+        vehicleName: selectedRideOption.name,
+        vehicleType: String(selectedRideOption.vehicleType),
+        estimatedFare: selectedRidePrice,
+        tripDistance: confirmedTripDistance,
+        tripDuration: confirmedTripDuration,
+        pickupLatitude: verifiedTripMap.origin.location.lat,
+        pickupLongitude: verifiedTripMap.origin.location.lng,
+        destinationLatitude: verifiedTripMap.destination.location.lat,
+        destinationLongitude: verifiedTripMap.destination.location.lng,
+        driverOrigin:
+          verifiedTripMap.driverOrigin.formattedAddress ?? MOCK_DRIVER_LOCATION,
+        mapImageUrl: verifiedTripMap.driverMapImageUrl ?? "",
+        duration: verifiedTripMap.driverDirections.durationText ?? "",
+        distance: verifiedTripMap.driverDirections.distanceText ?? "",
+        createdAt: tripResponse.createdAt || new Date().toISOString(),
+        lastSearchExtendedAt: null,
+      };
+
+      try {
+        await persistBookedTrip(newBookedTrip);
+      } catch {
+        // Lưu cache local thất bại: vẫn để UI cập nhật từ BE.
+      }
+
+      // Ẩn prompt của trip cũ, set trip mới làm active. UI tự render lại màn "đang tìm tài xế".
+      if (activeRidePromptId) {
+        setDismissedNoDriverPromptIds((prev) => ({
+          ...prev,
+          [activeRidePromptId]: true,
+        }));
+      }
+      setAcceptedTrip(null);
+      setActiveBookedRide(newBookedTrip);
+      setBookingStep("findingDriver");
+    } catch (error) {
+      setAlertMessage(error.message || "Không thể tạo chuyến mới. Vui lòng thử lại.");
+    } finally {
+      setIsExtendingSoloSearch(false);
     }
   };
 
@@ -3921,6 +4213,16 @@ export default function SearchScreen() {
       return;
     }
 
+    // Tránh tạo yêu cầu xe ghép khi user đang có chuyến xe lẻ đã đặt/chờ tài xế.
+    // Lý do: mỗi chuyến của user cần độc lập (không vừa book xe lẻ vừa mở request ghép),
+    // tránh trùng chuyến hoặc tài xế nhận 2 chuyến cùng khung giờ.
+    if (activeBookedRide?.id) {
+      setSharedFormError(
+        "Bạn đang có chuyến xe lẻ đang hoạt động. Vui lòng hủy hoặc hoàn thành chuyến xe lẻ trước khi tạo yêu cầu xe ghép."
+      );
+      return;
+    }
+
     setIsCreatingSharedRequest(true);
     setSharedFormError("");
 
@@ -4158,6 +4460,69 @@ export default function SearchScreen() {
       setCancellingSharedRequestId("");
     }
   };
+
+  const handleExtendSharedSearch = async (requestId) => {
+    if (!requestId || !session?.accessToken) {
+      return;
+    }
+
+    if (extendingSharedRequestId === requestId) {
+      return;
+    }
+
+    setExtendingSharedRequestId(requestId);
+    setSharedCancelError("");
+
+    try {
+      let updatedRequest;
+
+      try {
+        updatedRequest = await extendRideSharingSearch(requestId, session.accessToken);
+      } catch (error) {
+        if (error?.status !== 401) {
+          throw error;
+        }
+
+        const nextSession = await refreshSession();
+        updatedRequest = await extendRideSharingSearch(requestId, nextSession.accessToken);
+      }
+
+      const promptId = `shared:${requestId}`;
+      setDismissedNoDriverPromptIds((prev) => ({
+        ...prev,
+        [promptId]: true,
+      }));
+
+      // Cập nhật lại LastSearchExtendedAt trong card local để prompt không hiện lại ngay.
+      setPendingSharedRequests((prev) =>
+        prev.map((req) =>
+          req?.requestId === requestId || req?.id === requestId
+            ? {
+                ...req,
+                lastSearchExtendedAt:
+                  updatedRequest?.lastSearchExtendedAt ?? new Date().toISOString(),
+              }
+            : req
+        )
+      );
+
+      // Refresh trạng thái thật từ BE.
+      try {
+        await refreshSharedState({ showLoading: false });
+      } catch {
+        // Bỏ qua nếu refresh lỗi; UI vẫn cập nhật local.
+      }
+    } catch (error) {
+      const serverMessage = error?.payload?.message || error?.message;
+      const readableMessage = String(
+        serverMessage || "Không thể tiếp tục tìm chuyến ghép."
+      ).replace(/^HTTP\s+\d+\s+\S+:\s*/, "");
+      setSharedCancelError(readableMessage);
+    } finally {
+      setExtendingSharedRequestId("");
+    }
+  };
+
   const fillAddressToFocusedField = async (address) => {
     if (!address?.label) {
       return;
@@ -4449,7 +4814,7 @@ export default function SearchScreen() {
               {/* Khối finding trip header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
               <View style={styles.findingTripHeader}>
                 <ThemedText type="smallBold" style={styles.findingVehicle}>
-                  {activeBookedRide?.vehicleName ?? selectedRideOption.name}
+                  {activeBookedRide?.vehicleName ?? getRideOptionDisplayLabel(selectedRideOption)}
                 </ThemedText>
                 <ThemedText type="smallBold" style={styles.findingFare}>
                   {activeBookedRide?.estimatedFare ?? selectedRidePrice}
@@ -4527,7 +4892,45 @@ export default function SearchScreen() {
                     </ThemedText>
                   </Pressable>
                 </View>
-              ) : isSoloRideInProgress ? null : (
+              ) : isSoloRideInProgress ? null : isNoDriverFoundTrip ? (
+                /* Khi BE trả NoDriverFound (terminal): gọi extend search để BE refresh tìm tài xế.
+                   handleExtendSoloSearch catch 400 và giữ user ở màn đang tìm. */
+                <View style={styles.findingActionsRow}>
+                  <Pressable
+                    testID="booking-finding-no-driver-extend"
+                    style={[
+                      styles.findingSecondaryButton,
+                      isExtendingSoloSearch && styles.bookButtonDisabled,
+                    ]}
+                    disabled={isExtendingSoloSearch}
+                    onPress={handleExtendSoloSearch}
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={styles.findingSecondaryText}
+                    >
+                      {isExtendingSoloSearch ? "Đang xử lý..." : "Chờ tiếp"}
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    testID="booking-finding-no-driver-cancel"
+                    style={[
+                      styles.findingSecondaryButton,
+                      styles.cancelRideButton,
+                      isCancellingRide && styles.bookButtonDisabled,
+                    ]}
+                    disabled={isCancellingRide}
+                    onPress={handleCancelBookedRide}
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={styles.cancelRideButtonText}
+                    >
+                      {"Hủy chuyến"}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              ) : (
                 /* Nút hủy thao tác hiện tại và đóng form/modal liên quan. */
                 <Pressable
                   testID="booking-finding-secondary-button"
@@ -4540,10 +4943,7 @@ export default function SearchScreen() {
                   onPress={() => {
                     if (canCancelTrackedTrip) {
                       handleCancelBookedRide();
-                    } else if (
-                      trackedTripStatus === "cancelled" ||
-                      isNoDriverFoundTrip
-                    ) {
+                    } else if (trackedTripStatus === "cancelled") {
                       resetSingleRideBookingForm();
                     } else {
                       setBookingStep("rideOptions");
@@ -4561,13 +4961,54 @@ export default function SearchScreen() {
                       ? "Đang hủy..."
                       : canCancelTrackedTrip
                         ? "Hủy chuyến"
-                        : isNoDriverFoundTrip
-                          ? "Đặt lại"
                         : "Quay lại"}
                   </ThemedText>
                 </Pressable>
               )}
             </View>
+
+            {shouldShowSoloNoDriverPrompt ? (
+              /* Khối no driver prompt: Hiển thị khi chờ tài xế quá thời gian, cho phép tiếp tục tìm hoặc hủy. */
+              <View
+                testID="booking-solo-no-driver-prompt"
+                style={styles.noDriverPromptCard}
+              >
+                <ThemedText type="smallBold" style={styles.noDriverPromptTitle}>
+                  {"Chưa tìm được tài xế"}
+                </ThemedText>
+                <ThemedText type="small" style={styles.noDriverPromptSubtitle}>
+                  {"Bạn muốn tiếp tục chờ hay hủy chuyến?"}
+                </ThemedText>
+                <View style={styles.noDriverPromptActions}>
+                  <Pressable
+                    testID="booking-solo-no-driver-extend"
+                    style={[
+                      styles.noDriverPromptSecondaryButton,
+                      isExtendingSoloSearch && styles.buttonDisabled,
+                    ]}
+                    disabled={isExtendingSoloSearch}
+                    onPress={handleExtendSoloSearch}
+                  >
+                    <ThemedText type="smallBold" style={styles.noDriverPromptSecondaryText}>
+                      {isExtendingSoloSearch ? "Đang xử lý..." : "Tiếp tục tìm"}
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    testID="booking-solo-no-driver-cancel"
+                    style={[
+                      styles.noDriverPromptPrimaryButton,
+                      isCancellingRide && styles.buttonDisabled,
+                    ]}
+                    disabled={isCancellingRide}
+                    onPress={handleCancelBookedRide}
+                  >
+                    <ThemedText type="smallBold" style={styles.noDriverPromptPrimaryText}>
+                      {isCancellingRide ? "Đang hủy..." : "Hủy chuyến"}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : bookingStep === "rideOptions" && mode !== "shared" ? (
           <>
@@ -4678,7 +5119,7 @@ export default function SearchScreen() {
                   {/* Khối ride option name: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
                   <View>
                     <ThemedText type="smallBold" style={styles.rideOptionName}>
-                      {selectedRideOption.name}
+                      {getRideOptionDisplayLabel(selectedRideOption)}
                     </ThemedText>
                   </View>
                   <ThemedText type="default" style={styles.rideOptionPrice}>
@@ -4704,7 +5145,7 @@ export default function SearchScreen() {
                       {/* Khối ride option name: Thông tin nhóm/chuyến xe ghép đang hiển thị. */}
                       <View>
                         <ThemedText type="smallBold" style={styles.rideOptionName}>
-                          {option.name}
+                          {getRideOptionDisplayLabel(option)}
                         </ThemedText>
                       </View>
                       <ThemedText type="default" style={styles.rideOptionPrice}>
@@ -5271,19 +5712,19 @@ export default function SearchScreen() {
                     {"Đang tải yêu cầu xe ghép của bạn..."}
                   </ThemedText>
                 </View>
-              ) : filteredSharedRequests.length === 0 ? (
+              ) : waitingSharedRequests.length === 0 ? (
                 /* Khối pending shared empty card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View style={styles.pendingSharedEmptyCard}>
                   <ThemedText type="smallBold" style={styles.emptySharedTitle}>
-                    {"Chưa có yêu cầu/chuyến ghép nào"}
+                    {"Chưa có yêu cầu xe ghép"}
                   </ThemedText>
                   <ThemedText type="small" style={styles.emptySharedText}>
-                    {"Bạn chưa có yêu cầu xe ghép nào ở trạng thái này. Hãy tạo yêu cầu mới hoặc chọn bộ lọc khác."}
+                    {"Bạn chưa có yêu cầu xe ghép nào đang chờ ghép nhóm. Hãy tạo yêu cầu mới hoặc chọn bộ lọc khác."}
                   </ThemedText>
                 </View>
               ) : null}
 
-              {filteredSharedRequests.map((request, index) => (
+              {waitingSharedRequests.map((request, index) => (
                 /* Khối pending shared card: Lớp popup/modal nổi phía trên màn hình để nhập, xác nhận hoặc báo lỗi. */
                 <View
                   key={request.id}
@@ -5368,9 +5809,148 @@ export default function SearchScreen() {
                       </Pressable>
                     ) : null}
                   </View>
+                  {shouldShowSharedNoDriverPrompt(request) ? (
+                    /* Khối shared no driver prompt: Hiển thị khi chờ ghép quá thời gian. */
+                    <View
+                      testID={`ride-sharing-no-driver-prompt-${index}`}
+                      style={styles.noDriverPromptCard}
+                    >
+                      <ThemedText type="smallBold" style={styles.noDriverPromptTitle}>
+                        {"Chưa tìm được nhóm/tài xế"}
+                      </ThemedText>
+                      <ThemedText type="small" style={styles.noDriverPromptSubtitle}>
+                        {"Bạn muốn tiếp tục chờ hay hủy yêu cầu?"}
+                      </ThemedText>
+                      <View style={styles.noDriverPromptActions}>
+                        <Pressable
+                          testID={`ride-sharing-no-driver-extend-${index}`}
+                          style={[
+                            styles.noDriverPromptSecondaryButton,
+                            extendingSharedRequestId === request.requestId &&
+                              styles.buttonDisabled,
+                          ]}
+                          disabled={extendingSharedRequestId === request.requestId}
+                          onPress={() => handleExtendSharedSearch(request.requestId)}
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.noDriverPromptSecondaryText}
+                          >
+                            {extendingSharedRequestId === request.requestId
+                              ? "Đang xử lý..."
+                              : "Tiếp tục tìm"}
+                          </ThemedText>
+                        </Pressable>
+                        <Pressable
+                          testID={`ride-sharing-no-driver-cancel-${index}`}
+                          style={[
+                            styles.noDriverPromptPrimaryButton,
+                            cancellingSharedRequestId === request.requestId &&
+                              styles.buttonDisabled,
+                          ]}
+                          disabled={cancellingSharedRequestId === request.requestId}
+                          onPress={() => handleCancelSharedRequest(request.requestId)}
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.noDriverPromptPrimaryText}
+                          >
+                            {cancellingSharedRequestId === request.requestId
+                              ? "Đang hủy..."
+                              : "Hủy yêu cầu"}
+                          </ThemedText>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : null}
                 </View>
               ))}
             </View>
+
+            {/* Section "Nhóm của tôi": chỉ render các request đã match vào nhóm (có groupId).
+                Tách riêng để tránh hiển thị trộn lẫn status "Đã vào nhóm" / "Chưa vào nhóm" trong cùng một section. */}
+            {myJoinedSharedGroups.length > 0 ? (
+              <View style={styles.pendingSharedSection}>
+                <View style={styles.sharedHeader}>
+                  <ThemedText type="default" style={styles.pendingSharedTitle}>
+                    {"Nhóm xe ghép của tôi"}
+                  </ThemedText>
+                </View>
+
+                {myJoinedSharedGroups.map((request, index) => (
+                  <View
+                    key={request.id}
+                    testID={`ride-sharing-my-group-card-${index}`}
+                    style={styles.pendingSharedCard}
+                  >
+                    <View style={styles.pendingSharedHeader}>
+                      <ThemedText
+                        type="smallBold"
+                        style={styles.pendingSharedVehicle}
+                      >
+                        {request.vehicle}
+                      </ThemedText>
+                      <View style={styles.pendingBadge}>
+                        <ThemedText
+                          type="smallBold"
+                          style={styles.pendingBadgeText}
+                        >
+                          {request.statusLabel}
+                        </ThemedText>
+                      </View>
+                    </View>
+
+                    <ThemedText
+                      type="smallBold"
+                      style={styles.pendingSharedRoute}
+                      numberOfLines={2}
+                    >
+                      {request.route}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.pendingSharedMeta}>
+                      {request.scheduleText}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.pendingSharedMeta}>
+                      {`Nhóm: ${request.participantCount}/${request.capacity} người`}
+                    </ThemedText>
+                    <ThemedText type="small" style={styles.pendingSharedMeta}>
+                      {"Quãng đường: "}
+                      {request.distance}
+                      {" • "}
+                      {request.duration}
+                    </ThemedText>
+
+                    <View style={styles.pendingSharedFooter}>
+                      <ThemedText
+                        type="smallBold"
+                        style={styles.pendingSharedPrice}
+                      >
+                        {request.price}
+                      </ThemedText>
+                      {Boolean(request.groupId) && (
+                        <Pressable
+                          testID={`ride-sharing-my-group-detail-${index}`}
+                          style={styles.pendingSharedDetailButton}
+                          onPress={() =>
+                            router.push(
+                              `/search/shared-ride/${request.groupId}`
+                            )
+                          }
+                        >
+                          <ThemedText
+                            type="smallBold"
+                            style={styles.pendingSharedDetailText}
+                          >
+                            {"Xem nhóm"}
+                          </ThemedText>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             {/* Khối shared header: Phần đầu của card/modal/màn hình, thường chứa tiêu đề và nút đóng. */}
             <View style={styles.sharedHeader}>
               <ThemedText type="default" style={styles.sharedTitle}>
@@ -6499,7 +7079,7 @@ export default function SearchScreen() {
               </ThemedText>
             </View>
             <ThemedText type="default" style={styles.alertTitle}>
-                    {"Thiếu thông tin"}
+                    {getBookingAlertTitle(alertMessage)}
                   </ThemedText>
             <ThemedText
               testID="booking-alert-message"
@@ -7746,6 +8326,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  findingActionsRow: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
   cancelRideButton: {
     borderColor: "#FCA5A5",
     backgroundColor: "#FEF2F2",
@@ -7755,6 +8339,50 @@ const styles = StyleSheet.create({
   },
   cancelRideButtonText: {
     color: "#DC2626",
+  },
+  noDriverPromptCard: {
+    marginTop: Spacing.two,
+    backgroundColor: "#FFF7ED",
+    borderRadius: 14,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    gap: Spacing.two,
+  },
+  noDriverPromptTitle: {
+    color: "#9A3412",
+    fontSize: 15,
+  },
+  noDriverPromptSubtitle: {
+    color: "#7C2D12",
+  },
+  noDriverPromptActions: {
+    flexDirection: "row",
+    gap: Spacing.two,
+  },
+  noDriverPromptSecondaryButton: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FB923C",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noDriverPromptSecondaryText: {
+    color: "#C2410C",
+  },
+  noDriverPromptPrimaryButton: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noDriverPromptPrimaryText: {
+    color: "#FFFFFF",
   },
   routeMapFallback: {
     flex: 1,
@@ -8085,6 +8713,8 @@ const styles = StyleSheet.create({
   rideOptionName: {
     color: "#111827",
     fontSize: 16,
+    // Tránh label "Xe máy"/"Ô tô" bị truncate khi row layout dùng space-between.
+    flexShrink: 1,
   },
   rideOptionPrice: {
     color: "#111827",
