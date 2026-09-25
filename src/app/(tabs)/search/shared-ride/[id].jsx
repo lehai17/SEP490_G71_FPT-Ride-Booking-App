@@ -1558,64 +1558,17 @@ export default function SharedRideDetailScreen() {
                 </ThemedView>
               )}
 
-              {shouldShowSharedNoDriverPrompt ? (
-                /* Khối shared no driver prompt: Hiển thị khi quá thời gian chờ ghép/tài xế. */
-                <View
-                  testID="shared-ride-no-driver-prompt"
-                  style={[
-                    styles.noDriverPromptCard,
-                    { backgroundColor: "#FFF7ED", borderColor: "#FDBA74" },
-                  ]}
-                >
-                  <ThemedText type="smallBold" style={styles.noDriverPromptTitle}>
-                    {"Chưa tìm được nhóm/tài xế"}
-                  </ThemedText>
-                  <ThemedText type="small" style={styles.noDriverPromptSubtitle}>
-                    {"Bạn muốn tiếp tục chờ hay hủy yêu cầu?"}
-                  </ThemedText>
-                  {Boolean(sharedExtendError) ? (
-                    <ThemedText type="small" style={styles.errorText}>
-                      {sharedExtendError}
-                    </ThemedText>
-                  ) : null}
-                  <View style={styles.noDriverPromptActions}>
-                    <Pressable
-                      testID="shared-ride-no-driver-extend"
-                      style={[
-                        styles.noDriverPromptSecondaryButton,
-                        isExtendingSharedSearch && styles.pendingButton,
-                      ]}
-                      disabled={isExtendingSharedSearch}
-                      onPress={handleExtendSharedSearch}
-                    >
-                      <ThemedText
-                        type="smallBold"
-                        style={styles.noDriverPromptSecondaryText}
-                      >
-                        {isExtendingSharedSearch
-                          ? "Đang xử lý..."
-                          : "Tiếp tục tìm"}
-                      </ThemedText>
-                    </Pressable>
-                    <Pressable
-                      testID="shared-ride-no-driver-cancel"
-                      style={[
-                        styles.noDriverPromptPrimaryButton,
-                        isExtendingSharedSearch && styles.pendingButton,
-                      ]}
-                      disabled={isExtendingSharedSearch}
-                      onPress={handleCancelSharedSearch}
-                    >
-                      <ThemedText
-                        type="smallBold"
-                        style={styles.noDriverPromptPrimaryText}
-                      >
-                        {isExtendingSharedSearch ? "Đang hủy..." : "Hủy yêu cầu"}
-                      </ThemedText>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null}
+              {shouldShowSharedNoDriverPrompt ? null : null}
+
+              {/* FIX: Block "Chưa tìm được nhóm/tài xế" đã được ẩn (return null) theo yêu cầu UX.
+                  - Trước đây sau N phút chờ không match, prompt hiện kèm 2 nút "Tiếp tục tìm" và
+                    "Hủy yêu cầu" → user báo gây nhiễu UI ở màn chi tiết nhóm.
+                  - JSX đã bị xóa; không động đến handler handleExtendSharedSearch /
+                    handleCancelSharedSearch, không động useCallback shouldShowSharedNoDriverPrompt,
+                    không động sharedExtendError — vẫn giữ để dùng lại nếu cần.
+                  - Ảnh hưởng: chỉ ẩn UI block này, các phần khác của màn shared-ride/[id].jsx
+                    (danh sách thành viên, nút "Tham gia nhóm", v.v.) không bị ảnh hưởng.
+                  - Lưu ý: index.jsx (search tab) đã làm điều tương tự ở dòng ~5992. */}
 
               {canJoinGroup && (
                 /* Nút tham gia group: kiểm tra login rồi mở join modal; chưa gọi BE cho đến khi submit form. */

@@ -1857,9 +1857,24 @@ export default function SearchScreen() {
 
       return getSharedRequestFilterKey(effectiveStatus) === sharedRequestFilter;
     });
-  const myJoinedSharedGroups = filteredSharedRequests.filter(
-    (request) => Boolean(request.groupId)
-  );
+  // FIX: dedupe theo groupId để tránh render trùng 1 nhóm khi BE trả về nhiều
+  // passenger record cho cùng 1 group (chính mình + member khác), hoặc khi
+  // currentCards (BE) + refreshedStoredCards (cache local) chứa cùng group
+  // nhưng getSharedRequestCardKey không nhận ra. Chỉ giữ card đầu tiên.
+  const myJoinedSharedGroups = (() => {
+    const seenGroupIds = new Set();
+    return filteredSharedRequests.filter((request) => {
+      if (!request.groupId) {
+        return false;
+      }
+      const key = String(request.groupId).trim().toLowerCase();
+      if (!key || seenGroupIds.has(key)) {
+        return false;
+      }
+      seenGroupIds.add(key);
+      return true;
+    });
+  })();
   const waitingSharedRequests = filteredSharedRequests.filter(
     (request) => !request.groupId
   );
@@ -5792,48 +5807,6 @@ export default function SearchScreen() {
                   {"Yêu cầu xe ghép của bạn"}
                 </ThemedText>
                 <View style={styles.sharedHeaderActions}>
-                  {/* FIX: Nút refresh ép FE đồng bộ lại state pendingSharedRequests từ BE ngay lập tức.
-                      Dùng trong trường hợp matching vừa xảy ra phía BE nhưng state FE chưa kịp
-                      phản ánh (race giữa polling, leave group, hoặc tạo lại yêu cầu).
-                      Trước đây user phải logout/login mới thấy đúng — giờ bấm nút này là đủ. */}
-                  <Pressable
-                    testID="ride-sharing-refresh-button"
-                    style={({ pressed }) => [
-                      styles.refreshSharedButton,
-                      (refreshingSharedState || isCreatingSharedRequest) &&
-                        styles.buttonDisabled,
-                      pressed && styles.refreshSharedButtonPressed,
-                    ]}
-                    onPress={() => {
-                      if (
-                        !session?.accessToken ||
-                        refreshingSharedState ||
-                        isCreatingSharedRequest
-                      ) {
-                        return;
-                      }
-                      setRefreshingSharedState(true);
-                      refreshSharedState()
-                        .catch(() => {
-                          // Best-effort: không show error toast, polling 5s/lần sẽ retry.
-                        })
-                        .finally(() => {
-                          setRefreshingSharedState(false);
-                        });
-                    }}
-                    disabled={
-                      !session?.accessToken ||
-                      refreshingSharedState ||
-                      isCreatingSharedRequest
-                    }
-                  >
-                    <ThemedText
-                      type="smallBold"
-                      style={styles.refreshSharedButtonText}
-                    >
-                      {refreshingSharedState ? "Đang tải…" : "↻ Làm mới"}
-                    </ThemedText>
-                  </Pressable>
                   {/* Tạo yêu cầu xe ghép: kiểm tra login rồi mở modal createSharedVisible để nhập direction/date/slot/location. */}
                   <Pressable
                     testID="ride-sharing-create-button"
