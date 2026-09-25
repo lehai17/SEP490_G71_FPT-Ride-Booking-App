@@ -95,8 +95,12 @@ function getGroupJoinDestination(...groups) {
   return null;
 }
 
-// formatDistanceKm: Định dạng khoảng cách theo km
+// formatDistanceKm: Định dạng khoảng cách theo km. Trả "--" khi không có dữ liệu hợp lệ (giữ tương thích UI cũ).
 function formatDistanceKm(value) {
+  if (value == null) {
+    return "--";
+  }
+
   const distanceKm = Number(value ?? 0);
 
   if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
@@ -145,7 +149,8 @@ function calculateDistanceKmBetweenPoints(origin, destination) {
   return earthRadiusKm * angle;
 }
 
-// getMemberDistanceKm: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
+// getMemberDistanceKm: Tính quãng đường ưu tiên từ BE (estimatedDistanceKm), fallback Haversine từ lat/lng pickup → destination.
+// Trả về null khi không đủ dữ liệu để FE phân biệt "chưa có" với "0 km" (fix "--" hiển thị sai).
 function getMemberDistanceKm(member) {
   const estimatedDistanceKm = Number(member?.estimatedDistanceKm ?? 0);
 
@@ -153,7 +158,7 @@ function getMemberDistanceKm(member) {
     return estimatedDistanceKm;
   }
 
-  return calculateDistanceKmBetweenPoints(
+  const fallbackDistance = calculateDistanceKmBetweenPoints(
     {
       lat: member?.pickupLatitude,
       lng: member?.pickupLongitude,
@@ -163,6 +168,8 @@ function getMemberDistanceKm(member) {
       lng: member?.destinationLongitude,
     }
   );
+
+  return fallbackDistance > 0 ? fallbackDistance : null;
 }
 
 // calculateAverageGroupFare: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
@@ -328,7 +335,7 @@ function getJoinButtonLabel(isJoiningGroup, pendingRequest) {
   if (pendingRequest) {
     return pendingRequest.status === "joined"
       ? "Đã tham gia nhóm"
-      : "Đang chờ duyệt";
+      : "Đang chờ ghép";
   }
 
   return "Tham gia nhóm";
@@ -1508,7 +1515,7 @@ export default function SharedRideDetailScreen() {
                             </ThemedText>
                           </View>
                           <ThemedText type="small" style={styles.metaText}>
-                            {"Điểm đón: "}{member.pickupAddress || "--"}
+                            {"Điểm đón: "}{member.pickupAddress || "Chưa cập nhật"}
                           </ThemedText>
                           <ThemedText type="small" style={styles.metaText}>
                             {"Quãng đường của khách: "}{formatDistanceKm(
@@ -1533,12 +1540,12 @@ export default function SharedRideDetailScreen() {
                   {/* Khối pending top row: Dàn các phần tử trên cùng một hàng. */}
                   <View style={styles.pendingTopRow}>
                     <ThemedText type="smallBold" style={styles.pendingTitle}>
-                      Đang chờ duyệt
+                      Đang chờ ghép
                     </ThemedText>
                     {/* Khối pending badge: Nhãn trạng thái nhỏ giúp người dùng quét thông tin nhanh. */}
                     <View style={styles.pendingBadge}>
                       <ThemedText type="smallBold" style={styles.pendingBadgeText}>
-                        Pending
+                        Chờ ghép
                       </ThemedText>
                     </View>
                   </View>
@@ -1627,7 +1634,7 @@ export default function SharedRideDetailScreen() {
                   }}
                 >
                   <ThemedText type="default" style={styles.primaryButtonText}>
-                    {pendingRequest ? "Đang chờ duyệt" : "Tham gia nhóm"}
+                    {pendingRequest ? "Đang chờ ghép" : "Tham gia nhóm"}
                   </ThemedText>
                 </Pressable>
               )}

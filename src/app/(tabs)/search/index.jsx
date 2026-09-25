@@ -1766,6 +1766,18 @@ export default function SearchScreen() {
   const joinSharedLocationPickedRef = useRef("");
   const sharedRefreshSequenceRef = useRef(0);
   const hasEditedFromInputRef = useRef(false);
+  // sharedFastPollIntervalRef: Lưu interval của polling tăng cường (2s/lần) sau khi
+  // user tạo yêu cầu/ghép nhóm xe ghép. Polling chính 5s/lần có thể trễ so với thời điểm
+  // BE match nhóm (BE chạy ProcessMatchingAsync khi có user khác tạo yêu cầu, response
+  // về sau vài giây) → user phải "thoát ra đăng nhập lại" mới thấy "Đã ở trong nhóm".
+  // Polling 2s/lần trong ~30 giây đầu giúp bắt matching real-time mà không phụ thuộc BE.
+  const sharedFastPollIntervalRef = useRef(null);
+  // pendingSharedRequestsRef: Mirror state pendingSharedRequests để fast-polling callback
+  // (closure) đọc giá trị mới nhất mà không cần re-create interval mỗi lần state đổi.
+  const pendingSharedRequestsRef = useRef([]);
+  // Đồng bộ ref mỗi khi state thay đổi để callback trong setInterval (closure cũ) đọc
+  // giá trị mới nhất mà không cần phụ thuộc dep array của useCallback.
+  pendingSharedRequestsRef.current = pendingSharedRequests;
   const [isVerifyingMap, setIsVerifyingMap] = useState(false);
   const [isOpeningSchedulePicker, setIsOpeningSchedulePicker] = useState(false);
   const [isFetchingCurrentLocation, setIsFetchingCurrentLocation] = useState(false);
@@ -1787,6 +1799,8 @@ export default function SearchScreen() {
   const [scheduledRideAt, setScheduledRideAt] = useState("");
   const [pendingSharedRequests, setPendingSharedRequests] = useState([]);
   const [availableSharedGroups, setAvailableSharedGroups] = useState([]);
+  // FIX: state phục vụ nút refresh — bật spinner khi user bấm ↻ Làm mới, tránh bấm nhiều lần.
+  const [refreshingSharedState, setRefreshingSharedState] = useState(false);
   const [sharedRequestFilter, setSharedRequestFilter] = useState("booked");
   const [createSharedVisible, setCreateSharedVisible] = useState(false);
   const [sharedForm, setSharedForm] = useState(defaultSharedForm);
@@ -1840,6 +1854,7 @@ export default function SearchScreen() {
     .filter((request) => isRideSharingCardOwnedByUser(request, session?.userId))
     .filter((request) => {
       const effectiveStatus = getSharedRequestEffectiveStatus(request);
+
       return getSharedRequestFilterKey(effectiveStatus) === sharedRequestFilter;
     });
   const myJoinedSharedGroups = filteredSharedRequests.filter(
@@ -2106,6 +2121,67 @@ export default function SearchScreen() {
     },
     [mode, session?.accessToken, session?.userId]
   );
+
+  // startSharedFastPolling: BẬT POLLING TĂNG CƯỜNG (2s/lần) trong khoảng thời gian ngắn
+  // sau khi user tạo yêu cầu/ghép nhóm xe ghép.
+  //
+  // Lý do: Polling chính 5s/lần → nếu BE match nhóm ở giây thứ 6-7 (BE chạy matching khi có
+  // người khác tạo request), polling tiếp theo sau 5s có thể là giây thứ 12, đủ để user
+  // thấy "Đang chờ ghép nhóm" thêm vài giây. Trong trường hợp xấu (user vào app rồi bỏ đi,
+  // app pause trên mobile) → polling dừng, user thoát ra đăng nhập lại mới cập nhật.
+  //
+  // Giải pháp nhẹ nhàng: ngay sau khi create request hoặc join group, bật interval 2s/lần
+  // chạy trong ~30 giây (15 lần). Khi status chuyển từ Waiting sang Matched/InGroup thì
+  // polling chính 5s/lần sẽ tự cập nhật tiếp → dừng fast-polling sớm để tiết kiệm.
+  //
+  // Không ảnh hưởng polling chính 5s/lần (vẫn chạy độc lập), không sửa logic BE, không động
+  // các phần không liên quan.
+  const startSharedFastPolling = useCallback(() => {
+    if (sharedFastPollIntervalRef.current) {
+      clearInterval(sharedFastPollIntervalRef.current);
+      sharedFastPollIntervalRef.current = null;
+    }
+
+    const fastPollIntervalMs = 2000;
+    const fastPollMaxTicks = 15; // ~30s
+
+    let ticks = 0;
+
+    sharedFastPollIntervalRef.current = setInterval(() => {
+      ticks += 1;
+
+      refreshSharedState({ showLoading: false }).catch(() => {});
+
+      // FIX: pendingSharedRequestsRef.current đôi khi undefined trong một số edge case
+      // (vd: interval fire trước khi render đầu tiên sync ref, hoặc strict mode double mount).
+      // Guard Array.isArray để không crash app.
+      const currentRequests = pendingSharedRequestsRef.current;
+      const requestList = Array.isArray(currentRequests) ? currentRequests : [];
+      // Nếu request/group đã có groupId (đã match vào nhóm) → dừng fast-polling sớm,
+      // để polling chính 5s/lần tiếp tục cập nhật. Logic check groupId dựa trên card đã
+      // được set vào state, an toàn vì refreshSharedState đã cập nhật state trước đó.
+      const hasMatchedRequest = requestList.some(
+        (request) => Boolean(request?.groupId)
+      );
+
+      if (hasMatchedRequest || ticks >= fastPollMaxTicks) {
+        if (sharedFastPollIntervalRef.current) {
+          clearInterval(sharedFastPollIntervalRef.current);
+          sharedFastPollIntervalRef.current = null;
+        }
+      }
+    }, fastPollIntervalMs);
+  }, [refreshSharedState]);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup fast-polling khi unmount component.
+      if (sharedFastPollIntervalRef.current) {
+        clearInterval(sharedFastPollIntervalRef.current);
+        sharedFastPollIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (mode === "shared" || bookingStep !== "form") {
@@ -3880,6 +3956,14 @@ export default function SearchScreen() {
     setJoinSharedLocationLoading(false);
     setJoinSharedError("");
     joinSharedLocationPickedRef.current = "";
+
+    // Cleanup orphan request "mồ côi": khi user đóng modal join (do lỗi validation FE
+    // hoặc do đổi ý sau khi BE đã tạo request ở bước 6 của service mà chưa assign group),
+    // request Waiting không có groupId sẽ bị FE "bỏ rơi" nếu ta không dọn. Khi đó poll
+    // refreshSharedState 5 giây/lần sẽ kéo lại request đó hiện ở section
+    // "Yêu cầu xe ghép của bạn" thay vì "Nhóm xe ghép của tôi" → user hiểu nhầm.
+    // Cleanup thủ công ngay tại close để user luôn kết thúc session ở trạng thái sạch.
+    cleanupStrayJoinRequest();
   };
 
   const openJoinSharedModal = (groupCard) => {
@@ -3894,7 +3978,58 @@ export default function SearchScreen() {
     setJoinSharedLocationLoading(false);
     setJoinSharedError("");
     joinSharedLocationPickedRef.current = "";
+
+    // Mỗi lần mở modal join: dọn request mồ côi từ lần thao tác trước (nếu có) để user
+    // không phải tự bấm hủy thủ công trong section "Yêu cầu xe ghép của bạn".
+    cleanupStrayJoinRequest();
   };
+
+  // cleanupStrayJoinRequest: Hàm xử lý một phần logic riêng để màn hình/service dễ đọc và dễ bảo trì
+  // Tìm và huỷ request đang active mà không thuộc group nào (Status Waiting không có groupId).
+  // Sau khi cancel, refresh state để UI cập nhật ngay → nếu user nhìn thấy card mồ côi trong
+  // section "Yêu cầu xe ghép của bạn", card sẽ được lọc ra ngay.
+  async function cleanupStrayJoinRequest() {
+    if (!session?.accessToken) {
+      return;
+    }
+
+    try {
+      const currentRequest = await getMyRideSharingRequest(
+        session.accessToken
+      ).catch((error) => {
+        if (error?.status === 404) {
+          return null;
+        }
+        throw error;
+      });
+
+      if (!currentRequest?.id) {
+        return;
+      }
+
+      // Chỉ cancel request không thuộc group nào: request có groupId là user đã join nhóm thật.
+      const alreadyJoinedGroup = Boolean(currentRequest.groupId);
+      if (alreadyJoinedGroup) {
+        return;
+      }
+
+      // Bỏ qua nếu request đã ở trạng thái terminal (đã bị huỷ/hoàn thành/hết hạn).
+      if (!isSharedRideActive(currentRequest.status)) {
+        return;
+      }
+
+      await cancelRideSharingRequest(
+        currentRequest.id,
+        { cancelReason: 4 },
+        session.accessToken
+      );
+
+      // Refresh state để card "Yêu cầu xe ghép của bạn" cập nhật ngay nếu có đang hiển thị.
+      await refreshSharedState();
+    } catch {
+      // Cleanup là best-effort: nếu fail, polling 5s/lần sẽ vẫn làm sạch qua các lần refresh sau.
+    }
+  }
 
   const updateJoinSharedPickup = (value) => {
     setJoinSharedPickup(value);
@@ -4079,7 +4214,19 @@ export default function SearchScreen() {
       setJoinSharedSuggestions([]);
       joinSharedLocationPickedRef.current = "";
       await refreshSharedState();
+      // FIX: Bật fast-polling 2s/lần để bắt status mới nhất ngay khi vừa join nhóm thành công.
+      startSharedFastPolling();
     } catch (error) {
+      // Cleanup orphan request "mồ côi":
+      // Khi BE /ride-sharing/groups/{id}/join fail sau khi đã tạo request (vd: validation
+      // pickup distance / atomic join fail / 500), request sẽ kẹt ở status Waiting không
+      // có groupId. Nếu không dọn, sau khi user đóng modal và polling refreshSharedState
+      // chạy, request đó lại hiện ở section "Yêu cầu xe ghép của bạn" thay vì
+      // "Nhóm xe ghép của tôi" → user hiểu nhầm là join thất bại nhưng vẫn còn request
+      // treo. Tự động huỷ request mồ côi trước khi show lỗi để user chỉ cần đóng modal
+      // là xong.
+      await cleanupStrayJoinRequest();
+
       setJoinSharedError(getRideSharingJoinErrorMessage(error));
     } finally {
       setIsJoiningSharedGroup(false);
@@ -4348,6 +4495,10 @@ export default function SearchScreen() {
 
       setSharedForm(defaultSharedForm);
       closeCreateSharedModal();
+      // FIX: Bật fast-polling 2s/lần để bắt matching nhóm real-time. Khi status chuyển từ
+      // Waiting sang Matched/InGroup hoặc sau 15 lần (≈30s) thì tự dừng; polling chính 5s/lần
+      // vẫn chạy độc lập để không ảnh hưởng logic các phần khác.
+      startSharedFastPolling();
     } catch (error) {
       logRideSharingCreateDebug("create request error", {
         message: error?.message,
@@ -5640,19 +5791,64 @@ export default function SearchScreen() {
                 <ThemedText type="default" style={styles.pendingSharedTitle}>
                   {"Yêu cầu xe ghép của bạn"}
                 </ThemedText>
-                {/* Tạo yêu cầu xe ghép: kiểm tra login rồi mở modal createSharedVisible để nhập direction/date/slot/location. */}
-                <Pressable
-                  testID="ride-sharing-create-button"
-                  onPress={() => {
-                    if (requireLogin()) {
-                      setCreateSharedVisible(true);
+                <View style={styles.sharedHeaderActions}>
+                  {/* FIX: Nút refresh ép FE đồng bộ lại state pendingSharedRequests từ BE ngay lập tức.
+                      Dùng trong trường hợp matching vừa xảy ra phía BE nhưng state FE chưa kịp
+                      phản ánh (race giữa polling, leave group, hoặc tạo lại yêu cầu).
+                      Trước đây user phải logout/login mới thấy đúng — giờ bấm nút này là đủ. */}
+                  <Pressable
+                    testID="ride-sharing-refresh-button"
+                    style={({ pressed }) => [
+                      styles.refreshSharedButton,
+                      (refreshingSharedState || isCreatingSharedRequest) &&
+                        styles.buttonDisabled,
+                      pressed && styles.refreshSharedButtonPressed,
+                    ]}
+                    onPress={() => {
+                      if (
+                        !session?.accessToken ||
+                        refreshingSharedState ||
+                        isCreatingSharedRequest
+                      ) {
+                        return;
+                      }
+                      setRefreshingSharedState(true);
+                      refreshSharedState()
+                        .catch(() => {
+                          // Best-effort: không show error toast, polling 5s/lần sẽ retry.
+                        })
+                        .finally(() => {
+                          setRefreshingSharedState(false);
+                        });
+                    }}
+                    disabled={
+                      !session?.accessToken ||
+                      refreshingSharedState ||
+                      isCreatingSharedRequest
                     }
-                  }}
-                >
-                  <ThemedText type="smallBold" style={styles.createButtonText}>
-                    {"+ Tạo yêu cầu"}
-                  </ThemedText>
-                </Pressable>
+                  >
+                    <ThemedText
+                      type="smallBold"
+                      style={styles.refreshSharedButtonText}
+                    >
+                      {refreshingSharedState ? "Đang tải…" : "↻ Làm mới"}
+                    </ThemedText>
+                  </Pressable>
+                  {/* Tạo yêu cầu xe ghép: kiểm tra login rồi mở modal createSharedVisible để nhập direction/date/slot/location. */}
+                  <Pressable
+                    testID="ride-sharing-create-button"
+                    style={styles.createButton}
+                    onPress={() => {
+                      if (requireLogin()) {
+                        setCreateSharedVisible(true);
+                      }
+                    }}
+                  >
+                    <ThemedText type="smallBold" style={styles.createButtonText}>
+                      {"+ Tạo yêu cầu"}
+                    </ThemedText>
+                  </Pressable>
+                </View>
               </View>
 
               {/* Khối shared request filter box: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
@@ -5820,60 +6016,13 @@ export default function SearchScreen() {
                       </Pressable>
                     ) : null}
                   </View>
-                  {shouldShowSharedNoDriverPrompt(request) ? (
-                    /* Khối shared no driver prompt: Hiển thị khi chờ ghép quá thời gian. */
-                    <View
-                      testID={`ride-sharing-no-driver-prompt-${index}`}
-                      style={styles.noDriverPromptCard}
-                    >
-                      <ThemedText type="smallBold" style={styles.noDriverPromptTitle}>
-                        {"Chưa tìm được nhóm/tài xế"}
-                      </ThemedText>
-                      <ThemedText type="small" style={styles.noDriverPromptSubtitle}>
-                        {"Bạn muốn tiếp tục chờ hay hủy yêu cầu?"}
-                      </ThemedText>
-                      <View style={styles.noDriverPromptActions}>
-                        <Pressable
-                          testID={`ride-sharing-no-driver-extend-${index}`}
-                          style={[
-                            styles.noDriverPromptSecondaryButton,
-                            extendingSharedRequestId === request.requestId &&
-                              styles.buttonDisabled,
-                          ]}
-                          disabled={extendingSharedRequestId === request.requestId}
-                          onPress={() => handleExtendSharedSearch(request.requestId)}
-                        >
-                          <ThemedText
-                            type="smallBold"
-                            style={styles.noDriverPromptSecondaryText}
-                          >
-                            {extendingSharedRequestId === request.requestId
-                              ? "Đang xử lý..."
-                              : "Tiếp tục tìm"}
-                          </ThemedText>
-                        </Pressable>
-                        <Pressable
-                          testID={`ride-sharing-no-driver-cancel-${index}`}
-                          style={[
-                            styles.noDriverPromptPrimaryButton,
-                            cancellingSharedRequestId === request.requestId &&
-                              styles.buttonDisabled,
-                          ]}
-                          disabled={cancellingSharedRequestId === request.requestId}
-                          onPress={() => handleCancelSharedRequest(request.requestId)}
-                        >
-                          <ThemedText
-                            type="smallBold"
-                            style={styles.noDriverPromptPrimaryText}
-                          >
-                            {cancellingSharedRequestId === request.requestId
-                              ? "Đang hủy..."
-                              : "Hủy yêu cầu"}
-                          </ThemedText>
-                        </Pressable>
-                      </View>
-                    </View>
-                  ) : null}
+                  {/* FIX: Ẩn prompt "Chưa tìm được nhóm/tài xế" theo yêu cầu UX.
+                      Trước đây sau N phút chờ không match, prompt hiện kèm 2 nút
+                      "Tiếp tục tìm" và "Hủy yêu cầu" → user báo gây nhiễu UI.
+                      Xóa block render; không động đến handler (handleExtendSharedSearch,
+                      handleCancelSharedRequest) và không động useCallback
+                      shouldShowSharedNoDriverPrompt — vẫn giữ để dùng lại nếu cần.
+                      Không ảnh hưởng logic các phần khác. */}
                 </View>
               ))}
             </View>
@@ -8949,6 +9098,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  sharedHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+  },
+  refreshSharedButton: {
+    paddingVertical: Spacing.two - 2,
+    paddingHorizontal: Spacing.two,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: BRAND,
+    backgroundColor: "transparent",
+  },
+  refreshSharedButtonPressed: {
+    backgroundColor: "#EEF2FF",
+  },
+  refreshSharedButtonText: {
+    color: BRAND,
+    fontSize: 13,
+    fontWeight: "700",
+  },
   sharedTitle: {
     flex: 1,
     color: "#111827",
@@ -8958,6 +9128,9 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: BRAND,
     fontSize: 18,
+  },
+  createButton: {
+    // Wrapper để giữ layout khi gom chung với refresh button.
   },
   emptySharedCard: {
     borderRadius: 16,

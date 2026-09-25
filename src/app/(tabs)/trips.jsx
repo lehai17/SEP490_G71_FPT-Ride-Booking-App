@@ -7,6 +7,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -1135,7 +1136,20 @@ export default function TripsScreen() {
       setRatingModalVisible(false);
       setSelectedTrip(null);
       setReviewDraft("");
+
+      // FIX: Modal đóng nhưng không có feedback → user không biết đã gửi thành công
+      // hay im lặng. Thêm toast xác nhận để user rõ ràng trạng thái gửi.
+      // Giữ nguyên logic khác, chỉ thêm Alert.alert.
+      Alert.alert("Đã gửi đánh giá", "Cảm ơn bạn đã đánh giá chuyến đi.");
     } catch (error) {
+      // FIX: rating modal không hiển thị formError (chỉ edit modal mới có) → nếu
+      // BE fail (vd: trip chưa Completed, đã review rồi, validation) thì user
+      // không thấy lỗi đâu cả, modal cũng không đóng. Dùng Alert.alert để lỗi
+      // được hiển thị rõ ràng.
+      Alert.alert(
+        "Gửi đánh giá thất bại",
+        error?.message || "Không thể gửi đánh giá. Vui lòng thử lại."
+      );
       setFormError(
         error?.message || "Không thể gửi đánh giá. Vui lòng thử lại."
       );
@@ -1759,39 +1773,44 @@ export default function TripsScreen() {
 
                   {/* Khối trip right: Nhóm UI con để màn hình rõ bố cục và dễ chỉnh sửa. */}
                   <View style={styles.tripRight}>
-                    {/* Nút hành động chính: gửi dữ liệu người dùng đang nhập lên luồng xử lý. */}
-                    <Pressable
-                      testID={`trips-${selectedTab}-primary-${index}`}
-                      style={[
-                        styles.outlineAction,
-                        hasRated && selectedTab === "history" && styles.outlineActionDisabled,
-                      ]}
-                      hitSlop={8}
-                      onPress={() => {
-                        if (!(hasRated && selectedTab === "history")) {
-                          handlePrimaryAction(item);
-                        }
-                      }}
-                    >
-                      <ThemedText
-                        type="small"
+                    {/* FIX: ẩn toàn bộ action buttons khi quá hạn đánh giá (actionPrimary = null)
+                        để user không bấm vào nút "Chi tiết" rỗng nữa. Trước đây mapper trả về
+                        "Chi tiết" → user bấm vào không có handler hữu ích, gây nhiễu UI. */}
+                    {item.actionPrimary ? (
+                      <Pressable
+                        testID={`trips-${selectedTab}-primary-${index}`}
                         style={[
-                          styles.outlineActionText,
-                          hasRated &&
-                            selectedTab === "history" &&
-                            styles.outlineActionTextDisabled,
+                          styles.outlineAction,
+                          hasRated && selectedTab === "history" && styles.outlineActionDisabled,
                         ]}
+                        hitSlop={8}
+                        onPress={() => {
+                          if (!(hasRated && selectedTab === "history")) {
+                            handlePrimaryAction(item);
+                          }
+                        }}
                       >
-                        {selectedTab === "scheduled"
-                          ? "Sửa"
-                          : hasRated
-                            ? "Đã đánh giá"
-                            : item.actionPrimary}
-                      </ThemedText>
-                    </Pressable>
+                        <ThemedText
+                          type="small"
+                          style={[
+                            styles.outlineActionText,
+                            hasRated &&
+                              selectedTab === "history" &&
+                              styles.outlineActionTextDisabled,
+                          ]}
+                        >
+                          {selectedTab === "scheduled"
+                            ? "Sửa"
+                            : hasRated
+                              ? "Đã đánh giá"
+                              : item.actionPrimary}
+                        </ThemedText>
+                      </Pressable>
+                    ) : null}
 
-                    {/* Nút hành động phụ (Hủy ở scheduled/active). History không có nút này nữa. */}
-                    {selectedTab !== "history" ? (
+                    {/* Nút hành động phụ (Hủy ở scheduled/active). History không có nút này nữa.
+                        FIX: thêm điều kiện actionSecondary truthy để ẩn luôn khi quá hạn. */}
+                    {selectedTab !== "history" && item.actionSecondary ? (
                       <Pressable
                         style={[styles.outlineAction]}
                         hitSlop={8}

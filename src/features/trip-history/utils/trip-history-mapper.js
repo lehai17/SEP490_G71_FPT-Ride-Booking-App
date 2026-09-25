@@ -131,9 +131,17 @@ export function mapTripToHistoryItem(trip, localTrip = null) {
     formatDistanceKm(getTripDistance(trip)) ||
     formatDistanceKm(getTripDistance(localTrip)) ||
     getLocalDistanceText(localTrip);
-  const actionPrimary = isTripOlderThanThreeDays(date)
-    ? "Chi tiết"
-    : "Đánh giá";
+  // FIX: Chỉ cho phép đánh giá khi trip ở trạng thái Completed VÀ chưa quá 3 ngày
+  // kể từ completedAt. Trước đây chỉ check date > 3 ngày nhưng fallback date từ
+  // cancelledAt/acceptedAt/createdAt khiến trip cancelled/nodriverfound vẫn hiển thị
+  // nút "Đánh giá" → user bấm vào → BE trả 400 "Chỉ có thể đánh giá sau khi chuyến
+  // đi hoàn thành".
+  const tripStatus = String(getTripField(trip, "status", "Status") ?? "").toLowerCase();
+  const isCompleted = tripStatus === "completed";
+  const isExpired = isTripOlderThanThreeDays(date);
+  const canReview = isCompleted && !isExpired;
+  const actionPrimary = canReview ? "Đánh giá" : null;
+  const actionSecondary = null;
   const metaParts = [
     formatTripDate(date),
     distanceText,
@@ -150,7 +158,7 @@ export function mapTripToHistoryItem(trip, localTrip = null) {
     }`,
     meta: metaParts.join(" · "),
     actionPrimary,
-    actionSecondary: null,
+    actionSecondary,
     rating: null,
     sortTimestamp: getTripTime(date),
   };
